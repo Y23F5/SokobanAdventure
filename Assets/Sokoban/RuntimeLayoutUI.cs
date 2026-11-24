@@ -120,9 +120,9 @@ namespace Sokoban
                 case "离开": host.Leave();break;
                 case "工作区": workspaceOpen=true;break;
                 case "返回": workspaceOpen=false;break;
-                case "选物件": custom=false;terrain=false;Panel.CancelTool();break;
-                case "选地形": custom=false;terrain=true;Panel.CancelTool();break;
-                case "选素材": custom=true;Panel.CancelTool();break;
+                case "选物件": custom=false;terrain=false;break;
+                case "选地形": custom=false;terrain=true;break;
+                case "选素材": custom=true;break;
                 case "绑定素材": Panel.Run(()=>d.BindAsset(pickedAsset),"已更新绑定");break;
                 case "切换房间视图": host.ToggleRoomView();workspaceOpen=false;break;
                 case "选择": Tool(RoomTool.Select);break;
