@@ -59,6 +59,18 @@ namespace Sokoban
 
         public static PuzzleRun FromDraft(RoomDraft draft) => new PuzzleRun((JObject)draft.World?.DeepClone(), (JObject)draft.Catalog.DeepClone(), draft.ActiveId);
 
+        internal static PuzzleRun FromWorld(JObject world, JObject rooms) => new PuzzleRun(world, rooms, (string)world["start"]["levelId"]);
+
+        public bool CanLeaveWorld(Vector2Int direction)
+        {
+            var finish = World?["finish"];
+            var endpoint = finish?["endpoint"];
+            if (Recovering || (string)endpoint?["levelId"] != ActiveId || finish == null) return false;
+            var door = Room["doors"].FirstOrDefault(d => (string)d["id"] == (string)endpoint["doorId"]);
+            return door != null && RoomFile.At(door) + Origin == Player && direction == -RoomFile.Inward(door)
+                && finish["requiresSolved"].All(id => states[(string)id].Solved);
+        }
+
         public static PuzzleRun Campaign()
         {
             var rooms = new JObject();

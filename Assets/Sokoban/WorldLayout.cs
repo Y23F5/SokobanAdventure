@@ -80,6 +80,8 @@ namespace Sokoban
             if (!world["rooms"].Any(r => (string)r["levelId"] == startRoom)
                 || (string)rooms[startRoom]?["spawn"]?["id"] != (string)start?["spawnId"])
                 yield return "世界起点无效 "+startRoom;
+            if (!(world["finish"]?["requiresSolved"] is JArray finishRooms) || finishRooms.Any(id => !world["rooms"].Any(r => (string)r["levelId"] == (string)id)))
+                yield return "世界终局的前置房间引用无效";
             if (Endpoint(world["finish"]?["endpoint"],world,rooms,out _) == null)
                 yield return "世界终点门无效 "+world["finish"]?["endpoint"];
         }

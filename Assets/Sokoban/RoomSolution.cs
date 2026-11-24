@@ -31,11 +31,11 @@ namespace Sokoban
         }
         static readonly Vector2Int[] Steps = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
         const string Directions = "NESW";
-        public static Result Check(JObject room, Vector2Int start, int budget = 100000, JObject world = null, Vector2Int? destination = null)
+        public static Result Check(JObject room, Vector2Int start, int budget = 100000, JObject world = null, Vector2Int? destination = null, Vector2Int[] currentBoxes = null)
         {
             string issue = RoomFile.StructureIssues(room).FirstOrDefault();
             if (issue != null) return new Result(Outcome.Invalid, issue);
-            var boxes = room["boxes"].Select(RoomFile.At).ToArray();
+            var boxes = currentBoxes ?? room["boxes"].Select(RoomFile.At).ToArray();
             if (!RoomFile.Floor(room, start) || boxes.Contains(start)) return new Result(Outcome.Invalid, "起点无法站立 " + start);
             var graph = room["events"].FirstOrDefault(item => !ObjectBehavior.IsVisual(item));
             if (graph != null)
@@ -103,6 +103,17 @@ namespace Sokoban
         }
         static Result Search(JObject room, Vector2Int start, Vector2Int[] boxes, HashSet<Vector2Int> targets, HashSet<Vector2Int> exits, int budget, Vector2Int? destination)
         {
+            var reachable = new HashSet<Vector2Int>(targets);
+            var reverse = new Queue<Vector2Int>(targets);
+            while (reverse.Count > 0)
+            {
+                var target = reverse.Dequeue();
+                foreach (var direction in Steps)
+                {
+                    var before = target - direction;
+                    if (RoomFile.Floor(room, before) && RoomFile.Floor(room, before - direction) && reachable.Add(before)) reverse.Enqueue(before);
+                }
+            }
             var root = new Node { Player = start, Boxes = boxes };
             var queue = new Queue<Node>();
             var seen = new HashSet<string> { Key(root) };
@@ -124,7 +135,7 @@ namespace Sokoban
                     if (pushed >= 0)
                     {
                         var beyond = next + Steps[i];
-                        if (!RoomFile.Floor(room, beyond) || Array.IndexOf(nextBoxes, beyond) >= 0) continue;
+                        if (!RoomFile.Floor(room, beyond) || Array.IndexOf(nextBoxes, beyond) >= 0 || boxes.Length == targets.Count && !reachable.Contains(beyond)) continue;
                         nextBoxes = (Vector2Int[])nextBoxes.Clone();
                         nextBoxes[pushed] = beyond;
                     }

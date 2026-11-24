@@ -144,10 +144,11 @@ namespace Sokoban
             if (StructuralIssue != null) { Status = StructuralIssue; return; }
             var room = (JObject)Draft.Room.DeepClone();
             var world = (JObject)Draft.World?.DeepClone();
-            Status = "正在检查房间解法";
+            var rooms = world == null ? null : (JObject)Draft.Catalog.DeepClone();
+            Status = world == null ? "正在检查房间解法" : "正在检查世界路线";
             try
             {
-                var result = await System.Threading.Tasks.Task.Run(() => RoomSolution.CheckEntries(room, world));
+                var result = await System.Threading.Tasks.Task.Run(() => world == null ? RoomSolution.CheckEntries(room, null) : WorldSolution.Describe(WorldSolution.Check(world, rooms)));
                 if (request != solutionRequest) return;
                 Status = revision == Draft.Revision ? result : "布局已变更，请重新检查";
             }
@@ -166,7 +167,7 @@ namespace Sokoban
                 GUILayout.Label(Draft.Placement==null?"尚未放置":"房间原点 "+Draft.Origin);
                 if(GUILayout.Button(Draft.Placement==null?"在地图放置整房":"在地图移动整房")) StartRoomPlacement();
             }
-            if (GUILayout.Button("检查当前房间解法")) CheckCurrentRoom();
+            if (GUILayout.Button(Draft.World == null ? "检查当前房间解法" : "检查世界路线")) CheckCurrentRoom();
             if (Draft.SelectedCell.HasValue)
                 for (int i = 0; i < MarkerLabels.Length; i++) if (GUILayout.Button(MarkerLabels[i])) ApplyMarker(i);
             GUILayout.BeginHorizontal(); GUILayout.Label("X",GUILayout.Width(34));fieldX=GUILayout.TextField(fieldX);GUILayout.Label("Y",GUILayout.Width(34));fieldY=GUILayout.TextField(fieldY);GUILayout.EndHorizontal();
