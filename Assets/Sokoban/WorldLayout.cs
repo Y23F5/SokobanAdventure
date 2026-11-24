@@ -73,6 +73,7 @@ namespace Sokoban
                 var error=PlacementIssue(world,rooms,id,RoomFile.Cell(row["origin"]),true);
                 if(error!=null) yield return error;
                 foreach(var issue in RoomFile.StructureIssues((JObject)rooms[id])) yield return issue;
+                foreach(var issue in ObjectBehavior.TargetIssues((JObject)rooms[id],world,rooms)) yield return issue;
             }
             foreach (var issue in ConnectionIssues(world,rooms)) yield return issue;
             var start = world["start"];

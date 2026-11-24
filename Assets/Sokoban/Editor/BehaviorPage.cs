@@ -54,7 +54,19 @@ namespace Sokoban.Editor
                         EditorGUILayout.LabelField("Lua 脚本");
                         node["script"] = EditorGUILayout.TextArea((string)node["script"] ?? "", GUILayout.MinHeight(52));
                         break;
-                    case "setVisible": node["visible"] = EditorGUILayout.Toggle("动作 · 显示对象", (bool?)node["visible"] ?? false); break;
+                    case "setVisible":
+                        node["visible"] = EditorGUILayout.Toggle("动作 · 显示对象", (bool?)node["visible"] ?? false);
+                        bool explicitTarget = EditorGUILayout.Toggle("指定其他对象", node["target"] != null);
+                        if (explicitTarget)
+                        {
+                            if (!(node["target"] is JObject)) node["target"] = new JObject();
+                            var target = (JObject)node["target"];
+                            string level = EditorGUILayout.TextField("房间 ID（留空为本房）", (string)target["levelId"] ?? "");
+                            if (string.IsNullOrWhiteSpace(level)) target.Remove("levelId"); else target["levelId"] = level.Trim();
+                            target["objectId"] = EditorGUILayout.TextField("目标对象 ID", (string)target["objectId"] ?? "").Trim();
+                        }
+                        else ((JObject)node).Remove("target");
+                        break;
                     default: EditorGUILayout.LabelField(kind ?? "未知节点"); break;
                 }
                 foreach (var edge in (graph["edges"] as JArray ?? new JArray()).Where(e => (string)e["from"] == (string)node["id"]).ToList())

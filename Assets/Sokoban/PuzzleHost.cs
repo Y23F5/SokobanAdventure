@@ -211,19 +211,26 @@ namespace Sokoban
             {
                 string owner = (string)graph["ownerId"];
                 if (string.IsNullOrEmpty(owner)) continue;
-                if (!objects.TryGetValue(owner, out var part))
-                {
-                    var tile = Run.Room["terrainObjects"]?.FirstOrDefault(t => (string)t["id"] == owner);
-                    if (tile == null) continue;
-                    var cell = RoomFile.At(tile);
-                    string prefix = RoomFile.Floor(Run.Room, cell) ? "Floor " : "Wall ";
-                    if (!objects.TryGetValue(prefix + cell, out part)) continue;
-                }
                 JToken[] effects;
                 try { effects = ObjectBehavior.Effects(graph).ToArray(); }
                 catch (Exception error) { Debug.LogWarning($"对象 {owner} 行为 {graph["id"]} 执行失败 · {error.Message}"); continue; }
                 foreach (var effect in effects.Where(e => (string)e["kind"] == "setVisible"))
-                    foreach (var mesh in part.GetComponentsInChildren<Renderer>(true)) mesh.enabled = (bool?)effect["visible"] ?? false;
+                {
+                    string level = (string)effect["target"]?["levelId"] ?? Run.ActiveId;
+                    string id = (string)effect["target"]?["objectId"] ?? owner;
+                    if (!groups.TryGetValue(level, out var group)) continue;
+                    var design = (JObject)Run.Rooms[level];
+                    var tile = design["terrainObjects"]?.FirstOrDefault(t => (string)t["id"] == id);
+                    string partName = id;
+                    if (tile != null)
+                    {
+                        var cell = RoomFile.At(tile);
+                        partName = (RoomFile.Floor(design,cell) ? "Floor " : "Wall ") + cell;
+                    }
+                    foreach (Transform part in group)
+                        if (part.name == partName)
+                            foreach (var mesh in part.GetComponentsInChildren<Renderer>(true)) mesh.enabled = (bool?)effect["visible"] ?? false;
+                }
             }
         }
         public void Turn(int direction)

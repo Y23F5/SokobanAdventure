@@ -159,6 +159,7 @@ namespace Sokoban
             catch (Exception error) { if (request == solutionRequest) SolutionText = Status = "检查失败 · " + error.Message; }
         }
         string objectName;
+        bool nameMixed;
         int objectNameRevision = -1;
         public void WorkspaceControls() {
             GUILayout.Label(Draft.World==null?"独立房间":"世界 · "+(string)Draft.World["worldId"]);
@@ -185,8 +186,8 @@ namespace Sokoban
             if(Draft.Selected!=null && GUILayout.Button("将选中对象移至坐标")) Run(()=>{RoomFile.Check(valid,"需要整数坐标");Draft.Move(point-Draft.Origin);},"已修改格子坐标");
             if (Draft.Selection.Count > 0)
             {
-                if (objectNameRevision != Draft.Revision) { objectName = Draft.SelectedName(); objectNameRevision = Draft.Revision; }
-                GUILayout.Label("对象名称（已选 " + Draft.Selection.Count + "）");
+                if (objectNameRevision != Draft.Revision) { nameMixed = !Draft.TryGetSelectedName(out objectName); objectNameRevision = Draft.Revision; }
+                GUILayout.Label("对象名称（已选 " + Draft.Selection.Count + (nameMixed ? "，名称不同）" : "）"));
                 objectName = GUILayout.TextField(objectName);
                 if (GUILayout.Button("应用选中对象名称")) Run(() => Draft.SetSelectedName(objectName), "已修改选中对象名称");
             }

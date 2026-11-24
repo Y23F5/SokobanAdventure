@@ -20,10 +20,11 @@ namespace Sokoban
                 ?? Room["terrainObjects"]?.FirstOrDefault(item => RoomFile.At(item) == cell);
             return (string)entity?["id"];
         }
-        internal string SelectedName()
+        public bool TryGetSelectedName(out string name)
         {
             var names = Selection.Select(point => (string)PropertyObject(Room, point)?["name"] ?? "").Distinct().Take(2).ToArray();
-            return names.Length == 1 ? names[0] : "";
+            name = names.Length == 1 ? names[0] : "";
+            return names.Length == 1;
         }
         static JToken PropertyObject(JObject room, Vector2Int point) => RoomFile.Objects(room).FirstOrDefault(item => RoomFile.At(item) == point)
             ?? room["terrainObjects"]?.FirstOrDefault(item => RoomFile.At(item) == point);
@@ -55,10 +56,18 @@ namespace Sokoban
         {
             var cells = Selection.Contains(cell) ? Selection.ToArray() : new[] { cell };
             var next = (JObject)Room.DeepClone();
+            var original = Room["events"].FirstOrDefault(g => (string)g["id"] == (string)graph["id"]);
             foreach (var target in cells)
             {
                 RoomFile.Check(RoomFile.Terrain(Room, target) != RoomFile.Void, "请选择地形或对象");
-                WriteBehavior(next, target, target == cell ? graph : ObjectBehavior.CopyFor(graph));
+                var value = graph;
+                if (target != cell)
+                {
+                    string owner = OwnerAt(target);
+                    var previous = original == null || owner == null ? null : Room["events"].FirstOrDefault(g => (string)g["ownerId"] == owner);
+                    value = ObjectBehavior.CopyFor(graph, original, previous);
+                }
+                WriteBehavior(next, target, value);
             }
             if (JToken.DeepEquals(next, Room)) return;
             Commit(next, null);
@@ -99,15 +108,20 @@ namespace Sokoban
             return CopyFor(graph);
         }
         static JObject Edge(string from, string port, string to) => new JObject { ["from"]=from, ["out"]=port, ["to"]=to, ["in"]="in" };
-        public static JObject CopyFor(JObject source)
+        public static JObject CopyFor(JObject source, JToken original = null, JToken previous = null)
         {
             var graph = (JObject)source.DeepClone();
-            graph["id"] = Guid.NewGuid().ToString("N");
+            graph["id"] = (string)previous?["id"] ?? Guid.NewGuid().ToString("N");
             graph.Remove("ownerId");
             var ids = new Dictionary<string,string>();
+            var counterparts = new Dictionary<string,string>();
+            if (original?["nodes"] is JArray before && previous?["nodes"] is JArray existing)
+                for (int i = 0; i < Math.Min(before.Count, existing.Count); i++)
+                    if ((string)before[i]["kind"] == (string)existing[i]["kind"])
+                        counterparts[(string)before[i]["id"]] = (string)existing[i]["id"];
             foreach (var node in graph["nodes"])
             {
-                string id = Guid.NewGuid().ToString("N");
+                if (!counterparts.TryGetValue((string)node["id"], out var id)) id = Guid.NewGuid().ToString("N");
                 ids.Add((string)node["id"], id);
                 node["id"] = id;
             }
@@ -118,8 +132,28 @@ namespace Sokoban
             }
             return graph;
         }
+        public static IEnumerable<string> TargetIssues(JObject room, JObject world = null, JObject catalog = null)
+        {
+            string here = (string)room["levelId"];
+            foreach (var graph in room["events"])
+                foreach (var node in graph["nodes"] as JArray ?? new JArray())
+                {
+                    if (node["target"] == null) continue;
+                    var target = node["target"] as JObject;
+                    string id = (string)target?["objectId"], level = (string)target?["levelId"] ?? here;
+                    string location = $"{here}/{graph["ownerId"]}/{graph["id"]}/{node["id"]}";
+                    if ((string)node["kind"] != "setVisible" || string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(level))
+                    { yield return location + " 的显式目标无效"; continue; }
+                    if (level != here && world == null) continue;
+                    var targetRoom = level == here ? room : catalog?[level] as JObject;
+                    if (targetRoom == null || level != here && !world["rooms"].Any(r => (string)r["levelId"] == level) ||
+                        !RoomFile.Objects(targetRoom).Concat(targetRoom["terrainObjects"] as JArray ?? new JArray()).Any(o => (string)o["id"] == id))
+                        yield return $"{location} 找不到目标 {level}/{id}";
+                }
+        }
         public static IEnumerable<string> Issues(JObject room)
         {
+            foreach (var issue in TargetIssues(room)) yield return issue;
             var owners = new HashSet<string>(RoomFile.Objects(room).Select(item => (string)item["id"]));
             var occupied = new HashSet<Vector2Int>();
             foreach (var tile in room["terrainObjects"] as JArray ?? new JArray())
