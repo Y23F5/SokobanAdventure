@@ -136,7 +136,13 @@ namespace Sokoban
             UpdateCamera();
         }
 
-        float ViewSize(Vector2Int span) => Mathf.Max(span.y*.63f, span.x*.6f/Mathf.Max(.1f,lens.aspect*.74f));
+        float ViewSize(Vector2Int span)
+        {
+            float diagonal = span.magnitude;
+            float halfWidth = diagonal * .5f + 1.3f;
+            float halfHeight = diagonal * .5f * Mathf.Sin(pitch * Mathf.Deg2Rad) + 1.1f;
+            return Mathf.Max(halfHeight, halfWidth / Mathf.Max(.1f, lens.aspect * .74f));
+        }
 
         bool OverUI(Vector3 position)
         {
