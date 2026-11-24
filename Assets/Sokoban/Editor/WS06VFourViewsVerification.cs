@@ -66,6 +66,20 @@ namespace Sokoban.Editor
                 else if(Vector3.Distance(reference.size,world.size)>.001f || Vector3.Distance(reference.center,world.center)>.001f) mismatches++;
                 Debug.Log($"VIEWSQA MODEL {stage}/{i} {partName} center={world.center:F3} size={world.size:F3} active={part.gameObject.activeInHierarchy}");
             }
+            if(stage=="edit")
+            {
+                var walls=room.Cast<Transform>().Where(p=>p.name.StartsWith("Wall ")).ToArray();
+                var floor=room.Cast<Transform>().Where(p=>p.name.StartsWith("Floor ")).ToArray();
+                void Frame(string label,Transform[] parts)
+                {
+                    var vertices=parts.SelectMany(p=>p.GetComponentsInChildren<MeshFilter>()).SelectMany(m=>m.sharedMesh.vertices.Select(v=>Pixel(m.transform.TransformPoint(v)))).ToArray();
+                    float left=vertices.Min(v=>v.x), right=960-vertices.Max(v=>v.x), bottom=vertices.Min(v=>v.y), top=720-vertices.Max(v=>v.y);
+                    Debug.Log($"VIEWSQA FRAME yaw={yaw:F0} {label} count={parts.Length} left={left:F2} right={right:F2} top={top:F2} bottom={bottom:F2}");
+                    if(Mathf.Min(left,right,top,bottom)<0) mismatches++;
+                }
+                Frame("walls",walls); Frame("floor",floor);
+                foreach(var id in new[]{"spawn","box-1","target-1","entry","exit","主题模型"}) Frame(id,new[]{room.Find(id)});
+            }
             Shot(folder,stage+"-"+i);
         }
         static IEnumerator Observe(string path)
@@ -92,3 +106,4 @@ namespace Sokoban.Editor
         }
     }
 }
+
