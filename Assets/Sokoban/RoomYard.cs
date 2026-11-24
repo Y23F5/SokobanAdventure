@@ -1,6 +1,6 @@
 /**
  * @file RoomYard.cs
- * @brief Build 按原型尺寸在房间地基下铺设主题地绘，并在仓库外沿放置标牌。Clip 对相邻房间在间隙中点裁切；Surface 建立无碰撞的贴图平面。
+ * @brief Build 按原型尺寸在房间地基下铺设主题地绘，并在仓库外沿放置标牌。Clip 对相邻房间在间隙中点裁切；PlaceScenery 在地绘边界内按原比例摆放外围模型；Surface 建立无碰撞的贴图平面。
  */
 using Newtonsoft.Json.Linq;
 using UnityEngine;
@@ -45,6 +45,34 @@ namespace Sokoban
                     props.hideFlags = HideFlags.DontSave;
                 }
             }
+            if (texture == "depot" && size == new Vector2Int(9, 7))
+                PlaceScenery(group, "RackRow", low, high);
+            if (texture == "foundry" && size == new Vector2Int(11, 7))
+            {
+                PlaceScenery(group, "TankRow", low, high);
+                PlaceScenery(group, "SidePipes", low, high, new Vector3(center.x - center.y, 0, -4.6f), 90);
+            }
+            if (texture == "lagoon" && size == new Vector2Int(11, 9))
+            {
+                PlaceScenery(group, "PineBank", low, high);
+                PlaceScenery(group, "StoneBank", low, high);
+            }
+        }
+
+        static void PlaceScenery(Transform parent, string asset, Vector2 low, Vector2 high,
+            Vector3 offset = default, float yaw = 0)
+        {
+            var prefab = Resources.Load<GameObject>("Diorama/" + asset);
+            var bounds = prefab.GetComponent<MeshFilter>().sharedMesh.bounds;
+            var rotation = Quaternion.Euler(0, yaw, 0);
+            var center = rotation * bounds.center + offset;
+            var extent = rotation * bounds.extents;
+            if (center.x - Mathf.Abs(extent.x) < low.x || center.x + Mathf.Abs(extent.x) > high.x ||
+                center.z - Mathf.Abs(extent.z) < low.y || center.z + Mathf.Abs(extent.z) > high.y) return;
+            var model = Object.Instantiate(prefab, parent, false);
+            model.name = asset;
+            model.hideFlags = HideFlags.DontSave;
+            model.transform.SetLocalPositionAndRotation(offset, rotation);
         }
 
         static void Clip(ref float low, ref float high, int size, int other, int otherSize)

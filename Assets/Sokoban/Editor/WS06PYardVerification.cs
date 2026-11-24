@@ -29,6 +29,18 @@ namespace Sokoban.Editor
                     var texture = yard.GetComponent<Renderer>().sharedMaterial.GetTexture("_BaseMap");
                     RoomFile.Check(yard.GetComponent<MeshFilter>().sharedMesh && texture && bounds.size.x > 1 && bounds.min.x >= previousEdge-.001f,"地绘缺失或交叠 " + id);
                     previousEdge = bounds.max.x;
+                    var scenery = id == "warehouse" ? new[] { "RackRow" } : id == "factory"
+                        ? new[] { "TankRow", "SidePipes" } : new[] { "PineBank", "StoneBank" };
+                    foreach (var name in scenery)
+                    {
+                        var model = group.Find(name);
+                        RoomFile.Check(model && model.localScale == Vector3.one, "外围模型缺失或比例改变 " + name);
+                        var box = model.GetComponent<Renderer>().bounds;
+                        var size = RoomFile.Size((JObject)catalog[id]);
+                        RoomFile.Check(box.max.z < group.position.z - .5f || box.min.z > group.position.z + size.y - .5f,
+                            "外围模型侵入房间 " + name);
+                        Debug.Log("SCENERY PASS " + name + " bounds=" + box);
+                    }
                     if (id == "warehouse")
                     {
                         var props = group.Find("调度岗亭与装卸区");
