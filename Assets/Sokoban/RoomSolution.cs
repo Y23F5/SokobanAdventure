@@ -31,7 +31,7 @@ namespace Sokoban
         }
         static readonly Vector2Int[] Steps = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
         const string Directions = "NESW";
-        public static Result Check(JObject room, Vector2Int start, int budget = 100000)
+        public static Result Check(JObject room, Vector2Int start, int budget = 100000, JObject world = null)
         {
             string issue = RoomFile.StructureIssues(room).FirstOrDefault();
             if (issue != null) return new Result(Outcome.Invalid, issue);
@@ -41,7 +41,12 @@ namespace Sokoban
             if (graph != null) return new Result(Outcome.Unsupported, $"待模拟对象 {graph["ownerId"]} 的行为图 {graph["id"]}");
             var targets = new HashSet<Vector2Int>(room["targets"].Select(RoomFile.At));
             if (targets.Count == 0 || boxes.Length < targets.Count) return new Result(Outcome.Unsolvable, "可占据的目标数量不足");
-            var exits = new HashSet<Vector2Int>(room["doors"].Where(d => (string)d["role"] == "exit").Select(RoomFile.At));
+            var exits = new HashSet<Vector2Int>(room["doors"].Where(d =>
+            {
+                if ((string)d["role"] != "exit") return false;
+                return world == null || !world["connections"].Any(link => (bool?)link["allowReturn"] == true &&
+                    (string)link["forwardTo"]?["levelId"] == (string)room["levelId"] && (string)link["forwardTo"]?["doorId"] == (string)d["id"]);
+            }).Select(RoomFile.At));
             if (targets.Any(goal => UnreachableTarget(room, boxes, goal))) return new Result(Outcome.Unsolvable, "存在箱子无法抵达的目标格");
             return Search(room, start, boxes, targets, exits, budget);
         }
@@ -62,6 +67,28 @@ namespace Sokoban
                 }
             }
             return true;
+        }
+        public static string CheckEntries(JObject room, JObject world, int budget = 100000)
+        {
+            string roomId = (string)room["levelId"];
+            var entries = new Dictionary<string,Vector2Int> { ["出生点"] = RoomFile.At(room["spawn"]) };
+            foreach (var door in room["doors"])
+            {
+                string id = (string)door["id"];
+                bool Matches(JToken end) => (string)end?["levelId"] == roomId && (string)end?["doorId"] == id;
+                bool accessible = world == null ? (string)door["role"] == "entry" : world["connections"].Any(link =>
+                    Matches(link["forwardTo"]) || (bool?)link["allowReturn"] == true && Matches(link["forwardFrom"]));
+                if (accessible) entries["门 " + id] = RoomFile.At(door);
+            }
+            var reports = new List<string>();
+            foreach (var entry in entries)
+            {
+                var result = Check(room, entry.Value, budget, world);
+                string status = result.Status == Outcome.Solved ? "有解" : result.Status == Outcome.Unsolvable ? "确认无解" :
+                    result.Status == Outcome.BudgetReached ? "搜索未完成" : "无法验证";
+                reports.Add(entry.Key + " · " + status + " " + result.Detail);
+            }
+            return string.Join("\n", reports);
         }
         static Result Search(JObject room, Vector2Int start, Vector2Int[] boxes, HashSet<Vector2Int> targets, HashSet<Vector2Int> exits, int budget)
         {

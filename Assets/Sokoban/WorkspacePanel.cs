@@ -143,19 +143,13 @@ namespace Sokoban
             int revision = Draft.Revision;
             if (StructuralIssue != null) { Status = StructuralIssue; return; }
             var room = (JObject)Draft.Room.DeepClone();
+            var world = (JObject)Draft.World?.DeepClone();
             Status = "正在检查房间解法";
             try
             {
-                var result = await System.Threading.Tasks.Task.Run(() => RoomSolution.Check(room, RoomFile.At(room["spawn"])));
+                var result = await System.Threading.Tasks.Task.Run(() => RoomSolution.CheckEntries(room, world));
                 if (request != solutionRequest) return;
-                if (revision != Draft.Revision) { Status = "布局已变更，请重新检查"; return; }
-                switch (result.Status)
-                {
-                    case RoomSolution.Outcome.Solved: Status = "出生点有解（北东南西 NESW） " + result.Detail; break;
-                    case RoomSolution.Outcome.Unsolvable: Status = "出生点确认无解 · " + result.Detail; break;
-                    case RoomSolution.Outcome.BudgetReached: Status = "搜索未完成 · " + result.Detail; break;
-                    default: Status = "无法验证 · " + result.Detail; break;
-                }
+                Status = revision == Draft.Revision ? result : "布局已变更，请重新检查";
             }
             catch (Exception error) { if (request == solutionRequest) Status = "检查失败 · " + error.Message; }
         }
