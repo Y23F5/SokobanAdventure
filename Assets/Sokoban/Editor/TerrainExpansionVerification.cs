@@ -5,6 +5,8 @@
  * Blank 从已有世界新建空房；BlankState 和 BlankRoundTrip 核对空白状态与草稿往返；BlankSave 验证正式保存拒绝。
  * Repave 擦除再铺墙并撤销重做；OldRoom 从磁盘重开旧房逐字段核对。
  * BuildAndReopen 从空房铺设走廊与门、保存并逐笔核对历史；ProtectedPreview 和 Conflict 分别检查保护格与世界预检。
+ * ExpandSolo 向西南扩一格；CheckSoloModels/SoloModels 核对模型世界坐标及历史；SoloAutoRecovery 通过 Tick 自动写槽后重开。
+ * SoloExport 导出并检查临时原点；SoloTrial 验证单房试玩前的结构拒绝及修复。
  * Erase 检查对象、地形及受保护格。Require 报告断言，Paint 调用共享笔刷并检查返回值。
  */
 using System;
@@ -271,6 +273,109 @@ namespace Sokoban.Editor
             Debug.Log("WS05A ROOM " + path);
         }
 
+        static void ExpandSolo(RoomDraft draft)
+        {
+            Require(draft.World == null && draft.Origin == Vector2Int.zero, "独立房间初始条件错误");
+            Paint(draft, new Vector2Int(-1,-1), RoomTool.Wall);
+            Require(draft.Origin == new Vector2Int(-1,-1), "西南扩建未移动临时原点");
+        }
+
+        static void CheckSoloModels(RoomPreview preview, RoomDraft draft, JObject original)
+        {
+            preview.Sync(draft);
+            var group = GameObject.Find("Room • " + draft.ActiveId).transform.Find(draft.ActiveId);
+            void At(string name, Vector2Int world)
+            {
+                var model = group.Find(name);
+                Require(model && model.GetComponentInChildren<Renderer>() && model.position == new Vector3(world.x, 0, world.y), "模型世界位置错误 " + name);
+            }
+            foreach (var item in RoomFile.Objects(original)) At((string)item["id"], RoomFile.At(item));
+            var size = RoomFile.Size(original);
+            for (int y = 0; y < size.y; y++)
+            for (int x = 0; x < size.x; x++)
+            {
+                var world = new Vector2Int(x, y);
+                string kind = RoomFile.Floor(original, world) ? "Floor " : "Wall ";
+                At(kind + (world - draft.Origin), world);
+            }
+        }
+
+        static void SoloModels()
+        {
+            var draft = new LayoutPanel().Draft;
+            var original = (JObject)draft.Room.DeepClone();
+            var preview = new RoomPreview();
+            try
+            {
+                CheckSoloModels(preview, draft, original);
+                ExpandSolo(draft);
+                var expanded = draft.Room.DeepClone();
+                CheckSoloModels(preview, draft, original);
+                draft.Undo();
+                Require(draft.Origin == Vector2Int.zero && JToken.DeepEquals(original,draft.Room), "撤销未恢复原点或布局");
+                CheckSoloModels(preview, draft, original);
+                draft.Redo();
+                Require(draft.Origin == -Vector2Int.one && JToken.DeepEquals(expanded,draft.Room), "重做未恢复扩建");
+                CheckSoloModels(preview, draft, original);
+            }
+            finally { preview.Clear(); }
+        }
+
+        static void SoloAutoRecovery()
+        {
+            string folder = Path.Combine(Application.dataPath,"../Logs/solo-" + Guid.NewGuid().ToString("N"));
+            var panel = new LayoutPanel("terrain",folder);
+            ExpandSolo(panel.Draft);
+            string path = Path.Combine(folder,"terrain-ws02.json");
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            while (!File.Exists(path) && timer.ElapsedMilliseconds < 5000)
+            {
+                panel.Tick();
+                System.Threading.Thread.Sleep(25);
+            }
+            Require(File.Exists(path), "自动草稿未落盘");
+            var restored = new LayoutPanel("terrain",folder).Draft;
+            Require(restored.Origin == -Vector2Int.one && JToken.DeepEquals(restored.Room,panel.Draft.Room), "跨会话草稿未恢复原点或布局");
+            restored.Undo(); Require(restored.Origin == Vector2Int.zero, "恢复后撤销原点错误");
+            restored.Redo(); Require(restored.Origin == -Vector2Int.one, "恢复后重做原点错误");
+            Debug.Log("WS05A SLOT " + Path.GetFullPath(path));
+        }
+
+        static void SoloExport()
+        {
+            var draft = new LayoutPanel().Draft;
+            ExpandSolo(draft);
+            var expected = draft.Room.DeepClone();
+            string path = Path.GetFullPath(Path.Combine(Application.dataPath,"../Logs/solo-" + Guid.NewGuid().ToString("N") + ".room.json"));
+            draft.Save(path,true);
+            var file = JObject.Parse(File.ReadAllText(path));
+            Require(file["editorOrigin"] == null && JToken.DeepEquals(expected,file) && draft.Origin == -Vector2Int.one, "导出泄漏临时原点或改变布局");
+            draft.Open(path,false);
+            Require(draft.Origin == Vector2Int.zero && JToken.DeepEquals(expected,draft.Room), "独立正式房间重开后原点或局部布局错误");
+            Debug.Log("WS05A EXPORT " + path);
+        }
+
+        static void SoloTrial()
+        {
+            var draft = new LayoutPanel().Draft;
+            ExpandSolo(draft);
+            var run = PuzzleRun.FromDraft(draft);
+            Require(run.Origin == Vector2Int.zero && run.Player == RoomFile.At(draft.Room["spawn"]), "合法单房试玩坐标错误");
+            var wall = new Vector2Int(3,0) - draft.Origin;
+            Require(RoomFile.Terrain(draft.Room, wall) == '#', "样例南墙缺失");
+            Paint(draft, wall, RoomTool.Erase);
+            Require(RoomFile.BoundaryGaps(draft.Room).Contains(wall + Vector2Int.up), "测试未形成地板开口");
+            var before = draft.Snapshot();
+            try { PuzzleRun.FromDraft(draft); throw new InvalidOperationException("试玩接受了缺墙房间"); }
+            catch (InvalidDataException ex) when (ex.Message.Contains("边界缺墙")) { }
+            Require(JToken.DeepEquals(before,draft.Snapshot()), "拒绝试玩改变了草稿");
+            draft.Undo();
+            Require(PuzzleRun.FromDraft(draft).Player == run.Player, "修复后试玩出生位置错误");
+            draft.NewBlankRoom();
+            try { PuzzleRun.FromDraft(draft); throw new InvalidOperationException("试玩接受了无出生点空房"); }
+            catch (InvalidDataException ex) when (ex.Message.Contains("出生点")) { }
+        }
+
         [MenuItem("Sokoban/验证/WS-05A 共享地形与扩建")]
         public static void Run()
         {
@@ -300,6 +405,10 @@ namespace Sokoban.Editor
             Test("preview-world-boundary", () => Conflict(false, true));
             Test("preview-world-overlap", () => Conflict(true, true));
             Test("preview-protected-cells", ProtectedPreview);
+            Test("solo-preview-origin-history", SoloModels);
+            Test("solo-auto-slot-origin-history", SoloAutoRecovery);
+            Test("solo-export-reopen-origin", SoloExport);
+            Test("solo-trial-structure", SoloTrial);
             Debug.Log($"WS05A RESULT {total - failed}/{total}");
             Require(failed == 0, $"WS05A {failed} failed");
         }

@@ -15,15 +15,16 @@ namespace Sokoban
 {
     public sealed partial class RoomDraft
     {
+        Vector2Int editorOrigin;
         JObject removedPlacements=new JObject();
         public JObject World {get;private set;}
         public JObject Catalog {get;private set;}
         public string ActiveId => (string)Room["levelId"];
         public JToken Placement => World?["rooms"].FirstOrDefault(r=>(string)r["levelId"]==ActiveId);
-        public Vector2Int Origin => Placement==null?Vector2Int.zero:RoomFile.Cell(Placement["origin"]);
+        public Vector2Int Origin => World == null ? editorOrigin : Placement == null ? Vector2Int.zero : RoomFile.Cell(Placement["origin"]);
         void Reset(JObject room,JObject world,JObject catalog,string path)
         {
-            removedPlacements=new JObject(); Room=room; World=world; Catalog=catalog??new JObject(); Catalog[ActiveId]=room;
+            editorOrigin=Vector2Int.zero; removedPlacements=new JObject(); Room=room; World=world; Catalog=catalog??new JObject(); Catalog[ActiveId]=room;
             Selected=null; SelectedCell=null; Tool=RoomTool.Select; BrushAsset=null; WorkPath=path; undo.Clear(); redo.Clear(); saved=Design(); Revision++;
         }
         public void NewRoom(string name="新房间") {
@@ -52,9 +53,15 @@ namespace Sokoban
             saved = null;
         }
         JObject Design() => new JObject { ["world"]=World?.DeepClone(),["rooms"]=Catalog.DeepClone() };
-        JObject State() => new JObject { ["data"]=Design(),["removed"]=removedPlacements.DeepClone(),["active"]=ActiveId,["selected"]=Selected,["cell"]=SelectedCell.HasValue?RoomFile.Point(SelectedCell.Value):null };
+        JObject State()
+        {
+            var state = new JObject { ["data"]=Design(),["removed"]=removedPlacements.DeepClone(),["active"]=ActiveId,["selected"]=Selected,["cell"]=SelectedCell.HasValue?RoomFile.Point(SelectedCell.Value):null };
+            if (World == null && editorOrigin != Vector2Int.zero) state["editorOrigin"] = RoomFile.Point(editorOrigin);
+            return state;
+        }
         void Remember() { undo.Push(State()); redo.Clear(); }
         void Apply(JObject state) {
+            editorOrigin = state["editorOrigin"] is JArray point ? RoomFile.Cell(point) : Vector2Int.zero;
             removedPlacements=state["removed"] is JObject removed?(JObject)removed.DeepClone():new JObject();var data=state["data"]; Catalog=(JObject)data["rooms"].DeepClone(); World=data["world"] as JObject;
             Room=(JObject)Catalog[(string)state["active"]]; RoomFile.Check(Room!=null,"草稿缺少选中房间");
             if (BrushAsset!=null && Room["assets"]?[BrushAsset]==null) { BrushAsset=null; if(Tool==RoomTool.Decoration) Tool=RoomTool.Select; }
@@ -70,9 +77,18 @@ namespace Sokoban
             Apply((JObject)snapshot["current"]); saved=snapshot["saved"] as JObject; WorkPath=(string)snapshot["path"];BrushAsset=(string)snapshot["brushAsset"];Tool=(RoomTool)(int)snapshot["tool"];
             undo.Clear(); redo.Clear();foreach(JObject value in snapshot["undo"]) undo.Push(value);foreach(JObject value in snapshot["redo"]) redo.Push(value);Revision++;
         }
-        public void BeginWorld() {
-            RoomFile.Check(World==null,"已在世界工作区"); RoomFile.RequireStructure(Room); World=WorldLayout.Empty(ActiveId); World["start"]["spawnId"]=Room["spawn"]["id"];
-            World["finish"]["endpoint"]["doorId"]=(Room["doors"].LastOrDefault(d => (string)d["role"] == "exit") ?? Room["doors"].Last())["id"];WorkPath=null;saved=null;undo.Clear();redo.Clear();Revision++;
+        public void BeginWorld()
+        {
+            RoomFile.Check(World == null, "已在世界工作区");
+            World = WorldLayout.Empty(ActiveId);
+            World["start"]["spawnId"] = (string)Room["spawn"]?["id"] ?? "spawn";
+            var exit = Room["doors"].LastOrDefault(door => (string)door["role"] == "exit") ?? Room["doors"].LastOrDefault();
+            World["finish"]["endpoint"]["doorId"] = (string)exit?["id"] ?? "exit";
+            WorkPath = null;
+            saved = null;
+            undo.Clear();
+            redo.Clear();
+            Revision++;
         }
         public void Attach(string path) {
             var candidate=RoomAssets.ReadRoom(path);string id=(string)candidate["levelId"];
@@ -179,6 +195,7 @@ namespace Sokoban
             {
                 Commit(next, null);
                 if (placement != null) placement["origin"] = RoomFile.Point(origin);
+                else if (World == null) editorOrigin = origin;
             }
             return issue;
         }

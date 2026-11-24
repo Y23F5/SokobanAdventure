@@ -39,7 +39,7 @@ namespace Sokoban
                 DestroyTemporary(root);
                 poses.Clear();
                 root = CreateRoot("Room • " + (draft.World == null ? draft.ActiveId : (string)draft.World["worldId"]), null, Vector3.zero);
-                if (draft.World == null) BuildRoom(draft.Room, Vector2Int.zero, draft.Selected, root.transform);
+                if (draft.World == null) BuildRoom(draft.Room, draft.Origin, draft.Selected, root.transform);
                 else foreach (var entry in draft.World["rooms"])
                 {
                     string id = (string)entry["levelId"];
