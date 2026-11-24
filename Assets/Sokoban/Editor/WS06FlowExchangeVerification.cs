@@ -32,7 +32,7 @@ namespace Sokoban.Editor
         }
         static IEnumerator Report(LayoutHost editor,string label,string expected)
         {
-            editor.Interface.Act("检查");double deadline=EditorApplication.timeSinceStartup+20;
+            editor.Interface.Act("检查");double deadline=EditorApplication.timeSinceStartup+120;
             while(editor.Panel.SolutionText.StartsWith("正在") && EditorApplication.timeSinceStartup<deadline)yield return null;
             yield return null;yield return null;
             text=editor.Interface.solutionText.text;File.WriteAllText(Path.Combine(Folder,label+"-report.txt"),text);
@@ -78,6 +78,25 @@ namespace Sokoban.Editor
             var replayExit=Replay(game,route);while(replayExit.MoveNext())yield return null;
             Check(game.Run.Solved && game.Run.Player==game.Run.Origin+RoomFile.At(game.Run.Room["doors"].Single(d=>(string)d["id"]=="exit")),"displayed route "+route+" solves and reaches exit");game.Leave();yield return null;yield return null;
             draft.Select(RoomFile.At(draft.Find("box-1")));draft.Move(new Vector2Int(1,1));var dead=Report(editor,"deadlock","确认无解");while(dead.MoveNext())yield return null;
+            var large = new RoomDraft(Resources.Load<TextAsset>("DefaultRoom").text);
+            large.NewBlankRoom("budget-room","预算检查","warehouse",new Vector2Int(14,10));
+            var all = Enumerable.Range(0,14).SelectMany(x => Enumerable.Range(0,10).Select(y => new Vector2Int(x,y))).ToArray();
+            large.Brush(all,RoomTool.Floor);
+            large.Brush(all.Where(p => (p.x==0 || p.x==13 || p.y==0 || p.y==9) && !(p.y==4 && (p.x==0 || p.x==13))),RoomTool.Wall);
+            large.SetRoomMarker(new Vector2Int(0,4),"entry");
+            large.SetRoomMarker(new Vector2Int(13,4),"exit");
+            large.SetRoomMarker(new Vector2Int(2,2),"spawn");
+            for(int i=0;i<4;i++)
+            {
+                large.Place(true,new Vector2Int(3+i*2,4));
+                large.Place(false,new Vector2Int(4+i*2,7));
+            }
+            string budgetPath=Path.Combine(Folder,"budget.room.json");
+            large.Save(budgetPath,false);
+            draft.Open(budgetPath,true);
+            var budgetReport=Report(editor,"budget","搜索未完成");
+            while(budgetReport.MoveNext()) yield return null;
+            Check(text.Contains("搜索预算已用尽"),"actual page identifies exhausted default budget");
             WS06RoomSolutionVerification.Run();Debug.Log("FLOWQA COMPLETE");
         }
     }
