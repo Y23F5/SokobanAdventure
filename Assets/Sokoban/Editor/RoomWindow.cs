@@ -107,6 +107,7 @@ namespace Sokoban.Editor
             else
             {
                 Panel.Files();
+                if (GUILayout.Button("从格子图纸新建房间")) RoomBlueprint.Import(Panel);
                 if(Panel.Draft.World!=null && GUILayout.Button("导出当前房间及素材")) Panel.ChooseFile("导出单房");
                 if (GUILayout.Button("试玩当前房间")) EditorApplication.isPlaying = true;
                 EditorGUILayout.Space();

@@ -141,10 +141,11 @@ namespace Sokoban
             Commit(next, (string)marker["id"]);
         }
         string FreshMarkerId(string role) => Find(role) == null ? role : role + "-" + Guid.NewGuid().ToString("N");
-        public void Place(bool box, Vector2Int cell)
+        public void Place(bool box, Vector2Int cell) => Place(box, cell, (box ? "box-" : "target-") + Guid.NewGuid().ToString("N"));
+        public void Place(bool box, Vector2Int cell, string id)
         {
             var error = PlacementError(box, cell); RoomFile.Check(error == null, error);
-            string id = (box ? "box-" : "target-") + Guid.NewGuid().ToString("N");
+            RoomFile.Check(!string.IsNullOrWhiteSpace(id) && Find(id) == null, "对象 ID 为空或已占用");
             var next = (JObject)Room.DeepClone();
             var obj = new JObject { ["id"] = id, ["cell"] = RoomFile.Point(cell) };
             if (box) obj["recoveryCell"] = RoomFile.Point(cell);

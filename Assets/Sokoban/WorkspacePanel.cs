@@ -99,6 +99,11 @@ namespace Sokoban
         public void TrackView(UnityEditor.SceneView view) => SetView(view.pivot,view.rotation,view.size,view.orthographic);
         public void DrawStroke() {foreach(var cell in stroke) UnityEditor.Handles.DrawWireCube(new Vector3(cell.x,.05f,cell.y),new Vector3(1,.03f,1));}
 #endif
+        public void OpenBlueprint(RoomDraft prepared) => Guard(() => {
+            Draft.Recover(prepared.Snapshot());
+            DocumentOpened?.Invoke();
+            Flush();
+        });
         public void NewRoom(bool blank = false) => Guard(()=>{if (blank) Draft.NewBlankRoom(); else Draft.NewRoom();DocumentOpened?.Invoke();Flush();Status="已创建独立房间";});
         public void NewDefaultRoom() => Guard(()=>{Draft.NewDefaultRoom();DocumentOpened?.Invoke();Flush();Status="已从默认布局新建";});
         public void RequestExit(Action exit)

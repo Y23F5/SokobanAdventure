@@ -39,13 +39,18 @@ namespace Sokoban
             Reset(room, null, null, null);
             saved = null;
         }
-        public void NewBlankRoom()
+        public void NewBlankRoom() => NewBlankRoom("room-" + Guid.NewGuid().ToString("N"), "空白房间",
+            (string)RoomFile.Parse(Resources.Load<TextAsset>("DefaultRoom").text)["themeId"], new Vector2Int(15,15));
+
+        public void NewBlankRoom(string id, string name, string theme, Vector2Int size)
         {
             var room = RoomFile.Parse(Resources.Load<TextAsset>("DefaultRoom").text);
-            room["levelId"] = "room-" + Guid.NewGuid().ToString("N");
-            room["name"] = "空白房间";
-            room["size"] = new JArray(15, 15);
-            room["terrainRowsNorthToSouth"] = new JArray(Enumerable.Repeat(new string(RoomFile.Void, 15), 15));
+            RoomFile.Check(size.x > 0 && size.y > 0, "房间尺寸必须为正");
+            room["levelId"] = id;
+            room["name"] = name;
+            room["themeId"] = theme;
+            room["size"] = RoomFile.Point(size);
+            room["terrainRowsNorthToSouth"] = new JArray(Enumerable.Repeat(new string(RoomFile.Void, size.x), size.y));
             foreach (string key in new[] { "doors", "boxes", "targets", "events" }) room[key] = new JArray();
             room.Remove("spawn");
             room.Remove("primaryEntranceId");
