@@ -31,7 +31,7 @@ namespace Sokoban
         }
         static readonly Vector2Int[] Steps = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
         const string Directions = "NESW";
-        public static Result Check(JObject room, Vector2Int start, int budget = 100000, JObject world = null)
+        public static Result Check(JObject room, Vector2Int start, int budget = 100000, JObject world = null, Vector2Int? destination = null)
         {
             string issue = RoomFile.StructureIssues(room).FirstOrDefault();
             if (issue != null) return new Result(Outcome.Invalid, issue);
@@ -52,7 +52,7 @@ namespace Sokoban
                     (string)link["forwardTo"]?["levelId"] == (string)room["levelId"] && (string)link["forwardTo"]?["doorId"] == (string)d["id"]);
             }).Select(RoomFile.At));
             if (targets.Any(goal => UnreachableTarget(room, boxes, goal))) return new Result(Outcome.Unsolvable, "存在箱子无法抵达的目标格");
-            return Search(room, start, boxes, targets, exits, budget);
+            return Search(room, start, boxes, targets, exits, budget, destination);
         }
         /** @brief 从目标反向枚举推箱前的箱格和玩家站位，忽略其他箱子。无箱子能抵达某个目标时可证明静态死锁。 */
         static bool UnreachableTarget(JObject room, Vector2Int[] boxes, Vector2Int target)
@@ -92,9 +92,16 @@ namespace Sokoban
                     result.Status == Outcome.BudgetReached ? "搜索未完成" : "无法验证";
                 reports.Add(entry.Key + " · " + status + " " + result.Detail);
             }
+            foreach (var exit in room["doors"].Where(d => (string)d["role"] == "exit"))
+                foreach (var entry in entries)
+                {
+                    var route = Check(room, entry.Value, budget, world, RoomFile.At(exit));
+                    string label = route.Status == Outcome.Solved ? "有解" : route.Status == Outcome.Unsolvable ? "确认无解" : route.Status == Outcome.BudgetReached ? "搜索未完成" : "无法验证";
+                    reports.Add($"{entry.Key} → {exit["id"]} · {label} {route.Detail}");
+                }
             return string.Join("\n", reports);
         }
-        static Result Search(JObject room, Vector2Int start, Vector2Int[] boxes, HashSet<Vector2Int> targets, HashSet<Vector2Int> exits, int budget)
+        static Result Search(JObject room, Vector2Int start, Vector2Int[] boxes, HashSet<Vector2Int> targets, HashSet<Vector2Int> exits, int budget, Vector2Int? destination)
         {
             var root = new Node { Player = start, Boxes = boxes };
             var queue = new Queue<Node>();
@@ -104,13 +111,14 @@ namespace Sokoban
             while (queue.Count > 0)
             {
                 var node = queue.Dequeue();
-                if (targets.All(target => Array.IndexOf(node.Boxes, target) >= 0)) return new Result(Outcome.Solved, Trace(node), expanded);
+                bool solved = targets.All(target => Array.IndexOf(node.Boxes, target) >= 0);
+                if (solved && (!destination.HasValue || destination.Value == node.Player)) return new Result(Outcome.Solved, Trace(node), expanded);
                 if (expanded >= budget) return new Result(Outcome.BudgetReached, "搜索预算已用尽", expanded);
                 expanded++;
                 for (int i = 0; i < Steps.Length; i++)
                 {
                     var next = node.Player + Steps[i];
-                    if (!RoomFile.Floor(room, next) || exits.Contains(next)) continue;
+                    if (!RoomFile.Floor(room, next) || !solved && exits.Contains(next)) continue;
                     var nextBoxes = node.Boxes;
                     int pushed = Array.IndexOf(nextBoxes, next);
                     if (pushed >= 0)
