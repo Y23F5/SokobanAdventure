@@ -55,6 +55,18 @@ namespace Sokoban.Editor
             Check(JToken.DeepEquals(before["current"], draft.Snapshot()["current"]), "one undo restores both original graphs and selection");
             draft.Redo();
             Check(JToken.DeepEquals(after["current"], draft.Snapshot()["current"]), "one redo restores both modified graphs and selection");
+            var secondary = (JObject)draft.Room["events"].Single(g => (string)g["ownerId"] == draft.OwnerAt(a)).DeepClone();
+            var nodes = (JArray)secondary["nodes"];
+            var first = nodes.First;
+            first.Remove();
+            nodes.Add(first);
+            draft.Select(a);
+            draft.SetBehavior(a,secondary);
+            draft.Select(b,true);
+            primary["nodes"].Single(n => (string)n["kind"] == "condition")["enabled"] = true;
+            draft.SetBehavior(b,primary);
+            var updated = draft.Room["events"].Single(g => (string)g["ownerId"] == draft.OwnerAt(a));
+            Check(nodes.All(n => updated["nodes"].Any(other => (string)other["kind"] == (string)n["kind"] && (string)other["id"] == (string)n["id"])), "independently reordered nodes keep their IDs after batch update");
         }
     }
 }

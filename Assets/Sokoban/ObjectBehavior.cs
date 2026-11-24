@@ -64,8 +64,15 @@ namespace Sokoban
                 if (target != cell)
                 {
                     string owner = OwnerAt(target);
-                    var previous = original == null || owner == null ? null : Room["events"].FirstOrDefault(g => (string)g["ownerId"] == owner);
-                    value = ObjectBehavior.CopyFor(graph, original, previous);
+                    string family = (string)graph["copySource"] ?? (string)graph["id"];
+                    var siblings = Room["events"].Where(g => (string)g["ownerId"] == owner).ToList();
+                    var previous = original == null ? null : siblings.FirstOrDefault(g => ((string)g["copySource"] ?? (string)g["id"]) == family);
+                    if (previous == null && original != null && siblings.Count == 1 && siblings[0]["copySource"] == null && graph["copySource"] == null)
+                        previous = siblings[0];
+                    var source = (JObject)graph.DeepClone();
+                    source["ownerId"] = OwnerAt(cell);
+                    source["copySource"] = family;
+                    value = ObjectBehavior.CopyFor(source, original, previous);
                 }
                 WriteBehavior(next, target, value);
             }
@@ -113,16 +120,25 @@ namespace Sokoban
             var graph = (JObject)source.DeepClone();
             graph["id"] = (string)previous?["id"] ?? Guid.NewGuid().ToString("N");
             graph.Remove("ownerId");
+            if (source["ownerId"] != null || original != null) graph["copySource"] = (string)source["copySource"] ?? (string)source["id"];
             var ids = new Dictionary<string,string>();
             var counterparts = new Dictionary<string,string>();
-            if (original?["nodes"] is JArray before && previous?["nodes"] is JArray existing)
-                for (int i = 0; i < Math.Min(before.Count, existing.Count); i++)
-                    if ((string)before[i]["kind"] == (string)existing[i]["kind"])
-                        counterparts[(string)before[i]["id"]] = (string)existing[i]["id"];
+            if (previous?["nodes"] is JArray existing)
+            {
+                foreach (var candidate in existing)
+                    counterparts[(string)candidate["copySource"] ?? (string)candidate["id"]] = (string)candidate["id"];
+                if (previous["copySource"] == null && original?["nodes"] is JArray before && before.Count == existing.Count &&
+                    before.Select(n => (string)n["kind"]).SequenceEqual(existing.Select(n => (string)n["kind"])))
+                    for (int i = 0; i < before.Count; i++)
+                        if (existing[i]["copySource"] == null) counterparts[(string)before[i]["id"]] = (string)existing[i]["id"];
+            }
             foreach (var node in graph["nodes"])
             {
-                if (!counterparts.TryGetValue((string)node["id"], out var id)) id = Guid.NewGuid().ToString("N");
-                ids.Add((string)node["id"], id);
+                string sourceId = (string)node["id"];
+                string lineage = (string)node["copySource"] ?? sourceId;
+                if (!counterparts.TryGetValue(lineage, out var id)) id = Guid.NewGuid().ToString("N");
+                ids.Add(sourceId, id);
+                if (graph["copySource"] != null) node["copySource"] = lineage;
                 node["id"] = id;
             }
             foreach (var edge in graph["edges"])
