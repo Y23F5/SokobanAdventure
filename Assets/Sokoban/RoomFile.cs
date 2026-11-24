@@ -62,6 +62,8 @@ namespace Sokoban
             return new Vector2Int((int)value[0], (int)value[1]);
         }
         public static JArray Point(Vector2Int cell) => new JArray(cell.x, cell.y);
+        public static readonly string[] RecoveryPresets = { "warehouse", "factory", "forest" };
+        public static string RecoveryPreset(JObject room) => (string)room["recoveryPresentation"] ?? (string)room["themeId"];
         public static Vector2Int Size(JObject room) => Cell(room["size"]);
         public static Vector2Int At(JToken entity) => Cell(entity["cell"]);
         public static IEnumerable<JToken> Objects(JObject room) => room["boxes"].Concat(room["targets"]).Append(room["spawn"]).Where(entity => entity != null).Concat(room["doors"]).Concat(room["decorations"] as JArray ?? new JArray());
@@ -88,6 +90,7 @@ namespace Sokoban
         {
             foreach (var key in new[]{"levelId", "name", "themeId"})
                 Check(room[key]?.Type == JTokenType.String && !string.IsNullOrWhiteSpace((string)room[key]), "缺少 " + key);
+            Check(room["recoveryPresentation"] == null || RecoveryPresets.Contains((string)room["recoveryPresentation"]), "未知恢复演出");
             foreach (var key in new[]{"doors", "boxes", "targets", "events", "terrainRowsNorthToSouth"}) Check(room[key] is JArray, "需要数组 " + key);
             Check((room["spawn"] == null || room["spawn"] is JObject) && room["connections"] == null, "出生点或房间字段不正确");
             var size = Size(room);

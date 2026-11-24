@@ -189,9 +189,10 @@ namespace Sokoban
                 }
                 if (selected == id) Marker(group, cell);
             }
-            bool warehouse = theme == "warehouse";
+            string preset = RoomFile.RecoveryPreset(room);
+            bool warehouse = preset == "warehouse";
             if (!warehouse && RoomFile.Terrain(room, new Vector2Int(1,size.y-1)) == RoomFile.Void) return group;
-            var dressing = Model("Diorama/" + (factory ? "Conveyor" : forest ? "Tree" : "Lift"), "主题模型", new Vector2Int(1,size.y-1),group,Quaternion.Euler(0,-25,0));
+            var dressing = Model("Diorama/" + (preset == "factory" ? "Conveyor" : preset == "forest" ? "Tree" : "Lift"), "主题模型", new Vector2Int(1,size.y-1),group,Quaternion.Euler(0,-25,0));
             if (warehouse)
             {
                 dressing.localPosition = new Vector3(size.x + .8f,-.737f,size.y*.57f);

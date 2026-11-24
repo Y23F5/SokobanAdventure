@@ -26,6 +26,10 @@ namespace Sokoban.Editor
                 var panel = new LayoutPanel("production-" + id, output);
                 panel.OpenBlueprint(source);
                 var draft = panel.Draft;
+                RoomFile.Check((string)draft.Room["recoveryPresentation"] == id,"图纸缺少恢复演出绑定");
+                panel.CycleRecovery();
+                RoomFile.Check((string)draft.Room["recoveryPresentation"] != id,"不能切换恢复演出");
+                draft.Undo();
                 var built = draft.Room.DeepClone();
                 draft.Undo();
                 RoomFile.Check(!JToken.DeepEquals(draft.Room,built),"撤销无效");

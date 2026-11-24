@@ -182,6 +182,12 @@ namespace Sokoban
                 button.GetComponentInChildren<Text>().text=label;
                 button.onClick.AddListener(()=>ChooseEntry(item,directory));
             }
+            if (!directory)
+            {
+                var preset = Instantiate(entryPrefab,container,false);
+                preset.GetComponentInChildren<Text>().text = Panel.RecoveryLabel;
+                preset.onClick.AddListener(Panel.CycleRecovery);
+            }
             if (!directory && Panel.Draft.Selection.Count > 0)
             {
                 var nameField = Instantiate(roomName, container, false);

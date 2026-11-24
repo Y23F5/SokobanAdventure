@@ -130,6 +130,15 @@ namespace Sokoban
             Revision++;
         }
         public void RemoveRoom() {RoomFile.Check(Placement!=null,"房间尚未放置");Remember();removedPlacements[ActiveId]=Placement.DeepClone();Placement.Remove();Revision++;}
+        public void SetRecoveryPreset(string preset)
+        {
+            RoomFile.Check(preset == null || RoomFile.RecoveryPresets.Contains(preset), "未知恢复演出");
+            if ((string)Room["recoveryPresentation"] == preset) return;
+            var next = (JObject)Room.DeepClone();
+            if (preset == null) next.Remove("recoveryPresentation");
+            else next["recoveryPresentation"] = preset;
+            Commit(next, Selected);
+        }
         public void Rename(string name) { RoomFile.Check(!string.IsNullOrWhiteSpace(name),"房间名称不能为空"); var next=(JObject)Room.DeepClone();next["name"]=name;Commit(next,Selected); }
         static bool NeedsFloor(JObject room, Vector2Int cell) =>
             RoomFile.Objects(room).Any(item => RoomFile.At(item) == cell) ||

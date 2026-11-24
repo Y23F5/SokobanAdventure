@@ -142,7 +142,8 @@ namespace Sokoban
                 return;
             }
             float fraction = 1 - Run.RecoveryRemaining / PuzzleRun.RecoveryDuration;
-            if ((string)Run.Room["themeId"] == "warehouse" && objects.TryGetValue("主题模型",out var truck))
+            string preset = RoomFile.RecoveryPreset(Run.Room);
+            if (preset == "warehouse" && objects.TryGetValue("主题模型",out var truck))
             {
                 var moved = Run.Boxes.Where(b => b.Value != Run.RecoveryCell(b.Key)).OrderBy(b => b.Key,System.StringComparer.Ordinal).ToArray();
                 if (moved.Length > 0)
@@ -157,7 +158,7 @@ namespace Sokoban
                 actor.localScale = Run.PlayerOnRecoveryCell ? Vector3.one*Mathf.Clamp01(Run.RecoveryRemaining/.22f) : Vector3.one;
                 return;
             }
-            if ((string)Run.Room["themeId"] == "factory")
+            if (preset == "factory")
             {
                 foreach (var box in Run.Boxes)
                 {
@@ -173,7 +174,7 @@ namespace Sokoban
                 actor.localScale = Run.PlayerOnRecoveryCell ? Vector3.one*Mathf.Clamp01(Run.RecoveryRemaining/.22f) : Vector3.one;
                 return;
             }
-            if ((string)Run.Room["themeId"] == "forest")
+            if (preset == "forest")
             {
                 foreach (var box in Run.Boxes)
                 {

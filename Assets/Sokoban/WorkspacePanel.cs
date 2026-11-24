@@ -196,7 +196,16 @@ namespace Sokoban
                 objectName = GUILayout.TextField(objectName);
                 if (GUILayout.Button("应用选中对象名称")) Run(() => Draft.SetSelectedName(objectName), "已修改选中对象名称");
             }
+            if (GUILayout.Button(RecoveryLabel)) CycleRecovery();
             roomName=GUILayout.TextField(roomName); if(GUILayout.Button("应用房间名称")) Run(()=>Draft.Rename(roomName),"已更新名称");
+        }
+        public string RecoveryLabel => "恢复演出 · " + ((string)Draft.Room["recoveryPresentation"] switch {
+            "warehouse" => "外围叉车", "factory" => "伸缩输送带", "forest" => "腐朽再生", _ => "跟随主题" });
+        public void CycleRecovery()
+        {
+            int index = Array.IndexOf(RoomFile.RecoveryPresets, (string)Draft.Room["recoveryPresentation"]) + 1;
+            string next = index == RoomFile.RecoveryPresets.Length ? null : RoomFile.RecoveryPresets[index];
+            Run(() => Draft.SetRecoveryPreset(next), "已切换恢复演出，可进入试玩查看");
         }
         public void CancelTool() {PlacingRoom=false;placementId=null;Painting=false;stroke.Clear();Draft.Tool=RoomTool.Select;Status="已返回选择";}
         public void StartStroke(Vector2Int point) {Painting=true;stroke.Clear();lastCell=point;stroke.Add(point);}

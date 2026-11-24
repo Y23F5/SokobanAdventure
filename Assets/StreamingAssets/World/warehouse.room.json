@@ -18,31 +18,24 @@
   ],
   "doors": [
     {
-      "id": "entry",
       "cell": [
         0,
         3
       ],
-      "direction": "W",
-      "role": "entry"
+      "id": "entry",
+      "role": "entry",
+      "direction": "W"
     },
     {
-      "id": "exit",
       "cell": [
         8,
         3
       ],
-      "direction": "E",
-      "role": "exit"
+      "id": "exit",
+      "role": "exit",
+      "direction": "E"
     }
   ],
-  "spawn": {
-    "id": "spawn",
-    "cell": [
-      2,
-      2
-    ]
-  },
   "boxes": [
     {
       "id": "box-1",
@@ -67,5 +60,13 @@
   ],
   "events": [],
   "kind": "room",
-  "primaryEntranceId": "entry"
+  "primaryEntranceId": "entry",
+  "spawn": {
+    "cell": [
+      2,
+      2
+    ],
+    "id": "spawn"
+  },
+  "recoveryPresentation": "warehouse"
 }
