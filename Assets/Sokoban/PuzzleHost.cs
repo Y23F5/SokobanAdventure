@@ -219,7 +219,10 @@ namespace Sokoban
                     string prefix = RoomFile.Floor(Run.Room, cell) ? "Floor " : "Wall ";
                     if (!objects.TryGetValue(prefix + cell, out part)) continue;
                 }
-                foreach (var effect in ObjectBehavior.Effects(graph))
+                JToken[] effects;
+                try { effects = ObjectBehavior.Effects(graph).ToArray(); }
+                catch (Exception error) { Debug.LogWarning($"对象 {owner} 行为 {graph["id"]} 执行失败 · {error.Message}"); continue; }
+                foreach (var effect in effects)
                     foreach (var mesh in part.GetComponentsInChildren<Renderer>(true)) mesh.enabled = (bool?)effect["visible"] ?? false;
             }
         }

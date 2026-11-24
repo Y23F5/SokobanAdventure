@@ -41,7 +41,16 @@ namespace Sokoban.Editor
                 switch (kind)
                 {
                     case "roomSolved": EditorGUILayout.LabelField("事件 · 房间解开"); break;
-                    case "condition": node["enabled"] = EditorGUILayout.Toggle("条件成立", (bool?)node["enabled"] ?? true); break;
+                    case "condition":
+                        node["enabled"] = EditorGUILayout.Toggle("条件成立", (bool?)node["enabled"] ?? true);
+                        string expression = EditorGUILayout.TextField("Lua 条件", (string)node["expression"] ?? "");
+                        if (!string.IsNullOrWhiteSpace(expression)) node["expression"] = expression;
+                        else ((JObject)node).Remove("expression");
+                        break;
+                    case "lua":
+                        EditorGUILayout.LabelField("Lua 脚本");
+                        node["script"] = EditorGUILayout.TextArea((string)node["script"] ?? "", GUILayout.MinHeight(52));
+                        break;
                     case "setVisible": node["visible"] = EditorGUILayout.Toggle("动作 · 显示对象", (bool?)node["visible"] ?? false); break;
                     default: EditorGUILayout.LabelField(kind ?? "未知节点"); break;
                 }
@@ -51,6 +60,13 @@ namespace Sokoban.Editor
                     EditorGUILayout.LabelField((string)edge["out"] + " → " + ((string)target?["kind"] ?? "缺少目标"));
                 }
                 EditorGUILayout.EndVertical();
+            }
+            if (nodes != null && nodes.Count > 0 && GUILayout.Button("追加 Lua 动作"))
+            {
+                string id = System.Guid.NewGuid().ToString("N");
+                var last = nodes.Last;
+                ((JArray)graph["edges"]).Add(new JObject { ["from"]=last["id"].DeepClone(), ["out"]=(string)last["kind"] == "condition" ? "true" : "out", ["to"]=id, ["in"]="in" });
+                nodes.Add(new JObject { ["id"]=id, ["kind"]="lua", ["script"]="self.setVisible(false)" });
             }
             if (panel.Draft.ActiveId != roomId || panel.Draft.Revision != revision)
                 EditorGUILayout.HelpBox("布局已变化，请返回后重新选择对象。", MessageType.Warning);

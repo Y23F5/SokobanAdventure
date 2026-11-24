@@ -123,7 +123,16 @@ namespace Sokoban
                 switch ((string)node["kind"])
                 {
                     case "roomSolved": port="out"; break;
-                    case "condition": port=(bool?)node["enabled"] == true ? "true" : "false"; break;
+                    case "condition":
+                        bool matched = (bool?)node["enabled"] == true && BehaviorLua.Evaluate((string)node["expression"], (string)graph["ownerId"], true, null);
+                        port = matched ? "true" : "false";
+                        break;
+                    case "lua":
+                        var effects = new List<JToken>();
+                        BehaviorLua.Evaluate((string)node["script"], (string)graph["ownerId"], false, effects);
+                        foreach (var effect in effects) yield return effect;
+                        port="out";
+                        break;
                     case "setVisible": yield return node; port="out"; break;
                     default: continue;
                 }
