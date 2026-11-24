@@ -33,6 +33,22 @@ namespace Sokoban
             RoomFile.Check(asset!=null,"当前房间没有所选素材");
             return asset;
         }
+        public static readonly string[] BuiltinBoxes = { "Cargo", "Machinery", "Logs" };
+        public static readonly string[] BuiltinBoxNames = { "纸箱", "机械箱", "木束" };
+        public bool BoxSelected => Selected != null && Find(Selected)?.Parent == Room["boxes"];
+        public void BindBuiltinBox(string model)
+        {
+            RoomFile.Check(BoxSelected && Array.IndexOf(BuiltinBoxes,model) >= 0,"请选择箱子和内置箱体模型");
+            var next = (JObject)Room.DeepClone();
+            var box = System.Linq.Enumerable.First(next["boxes"], item => (string)item["id"] == Selected);
+            box["builtinModel"] = model;
+            if (box["visual"] is JObject visual)
+            {
+                visual.Remove("model");
+                if (visual.Count == 0) ((JObject)box).Remove("visual");
+            }
+            if (!JToken.DeepEquals(Room,next)) Commit(next,Selected);
+        }
         public void BindAsset(string id)
         {
             var kind=(string)RequireAsset(id)["kind"];
@@ -45,6 +61,7 @@ namespace Sokoban
                 {
                     if((string)item["id"]!=Selected) continue;
                     if(item["visual"]==null) item["visual"]=new JObject();
+                    if (kind == "model") ((JObject)item).Remove("builtinModel");
                     item["visual"][kind]=id;
                     break;
                 }

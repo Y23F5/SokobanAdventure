@@ -43,6 +43,8 @@ namespace Sokoban.Editor
             {
                 bool box = tile.symbol == 'B';
                 draft.Place(box, tile.cell, box ? "box-" + ++boxes : "target-" + ++targets);
+                if (box && RoomFile.RecoveryPresets.Contains(header[2]))
+                    draft.BindBuiltinBox(Path.GetFileName(RoomPreview.BoxModel(header[2])));
             }
             if (RoomFile.RecoveryPresets.Contains(header[2])) draft.SetRecoveryPreset(header[2]);
             RoomFile.Parse(draft.Room.ToString());

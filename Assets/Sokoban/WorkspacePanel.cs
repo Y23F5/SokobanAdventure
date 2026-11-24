@@ -196,6 +196,12 @@ namespace Sokoban
                 objectName = GUILayout.TextField(objectName);
                 if (GUILayout.Button("应用选中对象名称")) Run(() => Draft.SetSelectedName(objectName), "已修改选中对象名称");
             }
+            if (Draft.BoxSelected)
+                for (int i = 0; i < RoomDraft.BuiltinBoxes.Length; i++)
+                {
+                    string model = RoomDraft.BuiltinBoxes[i];
+                    if (GUILayout.Button("绑定内置模型 · " + RoomDraft.BuiltinBoxNames[i])) Run(() => Draft.BindBuiltinBox(model),"已绑定箱体模型");
+                }
             if (GUILayout.Button(RecoveryLabel)) CycleRecovery();
             roomName=GUILayout.TextField(roomName); if(GUILayout.Button("应用房间名称")) Run(()=>Draft.Rename(roomName),"已更新名称");
         }

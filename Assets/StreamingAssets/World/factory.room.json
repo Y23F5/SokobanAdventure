@@ -46,7 +46,8 @@
       "recoveryCell": [
         5,
         4
-      ]
+      ],
+      "builtinModel": "Machinery"
     },
     {
       "id": "box-2",
@@ -57,7 +58,8 @@
       "recoveryCell": [
         4,
         2
-      ]
+      ],
+      "builtinModel": "Machinery"
     }
   ],
   "targets": [

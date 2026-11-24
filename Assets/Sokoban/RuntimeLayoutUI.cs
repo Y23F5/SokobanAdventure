@@ -184,6 +184,14 @@ namespace Sokoban
             }
             if (!directory)
             {
+                if (Panel.Draft.BoxSelected)
+                    for (int i = 0; i < RoomDraft.BuiltinBoxes.Length; i++)
+                    {
+                        string model = RoomDraft.BuiltinBoxes[i];
+                        var bind = Instantiate(entryPrefab,container,false);
+                        bind.GetComponentInChildren<Text>().text = "绑定内置模型 · " + RoomDraft.BuiltinBoxNames[i];
+                        bind.onClick.AddListener(() => Panel.Run(() => Panel.Draft.BindBuiltinBox(model),"已绑定箱体模型"));
+                    }
                 var preset = Instantiate(entryPrefab,container,false);
                 preset.GetComponentInChildren<Text>().text = Panel.RecoveryLabel;
                 preset.onClick.AddListener(Panel.CycleRecovery);

@@ -46,7 +46,8 @@
       "recoveryCell": [
         4,
         2
-      ]
+      ],
+      "builtinModel": "Cargo"
     }
   ],
   "targets": [

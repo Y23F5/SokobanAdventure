@@ -83,6 +83,7 @@ namespace Sokoban
             }
             foreach (var item in RoomFile.Objects(room))
             {
+                if (item["builtinModel"] != null) RoomFile.Check(item.Parent == room["boxes"] && Array.IndexOf(RoomDraft.BuiltinBoxes,(string)item["builtinModel"]) >= 0 && item["visual"]?["model"] == null,"箱体模型绑定无效");
                 if (item.Parent == room["decorations"]) RoomFile.Check(item["visual"] is JObject decoration && decoration["model"]!=null,"装饰缺少模型绑定");
                 if (item["visual"]==null) continue;
                 RoomFile.Check(item["visual"] is JObject,"对象外观格式无效");

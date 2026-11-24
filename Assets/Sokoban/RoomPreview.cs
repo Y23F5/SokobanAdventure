@@ -123,7 +123,7 @@ namespace Sokoban
             return model.transform;
         }
 
-        public static string BoxModel(string theme) => "Diorama/" + (theme == "factory" ? "Machinery" : theme == "forest" ? "Logs" : "Cargo");
+        public static string BoxModel(string theme, JToken box = null) => box?["builtinModel"] != null ? "Diorama/" + (string)box["builtinModel"] : "Diorama/" + (theme == "factory" ? "Machinery" : theme == "forest" ? "Logs" : "Cargo");
 
         public Transform BuildRoom(JObject room, Vector2Int origin, string selected, Transform parent, JObject world = null, JObject catalog = null)
         {
@@ -164,7 +164,7 @@ namespace Sokoban
                 string id = (string)item["id"];
                 string kind;
                 Quaternion rotation = Quaternion.identity;
-                if (item.Parent == room["boxes"]) kind = BoxModel(theme);
+                if (item.Parent == room["boxes"]) kind = BoxModel(theme,item);
                 else if (item.Parent == room["targets"]) kind = "Target";
                 else if (item == room["spawn"]) kind = "Spawn";
                 else if (item.Parent == room["decorations"]) kind = null;

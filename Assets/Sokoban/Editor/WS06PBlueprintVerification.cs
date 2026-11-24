@@ -38,6 +38,8 @@ namespace Sokoban.Editor
                 draft.Open(path,false);
                 RoomFile.Check(JToken.DeepEquals(built,draft.Room),"文件往返不一致");
                 var original = JObject.Parse(File.ReadAllText(Path.Combine(world,id + ".room.json")));
+                foreach (var box in original["boxes"])
+                    box["builtinModel"] = (string)box["builtinModel"] ?? Path.GetFileName(RoomPreview.BoxModel(id));
                 foreach (string field in new[]{"levelId","name","themeId","size","terrainRowsNorthToSouth","spawn","doors","boxes","targets","primaryEntranceId"})
                     RoomFile.Check(JToken.DeepEquals(original[field],draft.Room[field]), id + " 与图纸基线不一致 " + field);
                 var solved = RoomSolution.Check(draft.Room,RoomFile.At(draft.Room["spawn"]),destination:RoomFile.At(draft.Room["doors"].Last()));

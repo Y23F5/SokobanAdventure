@@ -48,7 +48,8 @@
       "recoveryCell": [
         2,
         5
-      ]
+      ],
+      "builtinModel": "Logs"
     },
     {
       "id": "box-2",
@@ -59,7 +60,8 @@
       "recoveryCell": [
         7,
         4
-      ]
+      ],
+      "builtinModel": "Logs"
     }
   ],
   "targets": [
