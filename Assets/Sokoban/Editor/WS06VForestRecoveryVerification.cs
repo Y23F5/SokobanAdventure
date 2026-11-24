@@ -114,6 +114,8 @@ namespace Sokoban.Editor
             foreach(float phase in new[]{.13f,.43f,.76f,.95f})
             {
                 while(1-host.Run.RecoveryRemaining/PuzzleRun.RecoveryDuration<phase) yield return null;
+                var vine = room.Find("恢复藤蔓/Vine0");
+                Test(vine && (phase < .2f ? vine.localScale.x > .9f : phase < .5f ? vine.localScale.x < .01f : vine.localScale.x > .01f),"vine motion at " + phase);
                 fragments=room.Find("原木腐朽"); tree=room.Find("恢复格再生");
                 var meshes=fragments.GetComponentsInChildren<MeshRenderer>(true);
                 Test(cargo.All(r=>!r.enabled),"original hidden at "+phase);

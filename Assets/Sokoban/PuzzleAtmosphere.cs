@@ -131,10 +131,17 @@ namespace Sokoban
             if (Run.PendingItem != null) panels.ShowDiscovery("获得「" + ItemName + "」\n\n在本房按 R，使箱子回到预设位置。\n滚轮切换已获得的装置，已完成的探索会保留。");
         }
         public void AcceptDiscovery() { Run.AcceptItem(); Persist(); }
+        AnimationClip vineClip;
         WarehouseLift liftRig;
         readonly Dictionary<string,FactoryBelt> belts = new Dictionary<string,FactoryBelt>();
 
         readonly Dictionary<string,ForestRecovery> forestEffects = new Dictionary<string,ForestRecovery>();
+        void SampleVine(float fraction)
+        {
+            if (!objects.TryGetValue("恢复藤蔓",out var vine)) return;
+            if (!vineClip) vineClip = Resources.Load<AnimationClip>("Diorama/VineRecovery");
+            vineClip.SampleAnimation(vine.gameObject, fraction * vineClip.length);
+        }
         void TickRecovery(float seconds)
         {
             if (Run.AdvanceRecovery(seconds))
@@ -148,6 +155,7 @@ namespace Sokoban
                 actor.localScale=Vector3.one;
                 if (!turning && Busy) { duration=0; movingBox=null; Run.Motion=null; }
                 actor.position=Position(Run.Player);
+                SampleVine(0);
                 RefreshFeedback(); ShowInventory(); Persist();
                 return;
             }
@@ -186,6 +194,7 @@ namespace Sokoban
             }
             if (preset == "forest")
             {
+                SampleVine(fraction);
                 foreach (var box in Run.Boxes)
                 {
                     var home = Run.RecoveryCell(box.Key);

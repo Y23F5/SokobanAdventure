@@ -190,6 +190,23 @@ namespace Sokoban
                 if (selected == id) Marker(group, cell);
             }
             string preset = RoomFile.RecoveryPreset(room);
+            if (preset == "forest")
+            {
+                var exit = room["doors"].FirstOrDefault(d => (string)d["role"] == "exit");
+                if (exit != null)
+                {
+                    var inward = RoomFile.Inward(exit);
+                    var side = new Vector2Int(inward.y,-inward.x);
+                    var cell = RoomFile.At(exit) + side;
+                    if (RoomFile.Terrain(room,cell) != '#') cell = RoomFile.At(exit) - side;
+                    if (RoomFile.Terrain(room,cell) == '#')
+                    {
+                        var vine = Model("Diorama/ForestVine","恢复藤蔓",cell,group,Quaternion.LookRotation(new Vector3(inward.x,0,inward.y)));
+                        vine.localPosition += new Vector3(inward.x,0,inward.y)*.70f;
+                        Retrack(vine);
+                    }
+                }
+            }
             if (tracking) RoomYard.Build(room, origin, group, world, catalog);
             bool warehouse = preset == "warehouse";
             if (!warehouse && RoomFile.Terrain(room, new Vector2Int(1,size.y-1)) == RoomFile.Void) return group;
