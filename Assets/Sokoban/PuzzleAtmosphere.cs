@@ -97,7 +97,9 @@ namespace Sokoban
         }
         void UpdateOcclusion()
         {
-            var points = Run.Boxes.Keys.Select(key => objects[key].position).Concat(Run.Targets.Select(Position)).Append(actor.position).Select(p => p+Vector3.up*.24f).ToArray();
+            var loads = Run.Boxes.Keys.Select(key => objects[key].position);
+            if (Run.Recovering) loads = loads.Concat(Run.Boxes.Keys.Select(key => Position(Run.RecoveryCell(key))));
+            var points = loads.Concat(Run.Targets.Select(Position)).Append(actor.position).Select(p => p+Vector3.up*.24f).ToArray();
             foreach (var wall in boundaryWalls)
             {
                 var bounds = new Bounds(wall.position + Vector3.up*.58f,new Vector3(.97f,1.16f,.97f));
@@ -122,14 +124,7 @@ namespace Sokoban
         WarehouseLift liftRig;
         readonly Dictionary<string,FactoryBelt> belts = new Dictionary<string,FactoryBelt>();
 
-        void AnimateRecoveryProp(float fraction)
-        {
-            if (!objects.TryGetValue("主题模型", out var prop) || Run.Boxes.Count == 0) return;
-            float phase = Mathf.Sin(Mathf.PI*fraction);
-            string style = (string)Run.Room["themeId"];
-            if (style == "factory") prop.localRotation=Quaternion.Euler(0,-25+48*phase,0);
-            else if (style == "forest") prop.localScale=Vector3.one*(1-.55f*phase);
-        }
+        readonly Dictionary<string,ForestRecovery> forestEffects = new Dictionary<string,ForestRecovery>();
         void TickRecovery(float seconds)
         {
             if (Run.AdvanceRecovery(seconds))
@@ -138,7 +133,8 @@ namespace Sokoban
                 liftRig?.Clear(); liftRig = null;
                 foreach (var belt in belts.Values) belt.Clear();
                 belts.Clear();
-                AnimateRecoveryProp(1);
+                foreach (var forest in forestEffects.Values) forest.Clear();
+                forestEffects.Clear();
                 actor.localScale=Vector3.one;
                 if (!turning && Busy) { duration=0; movingBox=null; Run.Motion=null; }
                 actor.position=Position(Run.Player);
@@ -177,7 +173,23 @@ namespace Sokoban
                 actor.localScale = Run.PlayerOnRecoveryCell ? Vector3.one*Mathf.Clamp01(Run.RecoveryRemaining/.22f) : Vector3.one;
                 return;
             }
-            AnimateRecoveryProp(fraction);
+            if ((string)Run.Room["themeId"] == "forest")
+            {
+                foreach (var box in Run.Boxes)
+                {
+                    var home = Run.RecoveryCell(box.Key);
+                    if (box.Value == home) continue;
+                    if (!forestEffects.TryGetValue(box.Key,out var forest))
+                    {
+                        forest = new ForestRecovery(groups[Run.ActiveId],objects[box.Key],Position(home));
+                        forestEffects.Add(box.Key,forest);
+                    }
+                    forest.Sample(fraction);
+                }
+                float clearance = Mathf.SmoothStep(1,.18f,Mathf.InverseLerp(.57f,.72f,fraction));
+                actor.localScale = Run.PlayerOnRecoveryCell ? Vector3.one * Mathf.Min(clearance, Mathf.Clamp01(Run.RecoveryRemaining/.22f)) : Vector3.one;
+                return;
+            }
             foreach (var box in Run.Boxes)
             {
                 var part = objects[box.Key];
