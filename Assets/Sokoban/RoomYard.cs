@@ -35,7 +35,16 @@ namespace Sokoban
             var block = new MaterialPropertyBlock();
             block.SetVector("_BaseMap_ST",new Vector4(scale.x,scale.y,uv.x,uv.y));
             yard.SetPropertyBlock(block);
-            if (texture == "depot") Surface(group,"仓库标牌","depot-plate",new Vector3(center.x,1.08f,-1.06f),Quaternion.Euler(20,0,0),new Vector2(1.72f,.484f));
+            if (texture == "depot")
+            {
+                Surface(group,"仓库标牌","depot-plate",new Vector3(center.x,1.08f,-1.06f),Quaternion.Euler(20,0,0),new Vector2(1.72f,.484f));
+                if (size == new Vector2Int(9,7) && low.x <= -2.1f && low.y <= -1.4f && high.y >= 6.8f)
+                {
+                    var props = Object.Instantiate(Resources.Load<GameObject>("Diorama/DepotProps"),group,false);
+                    props.name = "调度岗亭与装卸区";
+                    props.hideFlags = HideFlags.DontSave;
+                }
+            }
         }
 
         static void Clip(ref float low, ref float high, int size, int other, int otherSize)
