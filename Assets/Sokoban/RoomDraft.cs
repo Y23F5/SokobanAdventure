@@ -80,11 +80,43 @@ namespace Sokoban
             if (RoomFile.Terrain(Room,cell) == RoomFile.Void) return "请先铺设地板";
             if (!RoomFile.Floor(Room,cell)) return "墙上无法放置";
             var doors = Room["doors"];
-            var primary = doors.First(d => (string)d["id"] == (string)Room["primaryEntranceId"]);
-            if (doors.Any(d => RoomFile.At(d) == cell) || RoomFile.At(primary) + RoomFile.Inward(primary) == cell) return "门格或主入口预留格";
+            var primary = doors.FirstOrDefault(d => (string)d["id"] == (string)Room["primaryEntranceId"]);
+            if (doors.Any(d => RoomFile.At(d) == cell) || primary != null && RoomFile.At(primary) + RoomFile.Inward(primary) == cell) return "门格或主入口预留格";
             if (RoomFile.Objects(Room).Any(o => (string)o["id"] != ignore && RoomFile.At(o) == cell)) return "格子已占用";
             return null;
         }
+        public void SetRoomMarker(Vector2Int cell, string role)
+        {
+            RoomFile.Check(RoomFile.Floor(Room, cell), "请在地板格上设置出生点或门");
+            RoomFile.Check(role == "spawn" || role == "entry" || role == "exit", "未知房间标记");
+            bool spawn = role == "spawn";
+            var previous = spawn ? Room["spawn"] : null;
+            if (previous != null && RoomFile.At(previous) == cell) return;
+            RoomFile.Check(!RoomFile.Objects(Room).Any(item => item != previous && RoomFile.At(item) == cell), "格子已占用");
+            var next = (JObject)Room.DeepClone();
+            var marker = new JObject { ["cell"] = RoomFile.Point(cell) };
+            if (spawn)
+            {
+                marker["id"] = (string)previous?["id"] ?? FreshMarkerId("spawn");
+                next["spawn"] = marker;
+            }
+            else
+            {
+                string direction = new[] { "N", "E", "S", "W" }.FirstOrDefault(side =>
+                {
+                    var inward = RoomFile.Inward(new JObject { ["direction"] = side });
+                    return RoomFile.Terrain(Room, cell - inward) == RoomFile.Void && RoomFile.Floor(Room, cell + inward);
+                });
+                RoomFile.Check(direction != null, "门需要朝向空地，且内侧有可通行地板");
+                marker["id"] = FreshMarkerId(role);
+                marker["role"] = role;
+                marker["direction"] = direction;
+                ((JArray)next["doors"]).Add(marker);
+                if (role == "entry" && next["primaryEntranceId"] == null) next["primaryEntranceId"] = (string)marker["id"];
+            }
+            Commit(next, (string)marker["id"]);
+        }
+        string FreshMarkerId(string role) => Find(role) == null ? role : role + "-" + Guid.NewGuid().ToString("N");
         public void Place(bool box, Vector2Int cell)
         {
             var error = PlacementError(box, cell); RoomFile.Check(error == null, error);

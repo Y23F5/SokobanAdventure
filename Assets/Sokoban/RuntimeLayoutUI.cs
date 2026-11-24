@@ -109,7 +109,8 @@ namespace Sokoban
             {
                 case "文件": fileMenu.SetActive(!fileMenu.activeSelf);return;
                 case "保存": case "打开": case "导入": case "导出": case "发布": case "导出单房": case "导入模型": case "导入动作": case "导入贴图": case "导入界面图": Panel.ChooseFile(action);break;
-                case "新建": Panel.NewRoom();break;
+                case "新建": Panel.NewRoom(true);break;
+                case "默认布局": Panel.NewDefaultRoom();break;
                 case "撤销": Panel.Run(d.Undo,"已撤销");break;
                 case "重做": Panel.Run(d.Redo,"已重做");break;
                 case "网格": host.GridVisible=!host.GridVisible;break;
@@ -178,6 +179,14 @@ namespace Sokoban
                 button.GetComponentInChildren<Text>().text=label;
                 button.onClick.AddListener(()=>ChooseEntry(item,directory));
             }
+            if (!directory && Panel.Draft.SelectedCell.HasValue)
+                for (int i = 0; i < LayoutPanel.MarkerLabels.Length; i++)
+                {
+                    int index = i;
+                    var button = Instantiate(entryPrefab, container, false);
+                    button.GetComponentInChildren<Text>().text = LayoutPanel.MarkerLabels[index];
+                    button.onClick.AddListener(() => { Panel.ApplyMarker(index); workspaceOpen = false; });
+                }
             if (!directory && Panel.Draft.World != null)
                 foreach (var link in Panel.Draft.World["connections"])
                 {

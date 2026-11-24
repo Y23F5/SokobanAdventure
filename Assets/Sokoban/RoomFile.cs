@@ -64,7 +64,7 @@ namespace Sokoban
         public static JArray Point(Vector2Int cell) => new JArray(cell.x, cell.y);
         public static Vector2Int Size(JObject room) => Cell(room["size"]);
         public static Vector2Int At(JToken entity) => Cell(entity["cell"]);
-        public static IEnumerable<JToken> Objects(JObject room) => room["boxes"].Concat(room["targets"]).Append(room["spawn"]).Concat(room["doors"]).Concat(room["decorations"] as JArray ?? new JArray());
+        public static IEnumerable<JToken> Objects(JObject room) => room["boxes"].Concat(room["targets"]).Append(room["spawn"]).Where(entity => entity != null).Concat(room["doors"]).Concat(room["decorations"] as JArray ?? new JArray());
         public static bool Inside(JObject room, Vector2Int cell)
         {
             var size = Size(room);
@@ -86,10 +86,10 @@ namespace Sokoban
         }
         static void Validate(JObject room)
         {
-            foreach (var key in new[]{"levelId", "name", "themeId", "primaryEntranceId"})
+            foreach (var key in new[]{"levelId", "name", "themeId"})
                 Check(room[key]?.Type == JTokenType.String && !string.IsNullOrWhiteSpace((string)room[key]), "缺少 " + key);
             foreach (var key in new[]{"doors", "boxes", "targets", "events", "terrainRowsNorthToSouth"}) Check(room[key] is JArray, "需要数组 " + key);
-            Check(room["spawn"] is JObject && room["connections"] == null, "出生点或房间字段不正确");
+            Check((room["spawn"] == null || room["spawn"] is JObject) && room["connections"] == null, "出生点或房间字段不正确");
             var size = Size(room);
             var rows = (JArray)room["terrainRowsNorthToSouth"];
             Check(size.x > 0 && size.y == rows.Count && size.y > 0 && rows.All(r => r.Type == JTokenType.String && ((string)r).Length == size.x && ((string)r).All(c => c == '#' || c == '.' || c == Void)), "地形与房间尺寸不一致");
@@ -110,6 +110,7 @@ namespace Sokoban
         {
             var doors = room["doors"];
             string level = (string)room["levelId"];
+            if (room["spawn"] == null) yield return $"{level} 需要放置玩家出生点";
             var recovery = new HashSet<Vector2Int>();
             foreach (var box in room["boxes"])
             {

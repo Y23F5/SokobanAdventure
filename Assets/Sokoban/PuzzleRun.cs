@@ -35,7 +35,12 @@ namespace Sokoban
         {
             World = world;
             Rooms = rooms;
-            if (world == null) states.Add(active, new RoomProgress((JObject)rooms[active], Vector2Int.zero));
+            if (world == null)
+            {
+                var room = (JObject)rooms[active];
+                RoomFile.RequireStructure(room);
+                states.Add(active, new RoomProgress(room, Vector2Int.zero));
+            }
             else
             {
                 string issue = WorldLayout.Issues(world, rooms).FirstOrDefault();

@@ -99,7 +99,8 @@ namespace Sokoban
         public void TrackView(UnityEditor.SceneView view) => SetView(view.pivot,view.rotation,view.size,view.orthographic);
         public void DrawStroke() {foreach(var cell in stroke) UnityEditor.Handles.DrawWireCube(new Vector3(cell.x,.05f,cell.y),new Vector3(1,.03f,1));}
 #endif
-        public void NewRoom() => Guard(()=>{Draft.NewRoom();DocumentOpened?.Invoke();Flush();Status="已创建独立房间";});
+        public void NewRoom(bool blank = false) => Guard(()=>{if (blank) Draft.NewBlankRoom(); else Draft.NewRoom();DocumentOpened?.Invoke();Flush();Status="已创建独立房间";});
+        public void NewDefaultRoom() => Guard(()=>{Draft.NewDefaultRoom();DocumentOpened?.Invoke();Flush();Status="已从默认布局新建";});
         public void RequestExit(Action exit)
         {
             operation = null;
@@ -128,6 +129,13 @@ namespace Sokoban
         }
         public string ConnectionAction(JToken link) => (string)link["id"] + ((string)link["mode"] == "direct" ? " · 直连 → 改为传送" : " · 传送 → 改为直连");
         public void ToggleConnection(JToken link) => Run(() => Draft.SetConnectionMode((string)link["id"], (string)link["mode"] == "direct" ? "teleport" : "direct"), "已更新门连接");
+        public static readonly string[] MarkerLabels = { "设为出生点", "添加入口", "添加出口" };
+        public void ApplyMarker(int index)
+        {
+            if (!Draft.SelectedCell.HasValue) { Status = "请在地图上选择一个地板格"; return; }
+            string role = index == 0 ? "spawn" : index == 1 ? "entry" : "exit";
+            Run(() => Draft.SetRoomMarker(Draft.SelectedCell.Value, role), MarkerLabels[index] + "已完成");
+        }
         public void WorkspaceControls() {
             GUILayout.Label(Draft.World==null?"独立房间":"世界 · "+(string)Draft.World["worldId"]);
             if(Draft.World==null) {if(GUILayout.Button("以此房间创建世界")) Run(()=>{Draft.BeginWorld();Flush();},"房间已加入目录，请设置放置原点");}
@@ -139,6 +147,8 @@ namespace Sokoban
                 GUILayout.Label(Draft.Placement==null?"尚未放置":"房间原点 "+Draft.Origin);
                 if(GUILayout.Button(Draft.Placement==null?"在地图放置整房":"在地图移动整房")) StartRoomPlacement();
             }
+            if (Draft.SelectedCell.HasValue)
+                for (int i = 0; i < MarkerLabels.Length; i++) if (GUILayout.Button(MarkerLabels[i])) ApplyMarker(i);
             GUILayout.BeginHorizontal(); GUILayout.Label("X",GUILayout.Width(34));fieldX=GUILayout.TextField(fieldX);GUILayout.Label("Y",GUILayout.Width(34));fieldY=GUILayout.TextField(fieldY);GUILayout.EndHorizontal();
             bool valid=int.TryParse(fieldX,out int x) & int.TryParse(fieldY,out int y);
             var point=new Vector2Int(x,y);

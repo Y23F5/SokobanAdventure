@@ -289,7 +289,12 @@ namespace Sokoban.Editor
                 bool showGhost=false;
                 if(hit && EditorWindow.mouseOverWindow==view) {
                     bool moving=dragging || draft.Tool==RoomTool.Move;
-                    if(moving || draft.Tool==RoomTool.Box || draft.Tool==RoomTool.Target || draft.Tool==RoomTool.Decoration) {
+                    if (draft.Tool == RoomTool.Floor || draft.Tool == RoomTool.Wall)
+                    {
+                        ghost.Draw(draft, world, false, draft.TerrainPlacementError(local, draft.Tool), null);
+                        showGhost = true;
+                    }
+                    else if(moving || draft.Tool==RoomTool.Box || draft.Tool==RoomTool.Target || draft.Tool==RoomTool.Decoration) {
                         bool box=draft.Tool==RoomTool.Box || moving && obj?.Parent==draft.Room["boxes"];
                         string issue=moving && (obj==null || !box && obj.Parent!=draft.Room["targets"] && obj.Parent!=draft.Room["decorations"])?"请选择箱子或目标":draft.PlacementError(box,local,moving?draft.Selected:null);
                         if(draft.World!=null && draft.Placement==null) issue="当前房间尚未放入世界";

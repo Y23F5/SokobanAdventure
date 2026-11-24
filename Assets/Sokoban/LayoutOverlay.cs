@@ -59,7 +59,13 @@ namespace Sokoban
             bool visible=false, moving=draft.Tool==RoomTool.Move;
             if(hover)
             {
-                if(moving || draft.Tool==RoomTool.Box || draft.Tool==RoomTool.Target || draft.Tool==RoomTool.Decoration)
+                if (draft.Tool == RoomTool.Floor || draft.Tool == RoomTool.Wall)
+                {
+                    error = draft.TerrainPlacementError(cell - origin, draft.Tool);
+                    visible = true;
+                    Outline(cell, error == null ? Color.green : Color.red);
+                }
+                else if(moving || draft.Tool==RoomTool.Box || draft.Tool==RoomTool.Target || draft.Tool==RoomTool.Decoration)
                 {
                     var selected=draft.Find(draft.Selected);
                     bool box=draft.Tool==RoomTool.Box || moving && selected?.Parent==draft.Room["boxes"];

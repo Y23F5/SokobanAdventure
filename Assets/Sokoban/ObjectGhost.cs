@@ -42,12 +42,15 @@ namespace Sokoban
                 visual = new JObject { ["model"] = draft.BrushAsset };
             bool box = moving ? obj != null && obj.Parent == draft.Room["boxes"] : draft.Tool == RoomTool.Box;
             string prefab = box ? RoomPreview.BoxModel((string)draft.Room["themeId"]) : "LayoutModels/Target";
+            if (!moving && draft.Tool == RoomTool.Floor) prefab = "LayoutModels/Floor";
+            if (!moving && draft.Tool == RoomTool.Wall) prefab = "LayoutModels/Wall";
             string key = draft.ActiveId + prefab + visual;
             if (!model || previous != key)
             {
                 Hide();
                 if (!tint) tint = new Material(Resources.Load<Material>("LayoutModels/GhostSurface")) { hideFlags = HideFlags.HideAndDontSave };
                 model = visual?["model"] != null ? new GameObject() : Object.Instantiate(Resources.Load<GameObject>(prefab));
+                if (prefab == "LayoutModels/Wall") model.transform.localScale = new Vector3(1, 2.6f, 1);
                 model.name = "对象放置预览";
                 foreach (var child in model.GetComponentsInChildren<Transform>(true)) child.gameObject.hideFlags = HideFlags.HideAndDontSave;
                 if (visual != null)

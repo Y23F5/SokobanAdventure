@@ -91,7 +91,8 @@ namespace Sokoban
         }
         public void Files()
         {
-            if(GUILayout.Button("新建独立房间")) NewRoom();
+            if(GUILayout.Button("新建空白房间")) NewRoom(true);
+            if(GUILayout.Button("从默认布局新建")) NewDefaultRoom();
             GUILayout.BeginHorizontal();
             foreach(var label in new[]{"打开","保存","导入","导出"}) if(GUILayout.Button(label)) ChooseFile(label);
             GUILayout.EndHorizontal(); GUILayout.BeginHorizontal();

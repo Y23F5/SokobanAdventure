@@ -26,7 +26,10 @@ namespace Sokoban
         };
         public static string PlacementIssue(JObject world,JObject rooms,string id,Vector2Int origin,bool moving)
         {
-            var size=RoomFile.Size((JObject)rooms[id]);
+            return PlacementIssue(world, rooms, id, origin, moving, RoomFile.Size((JObject)rooms[id]));
+        }
+        public static string PlacementIssue(JObject world,JObject rooms,string id,Vector2Int origin,bool moving,Vector2Int size)
+        {
             var min=RoomFile.Cell(world["bounds"]["min"]); var max=RoomFile.Cell(world["bounds"]["max"]);
             long right=(long)origin.x+size.x, top=(long)origin.y+size.y;
             if (origin.x < min.x || origin.y < min.y || right - 1 > max.x || top - 1 > max.y)

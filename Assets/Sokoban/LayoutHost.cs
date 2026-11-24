@@ -191,7 +191,8 @@ namespace Sokoban
                 zoom = Mathf.Clamp(zoom * Mathf.Pow(1.12f,-Input.mouseScrollDelta.y),.1f,5);
                 UpdateCamera();
             }
-            if(solo!=null && (!RoomFile.Inside(Panel.Draft.Room,hoveredCell-Panel.Draft.Origin) || solo!=Panel.Draft.ActiveId)) { if(solo!=Panel.Draft.ActiveId) solo=null; else hovering=false; }
+            if (solo != null && solo != Panel.Draft.ActiveId) solo = null;
+            if (solo != null && !Panel.IsBrush && !RoomFile.Inside(Panel.Draft.Room, hoveredCell - Panel.Draft.Origin)) hovering = false;
             if (gesture == -1 && hovering)
             {
                 for (int i=0;i<=2;i++)

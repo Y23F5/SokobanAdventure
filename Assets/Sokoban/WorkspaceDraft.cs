@@ -31,6 +31,26 @@ namespace Sokoban
             room["levelId"]="room-"+Guid.NewGuid().ToString("N"); room["name"]=name;
             room["boxes"]=new JArray(); room["targets"]=new JArray(); Reset(room,null,null,null); saved=null;
         }
+        public void NewDefaultRoom()
+        {
+            var room = RoomFile.Parse(Resources.Load<TextAsset>("DefaultRoom").text);
+            room["levelId"] = "room-" + Guid.NewGuid().ToString("N");
+            Reset(room, null, null, null);
+            saved = null;
+        }
+        public void NewBlankRoom()
+        {
+            var room = RoomFile.Parse(Resources.Load<TextAsset>("DefaultRoom").text);
+            room["levelId"] = "room-" + Guid.NewGuid().ToString("N");
+            room["name"] = "空白房间";
+            room["size"] = new JArray(15, 15);
+            room["terrainRowsNorthToSouth"] = new JArray(Enumerable.Repeat(new string(RoomFile.Void, 15), 15));
+            foreach (string key in new[] { "doors", "boxes", "targets", "events" }) room[key] = new JArray();
+            room.Remove("spawn");
+            room.Remove("primaryEntranceId");
+            Reset(room, null, null, null);
+            saved = null;
+        }
         JObject Design() => new JObject { ["world"]=World?.DeepClone(),["rooms"]=Catalog.DeepClone() };
         JObject State() => new JObject { ["data"]=Design(),["removed"]=removedPlacements.DeepClone(),["active"]=ActiveId,["selected"]=Selected,["cell"]=SelectedCell.HasValue?RoomFile.Point(SelectedCell.Value):null };
         void Remember() { undo.Push(State()); redo.Clear(); }
@@ -51,8 +71,8 @@ namespace Sokoban
             undo.Clear(); redo.Clear();foreach(JObject value in snapshot["undo"]) undo.Push(value);foreach(JObject value in snapshot["redo"]) redo.Push(value);Revision++;
         }
         public void BeginWorld() {
-            RoomFile.Check(World==null,"已在世界工作区"); World=WorldLayout.Empty(ActiveId); World["start"]["spawnId"]=Room["spawn"]["id"];
-            World["finish"]["endpoint"]["doorId"]=Room["doors"].Last()["id"];WorkPath=null;saved=null;undo.Clear();redo.Clear();Revision++;
+            RoomFile.Check(World==null,"已在世界工作区"); RoomFile.RequireStructure(Room); World=WorldLayout.Empty(ActiveId); World["start"]["spawnId"]=Room["spawn"]["id"];
+            World["finish"]["endpoint"]["doorId"]=(Room["doors"].LastOrDefault(d => (string)d["role"] == "exit") ?? Room["doors"].Last())["id"];WorkPath=null;saved=null;undo.Clear();redo.Clear();Revision++;
         }
         public void Attach(string path) {
             var candidate=RoomAssets.ReadRoom(path);string id=(string)candidate["levelId"];
@@ -86,6 +106,21 @@ namespace Sokoban
         }
         public void RemoveRoom() {RoomFile.Check(Placement!=null,"房间尚未放置");Remember();removedPlacements[ActiveId]=Placement.DeepClone();Placement.Remove();Revision++;}
         public void Rename(string name) { RoomFile.Check(!string.IsNullOrWhiteSpace(name),"房间名称不能为空"); var next=(JObject)Room.DeepClone();next["name"]=name;Commit(next,Selected); }
+        static bool NeedsFloor(JObject room, Vector2Int cell) =>
+            RoomFile.Objects(room).Any(item => RoomFile.At(item) == cell) ||
+            room["doors"].Any(door => RoomFile.At(door) + RoomFile.Inward(door) == cell) ||
+            room["boxes"].Any(box => RoomFile.Cell(box["recoveryCell"]) == cell);
+        public string TerrainPlacementError(Vector2Int cell, RoomTool tool)
+        {
+            if (World != null && Placement == null) return "房间尚未放置";
+            if (!RoomFile.Inside(Room, cell) && World != null)
+            {
+                var low = Vector2Int.Min(Vector2Int.zero, cell);
+                var high = Vector2Int.Max(RoomFile.Size(Room) - Vector2Int.one, cell);
+                return WorldLayout.PlacementIssue(World, Catalog, ActiveId, Origin + low, true, high - low + Vector2Int.one);
+            }
+            return tool == RoomTool.Wall && NeedsFloor(Room, cell) ? "对象或门内侧占用 " + cell : null;
+        }
         public string Brush(IEnumerable<Vector2Int> cells,RoomTool tool) {
             var points = cells.Distinct().ToArray();
             var size = RoomFile.Size(Room);
@@ -106,9 +141,7 @@ namespace Sokoban
                 next["size"] = RoomFile.Point(extent);
                 if (placement != null)
                 {
-                    var catalog = (JObject)Catalog.DeepClone();
-                    catalog[ActiveId] = next;
-                    string conflict = WorldLayout.PlacementIssue(World, catalog, ActiveId, origin, true);
+                    string conflict = WorldLayout.PlacementIssue(World, Catalog, ActiveId, origin, true, extent);
                     if (conflict != null) return conflict;
                 }
                 var rows = new JArray();
@@ -132,7 +165,7 @@ namespace Sokoban
                 if(!RoomFile.Inside(next,cell)) {issue="越界 "+cell;continue;}
                 var obj=RoomFile.Objects(next).FirstOrDefault(item=>RoomFile.At(item)==cell);
                 if(tool==RoomTool.Erase && obj!=null && (obj.Parent==next["boxes"] || obj.Parent==next["targets"] || obj.Parent==next["decorations"])) {obj.Remove();continue;}
-                if((tool==RoomTool.Wall || tool==RoomTool.Erase) && (obj!=null || next["doors"].Any(door=>RoomFile.At(door)+RoomFile.Inward(door)==cell) || next["boxes"].Any(box=>RoomFile.Cell(box["recoveryCell"])==cell))) {issue="对象或门内侧占用 "+cell;continue;}
+                if((tool==RoomTool.Wall || tool==RoomTool.Erase) && NeedsFloor(next, cell)) {issue="对象或门内侧占用 "+cell;continue;}
                 int index = size.y - 1 - cell.y;
                 var row = ((string)next["terrainRowsNorthToSouth"][index]).ToCharArray();
                 char tile = tool == RoomTool.Wall ? '#' : tool == RoomTool.Erase ? RoomFile.Void : '.';

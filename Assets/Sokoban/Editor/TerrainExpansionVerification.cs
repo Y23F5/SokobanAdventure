@@ -2,10 +2,14 @@
  * @file TerrainExpansionVerification.cs
  * @brief Run 从菜单或批处理逐例执行共享命令并汇总失败。Fixture 构造带地形身份与独立恢复格的世界。
  * Expansion 核对尺寸、原点、旧格与身份；Conflict 检查冲突整笔回滚；History 检查草稿与双向历史；
+ * Blank 从已有世界新建空房；BlankState 和 BlankRoundTrip 核对空白状态与草稿往返；BlankSave 验证正式保存拒绝。
+ * Repave 擦除再铺墙并撤销重做；OldRoom 从磁盘重开旧房逐字段核对。
+ * BuildAndReopen 从空房铺设走廊与门、保存并逐笔核对历史；ProtectedPreview 和 Conflict 分别检查保护格与世界预检。
  * Erase 检查对象、地形及受保护格。Require 报告断言，Paint 调用共享笔刷并检查返回值。
  */
 using System;
 using System.Linq;
+using System.IO;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -65,7 +69,7 @@ namespace Sokoban.Editor
             Require(JToken.DeepEquals(draft.Room["events"], before["events"]), "地形绑定改变");
         }
 
-        static void Conflict(bool overlap)
+        static void Conflict(bool overlap, bool preview = false)
         {
             var draft = Fixture();
             var point = new Vector2Int(-11, 2);
@@ -81,6 +85,17 @@ namespace Sokoban.Editor
                 point = new Vector2Int(7, 2);
             }
             var before = draft.Snapshot();
+            if (preview)
+            {
+                foreach (var tool in new[] { RoomTool.Floor, RoomTool.Wall })
+                {
+                    string error = draft.TerrainPlacementError(point, tool);
+                    Require(error != null && error.Contains(overlap ? "重叠" : "边界") && error.Contains(overlap ? "(17, 10)" : "(-1, 10)"), "预检未定位冲突 " + error);
+                    Require(draft.TerrainPlacementError(new Vector2Int(3, 7), tool) == null, "预检误拒空闲扩建");
+                }
+                Require(JToken.DeepEquals(before, draft.Snapshot()), "预检改变历史");
+                return;
+            }
             var issue = draft.Brush(new[] { BoundCell, point }, RoomTool.Wall);
             Require(issue != null && issue.Contains(overlap ? "重叠" : "边界"), "未报告预期冲突 " + issue);
             Require(JToken.DeepEquals(before, draft.Snapshot()), "冲突改变工作区或历史");
@@ -133,6 +148,129 @@ namespace Sokoban.Editor
             Require(RoomFile.Terrain(draft.Room, cell) == RoomFile.Void, "第二笔没有擦除地板");
         }
 
+        static RoomDraft Blank()
+        {
+            var draft = Fixture();
+            draft.NewBlankRoom();
+            return draft;
+        }
+
+        static void BlankState()
+        {
+            var draft = Blank();
+            var rows = (JArray)draft.Room["terrainRowsNorthToSouth"];
+            Require(RoomFile.Size(draft.Room) == new Vector2Int(15,15) && rows.Count == 15 && rows.All(row => (string)row == new string(RoomFile.Void,15)), "新房尺寸或空格错误");
+            Require(!RoomFile.Objects(draft.Room).Any() && !draft.Room["events"].Any() && draft.Room["primaryEntranceId"] == null, "空房残留对象或主入口");
+            Require(draft.World == null && draft.WorkPath == null && draft.Dirty && draft.Catalog.Count == 1 && draft.ActiveId != "ws01-room", "新建未重置旧工作区");
+        }
+
+        static void BlankRoundTrip()
+        {
+            var draft = Blank();
+            var snapshot = JObject.Parse(draft.Snapshot().ToString());
+            var restored = Fixture();
+            restored.Recover(snapshot);
+            Require(restored.Dirty && JToken.DeepEquals(snapshot, JObject.Parse(restored.Snapshot().ToString())), "空白草稿往返丢失状态");
+        }
+
+        static void BlankSave()
+        {
+            var draft = Blank();
+            var before = draft.Snapshot();
+            string path = Path.Combine(Application.temporaryCachePath, Guid.NewGuid().ToString("N") + ".room.json");
+            try
+            {
+                draft.Save(path, false);
+                throw new InvalidOperationException("正式保存接受了空白草稿");
+            }
+            catch (InvalidDataException ex) when (ex.Message.Contains("出生点"))
+            {
+                Require(!File.Exists(path) && JToken.DeepEquals(before, draft.Snapshot()), "保存拒绝后文件或草稿被修改");
+            }
+            finally { if (File.Exists(path)) File.Delete(path); }
+        }
+
+        static void Repave()
+        {
+            var draft = Blank();
+            var cell = new Vector2Int(7,7);
+            Paint(draft, cell, RoomTool.Floor);
+            Require(RoomFile.Floor(draft.Room, cell), "空格铺地失败");
+            Paint(draft, cell, RoomTool.Erase);
+            Require(RoomFile.Terrain(draft.Room, cell) == RoomFile.Void, "地板未擦除");
+            Paint(draft, cell, RoomTool.Wall);
+            Require(RoomFile.Terrain(draft.Room, cell) == '#' && RoomFile.Terrain(draft.Room, cell + Vector2Int.right) == RoomFile.Void, "重铺墙影响错误格");
+            draft.Undo();
+            Require(RoomFile.Terrain(draft.Room, cell) == RoomFile.Void, "撤销重铺未恢复空格");
+            draft.Redo();
+            Require(RoomFile.Terrain(draft.Room, cell) == '#', "重做未恢复墙");
+        }
+
+        static void OldRoom()
+        {
+            string path = Path.GetFullPath(Path.Combine(Application.dataPath, "../Docs/关卡样例/WS-01.json"));
+            var expected = JObject.Parse(File.ReadAllText(path));
+            var draft = Blank();
+            draft.Open(path, false);
+            Require(JToken.DeepEquals(expected, draft.Room) && !draft.Dirty && draft.WorkPath == path, "既有房间数据或文件关联改变");
+            Require(draft.Find("spawn") != null && draft.Find("box-a") != null && draft.Find("entry") != null, "旧房关键对象缺失");
+        }
+
+        static void ProtectedPreview()
+        {
+            var draft = Fixture();
+            var before = draft.Snapshot();
+            foreach (var cell in new[] { new Vector2Int(2,2), new Vector2Int(3,2), new Vector2Int(1,3), new Vector2Int(3,4) })
+            {
+                var error = draft.TerrainPlacementError(cell, RoomTool.Wall);
+                Require(error != null && error.Contains("占用") && error.Contains(cell.ToString()), "保护格预检错误 " + cell);
+                Require(draft.TerrainPlacementError(cell, RoomTool.Floor) == null, "保护格误拒地板 " + cell);
+            }
+            Require(draft.TerrainPlacementError(new Vector2Int(4,4), RoomTool.Wall) == null, "普通格误拒墙");
+            Require(JToken.DeepEquals(before, draft.Snapshot()), "保护格预检改变草稿");
+        }
+
+        static void BuildAndReopen()
+        {
+            var draft = Blank();
+            var states = new System.Collections.Generic.List<JToken> { draft.Room.DeepClone() };
+            var corridor = Enumerable.Range(3, 5).Select(x => new Vector2Int(x, 7)).ToArray();
+            Require(draft.Brush(corridor, RoomTool.Floor) == null, "铺设走廊失败");
+            states.Add(draft.Room.DeepClone());
+            Require(draft.Brush(corridor.SelectMany(c => new[] { c + Vector2Int.up, c + Vector2Int.down }), RoomTool.Wall) == null, "封墙失败");
+            states.Add(draft.Room.DeepClone());
+            draft.SetRoomMarker(corridor[2], "spawn");
+            states.Add(draft.Room.DeepClone());
+            draft.SetRoomMarker(corridor[0], "entry");
+            states.Add(draft.Room.DeepClone());
+            draft.SetRoomMarker(corridor[4], "exit");
+            states.Add(draft.Room.DeepClone());
+            var entry = draft.Room["doors"].Single(d => (string)d["role"] == "entry");
+            var exit = draft.Room["doors"].Single(d => (string)d["role"] == "exit");
+            Require(RoomFile.At(draft.Room["spawn"]) == corridor[2] && RoomFile.At(entry) == corridor[0] && RoomFile.At(exit) == corridor[4], "标记坐标错误");
+            Require((string)entry["direction"] == "W" && (string)exit["direction"] == "E" && (string)draft.Room["primaryEntranceId"] == (string)entry["id"], "门朝向或主入口错误");
+            string path = Path.GetFullPath(Path.Combine(Application.dataPath, "../Logs/WS05A-" + draft.ActiveId + ".room.json"));
+            draft.Save(path, false);
+            string contents = File.ReadAllText(path);
+            Require(!draft.Dirty && draft.WorkPath == path && JToken.DeepEquals(JObject.Parse(contents), states.Last()), "正式文件或保存状态错误");
+            for (int i = states.Count - 2; i >= 0; i--)
+            {
+                draft.Undo();
+                Require(draft.Dirty && JToken.DeepEquals(draft.Room, states[i]), "撤销步骤错误 " + i);
+            }
+            for (int i = 1; i < states.Count; i++)
+            {
+                draft.Redo();
+                Require(JToken.DeepEquals(draft.Room, states[i]), "重做步骤错误 " + i);
+            }
+            Require(!draft.Dirty && File.ReadAllText(path) == contents, "重做后保存基线或磁盘改变");
+            draft.Open(path, false);
+            var reopened = draft.Snapshot();
+            Require(!draft.Dirty && draft.WorkPath == path && JToken.DeepEquals(draft.Room, states.Last()), "正式文件重读不一致");
+            Require(!reopened["undo"].Any() && !reopened["redo"].Any(), "重开继承旧编辑历史");
+            Debug.Log("WS05A ROOM " + path);
+        }
+
         [MenuItem("Sokoban/验证/WS-05A 共享地形与扩建")]
         public static void Run()
         {
@@ -153,6 +291,15 @@ namespace Sokoban.Editor
             Test("history-draft", History);
             Test("erase-object-recovery", () => Erase(false));
             Test("erase-bound-terrain", () => Erase(true));
+            Test("blank-state", BlankState);
+            Test("blank-draft-roundtrip", BlankRoundTrip);
+            Test("blank-formal-save-refused", BlankSave);
+            Test("blank-repave", Repave);
+            Test("blank-open-old-room", OldRoom);
+            Test("blank-build-save-history-reopen", BuildAndReopen);
+            Test("preview-world-boundary", () => Conflict(false, true));
+            Test("preview-world-overlap", () => Conflict(true, true));
+            Test("preview-protected-cells", ProtectedPreview);
             Debug.Log($"WS05A RESULT {total - failed}/{total}");
             Require(failed == 0, $"WS05A {failed} failed");
         }
