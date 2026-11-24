@@ -1,0 +1,89 @@
+{
+  "formatVersion": 2,
+  "levelId": "factory",
+  "name": "工厂",
+  "themeId": "factory",
+  "size": [
+    11,
+    7
+  ],
+  "terrainRowsNorthToSouth": [
+    "###########",
+    "#....######",
+    "#........##",
+    ".......##..",
+    "#.....###.#",
+    "#.........#",
+    "###########"
+  ],
+  "doors": [
+    {
+      "id": "entry",
+      "cell": [
+        0,
+        3
+      ],
+      "direction": "W",
+      "role": "entry"
+    },
+    {
+      "id": "exit",
+      "cell": [
+        10,
+        3
+      ],
+      "direction": "E",
+      "role": "exit"
+    }
+  ],
+  "spawn": {
+    "id": "spawn",
+    "cell": [
+      2,
+      1
+    ]
+  },
+  "boxes": [
+    {
+      "id": "box-1",
+      "cell": [
+        5,
+        4
+      ],
+      "recoveryCell": [
+        5,
+        4
+      ]
+    },
+    {
+      "id": "box-2",
+      "cell": [
+        4,
+        2
+      ],
+      "recoveryCell": [
+        4,
+        2
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "id": "target-1",
+      "cell": [
+        7,
+        4
+      ]
+    },
+    {
+      "id": "target-2",
+      "cell": [
+        8,
+        4
+      ]
+    }
+  ],
+  "events": [],
+  "kind": "room",
+  "primaryEntranceId": "entry"
+}

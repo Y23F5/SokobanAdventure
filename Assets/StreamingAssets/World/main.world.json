@@ -1,0 +1,93 @@
+{
+  "kind": "world",
+  "formatVersion": 1,
+  "worldId": "main",
+  "contentVersion": 1,
+  "bounds": {
+    "min": [
+      0,
+      0
+    ],
+    "max": [
+      63,
+      31
+    ]
+  },
+  "rooms": [
+    {
+      "levelId": "warehouse",
+      "file": "warehouse.room.json",
+      "origin": [
+        0,
+        0
+      ],
+      "forwardRequiresSolved": []
+    },
+    {
+      "levelId": "factory",
+      "file": "factory.room.json",
+      "origin": [
+        9,
+        0
+      ],
+      "forwardRequiresSolved": [
+        "warehouse"
+      ]
+    },
+    {
+      "levelId": "forest",
+      "file": "forest.room.json",
+      "origin": [
+        20,
+        0
+      ],
+      "forwardRequiresSolved": [
+        "warehouse",
+        "factory"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "link-1",
+      "mode": "direct",
+      "forwardFrom": {
+        "levelId": "warehouse",
+        "doorId": "exit"
+      },
+      "forwardTo": {
+        "levelId": "factory",
+        "doorId": "entry"
+      },
+      "allowReturn": true
+    },
+    {
+      "id": "link-2",
+      "mode": "direct",
+      "forwardFrom": {
+        "levelId": "factory",
+        "doorId": "exit"
+      },
+      "forwardTo": {
+        "levelId": "forest",
+        "doorId": "entry"
+      },
+      "allowReturn": true
+    }
+  ],
+  "start": {
+    "levelId": "warehouse",
+    "spawnId": "spawn"
+  },
+  "finish": {
+    "endpoint": {
+      "levelId": "forest",
+      "doorId": "exit"
+    },
+    "requiresSolved": [
+      "warehouse",
+      "factory",
+      "forest"
+    ]
+  }
+}

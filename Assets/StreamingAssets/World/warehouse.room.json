@@ -1,0 +1,71 @@
+{
+  "formatVersion": 2,
+  "levelId": "warehouse",
+  "name": "仓库",
+  "themeId": "warehouse",
+  "size": [
+    9,
+    7
+  ],
+  "terrainRowsNorthToSouth": [
+    "#########",
+    "#.......#",
+    "#.......#",
+    ".........",
+    "#.......#",
+    "#.......#",
+    "#########"
+  ],
+  "doors": [
+    {
+      "id": "entry",
+      "cell": [
+        0,
+        3
+      ],
+      "direction": "W",
+      "role": "entry"
+    },
+    {
+      "id": "exit",
+      "cell": [
+        8,
+        3
+      ],
+      "direction": "E",
+      "role": "exit"
+    }
+  ],
+  "spawn": {
+    "id": "spawn",
+    "cell": [
+      2,
+      2
+    ]
+  },
+  "boxes": [
+    {
+      "id": "box-1",
+      "cell": [
+        4,
+        2
+      ],
+      "recoveryCell": [
+        4,
+        2
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "id": "target-1",
+      "cell": [
+        6,
+        2
+      ]
+    }
+  ],
+  "events": [],
+  "kind": "room",
+  "primaryEntranceId": "entry"
+}

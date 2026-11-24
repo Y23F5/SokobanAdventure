@@ -1,0 +1,71 @@
+{
+  "formatVersion": 2,
+  "levelId": "ws01-room",
+  "name": "双端交换测试房",
+  "themeId": "warehouse",
+  "size": [
+    7,
+    7
+  ],
+  "terrainRowsNorthToSouth": [
+    "#######",
+    "#.....#",
+    "#.....#",
+    ".......",
+    "#.....#",
+    "#.....#",
+    "#######"
+  ],
+  "doors": [
+    {
+      "id": "entry",
+      "cell": [
+        0,
+        3
+      ],
+      "direction": "W",
+      "role": "entry"
+    },
+    {
+      "id": "exit",
+      "cell": [
+        6,
+        3
+      ],
+      "direction": "E",
+      "role": "exit"
+    }
+  ],
+  "spawn": {
+    "id": "spawn",
+    "cell": [
+      2,
+      2
+    ]
+  },
+  "boxes": [
+    {
+      "id": "box-a",
+      "cell": [
+        3,
+        2
+      ],
+      "recoveryCell": [
+        3,
+        2
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "id": "target-a",
+      "cell": [
+        4,
+        2
+      ]
+    }
+  ],
+  "events": [],
+  "kind": "room",
+  "primaryEntranceId": "entry"
+}
