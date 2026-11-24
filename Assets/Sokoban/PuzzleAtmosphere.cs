@@ -67,10 +67,19 @@ namespace Sokoban
                     if (!originals.TryGetValue(r, out var mat)) originals[r] = mat = r.sharedMaterial;
                     if (!mat) continue;
                     if (r.sharedMaterial == translucent) r.sharedMaterial = mat;
-                    surface.Clear();
-                    r.GetPropertyBlock(surface);
-                    if (mat.HasProperty("_BaseColor")) surface.SetColor("_BaseColor",mat.GetColor("_BaseColor") * (active ? 1f : .64f));
-                    r.SetPropertyBlock(surface);
+                    var materials = r.sharedMaterials;
+                    for (int slot = 0; slot < materials.Length; slot++)
+                    {
+                        var paint = materials[slot];
+                        if (!paint || !paint.HasProperty("_BaseColor")) continue;
+                        if (active) r.SetPropertyBlock(null,slot);
+                        else
+                        {
+                            r.GetPropertyBlock(surface);
+                            surface.SetColor("_BaseColor",paint.GetColor("_BaseColor") * .64f);
+                            r.SetPropertyBlock(surface,slot);
+                        }
+                    }
                 }
             }
             if (clearing)
