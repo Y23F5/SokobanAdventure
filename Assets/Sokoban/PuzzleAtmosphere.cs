@@ -120,6 +120,7 @@ namespace Sokoban
         }
         public void AcceptDiscovery() { Run.AcceptItem(); Persist(); }
         WarehouseLift liftRig;
+        readonly Dictionary<string,FactoryBelt> belts = new Dictionary<string,FactoryBelt>();
 
         void AnimateRecoveryProp(float fraction)
         {
@@ -135,6 +136,8 @@ namespace Sokoban
             {
                 foreach (var box in Run.Boxes) { objects[box.Key].position=Position(box.Value); objects[box.Key].localScale=Vector3.one; }
                 liftRig?.Clear(); liftRig = null;
+                foreach (var belt in belts.Values) belt.Clear();
+                belts.Clear();
                 AnimateRecoveryProp(1);
                 actor.localScale=Vector3.one;
                 if (!turning && Busy) { duration=0; movingBox=null; Run.Motion=null; }
@@ -154,6 +157,22 @@ namespace Sokoban
                     var box = moved[index];
                     if (liftRig == null) liftRig = new WarehouseLift(truck);
                     liftRig.Sample(objects[box.Key],Position(box.Value),Position(Run.RecoveryCell(box.Key)),progress-index);
+                }
+                actor.localScale = Run.PlayerOnRecoveryCell ? Vector3.one*Mathf.Clamp01(Run.RecoveryRemaining/.22f) : Vector3.one;
+                return;
+            }
+            if ((string)Run.Room["themeId"] == "factory")
+            {
+                foreach (var box in Run.Boxes)
+                {
+                    var home = Run.RecoveryCell(box.Key);
+                    if (box.Value == home) continue;
+                    if (!belts.TryGetValue(box.Key,out var belt))
+                    {
+                        belt = new FactoryBelt(groups[Run.ActiveId],Position(box.Value),Position(home));
+                        belts.Add(box.Key,belt);
+                    }
+                    belt.Sample(objects[box.Key],fraction);
                 }
                 actor.localScale = Run.PlayerOnRecoveryCell ? Vector3.one*Mathf.Clamp01(Run.RecoveryRemaining/.22f) : Vector3.one;
                 return;
