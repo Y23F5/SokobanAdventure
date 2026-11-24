@@ -137,7 +137,7 @@ namespace Sokoban
                 case "移动对象": ApplyPoint(false);break;
                 case "移出": Panel.Run(d.RemoveRoom,"房间已移回目录");break;
                 case "名称": Panel.Run(()=>d.Rename(roomName.text),"已修改名称");break;
-                case "检查": Panel.Status=Panel.StructuralIssue??"结构检查通过";break;
+                case "检查": Panel.CheckCurrentRoom();break;
                 case "上一级": Panel.ParentDirectory();break;
                 case "提交文件": Panel.SubmitFile();break;
                 case "取消": Panel.CancelDialog();break;

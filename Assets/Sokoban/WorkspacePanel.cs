@@ -136,6 +136,29 @@ namespace Sokoban
             string role = index == 0 ? "spawn" : index == 1 ? "entry" : "exit";
             Run(() => Draft.SetRoomMarker(Draft.SelectedCell.Value, role), MarkerLabels[index] + "已完成");
         }
+        int solutionRequest;
+        public async void CheckCurrentRoom()
+        {
+            int request = ++solutionRequest;
+            int revision = Draft.Revision;
+            if (StructuralIssue != null) { Status = StructuralIssue; return; }
+            var room = (JObject)Draft.Room.DeepClone();
+            Status = "正在检查房间解法";
+            try
+            {
+                var result = await System.Threading.Tasks.Task.Run(() => RoomSolution.Check(room, RoomFile.At(room["spawn"])));
+                if (request != solutionRequest) return;
+                if (revision != Draft.Revision) { Status = "布局已变更，请重新检查"; return; }
+                switch (result.Status)
+                {
+                    case RoomSolution.Outcome.Solved: Status = "出生点有解（北东南西 NESW） " + result.Detail; break;
+                    case RoomSolution.Outcome.Unsolvable: Status = "出生点确认无解 · " + result.Detail; break;
+                    case RoomSolution.Outcome.BudgetReached: Status = "搜索未完成 · " + result.Detail; break;
+                    default: Status = "无法验证 · " + result.Detail; break;
+                }
+            }
+            catch (Exception error) { if (request == solutionRequest) Status = "检查失败 · " + error.Message; }
+        }
         public void WorkspaceControls() {
             GUILayout.Label(Draft.World==null?"独立房间":"世界 · "+(string)Draft.World["worldId"]);
             if(Draft.World==null) {if(GUILayout.Button("以此房间创建世界")) Run(()=>{Draft.BeginWorld();Flush();},"房间已加入目录，请设置放置原点");}
@@ -147,6 +170,7 @@ namespace Sokoban
                 GUILayout.Label(Draft.Placement==null?"尚未放置":"房间原点 "+Draft.Origin);
                 if(GUILayout.Button(Draft.Placement==null?"在地图放置整房":"在地图移动整房")) StartRoomPlacement();
             }
+            if (GUILayout.Button("检查当前房间解法")) CheckCurrentRoom();
             if (Draft.SelectedCell.HasValue)
                 for (int i = 0; i < MarkerLabels.Length; i++) if (GUILayout.Button(MarkerLabels[i])) ApplyMarker(i);
             GUILayout.BeginHorizontal(); GUILayout.Label("X",GUILayout.Width(34));fieldX=GUILayout.TextField(fieldX);GUILayout.Label("Y",GUILayout.Width(34));fieldY=GUILayout.TextField(fieldY);GUILayout.EndHorizontal();
