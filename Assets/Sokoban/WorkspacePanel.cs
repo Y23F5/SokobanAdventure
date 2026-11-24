@@ -153,6 +153,8 @@ namespace Sokoban
             }
             catch (Exception error) { if (request == solutionRequest) Status = "检查失败 · " + error.Message; }
         }
+        string objectName;
+        int objectNameRevision = -1;
         public void WorkspaceControls() {
             GUILayout.Label(Draft.World==null?"独立房间":"世界 · "+(string)Draft.World["worldId"]);
             if(Draft.World==null) {if(GUILayout.Button("以此房间创建世界")) Run(()=>{Draft.BeginWorld();Flush();},"房间已加入目录，请设置放置原点");}
@@ -176,6 +178,13 @@ namespace Sokoban
                 if(GUILayout.Button("检查世界")) {var issues=WorldLayout.Issues(Draft.World,Draft.Catalog).ToArray();Status=issues.Length==0?"放置与直连检查通过":string.Join("；",issues);}
             }
             if(Draft.Selected!=null && GUILayout.Button("将选中对象移至坐标")) Run(()=>{RoomFile.Check(valid,"需要整数坐标");Draft.Move(point-Draft.Origin);},"已修改格子坐标");
+            if (Draft.Selection.Count > 0)
+            {
+                if (objectNameRevision != Draft.Revision) { objectName = Draft.SelectedName(); objectNameRevision = Draft.Revision; }
+                GUILayout.Label("对象名称（已选 " + Draft.Selection.Count + "）");
+                objectName = GUILayout.TextField(objectName);
+                if (GUILayout.Button("应用选中对象名称")) Run(() => Draft.SetSelectedName(objectName), "已修改选中对象名称");
+            }
             roomName=GUILayout.TextField(roomName); if(GUILayout.Button("应用房间名称")) Run(()=>Draft.Rename(roomName),"已更新名称");
         }
         public void CancelTool() {PlacingRoom=false;placementId=null;Painting=false;stroke.Clear();Draft.Tool=RoomTool.Select;Status="已返回选择";}

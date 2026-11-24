@@ -20,6 +20,37 @@ namespace Sokoban
                 ?? Room["terrainObjects"]?.FirstOrDefault(item => RoomFile.At(item) == cell);
             return (string)entity?["id"];
         }
+        internal string SelectedName()
+        {
+            var names = Selection.Select(point => (string)PropertyObject(Room, point)?["name"] ?? "").Distinct().Take(2).ToArray();
+            return names.Length == 1 ? names[0] : "";
+        }
+        static JToken PropertyObject(JObject room, Vector2Int point) => RoomFile.Objects(room).FirstOrDefault(item => RoomFile.At(item) == point)
+            ?? room["terrainObjects"]?.FirstOrDefault(item => RoomFile.At(item) == point);
+        public void SetSelectedName(string name)
+        {
+            RoomFile.Check(Selection.Count > 0 && SelectedCell.HasValue, "请选择对象或地形");
+            var next = (JObject)Room.DeepClone();
+            var selected = Selection.ToArray();
+            var primary = SelectedCell.Value;
+            foreach (var point in selected)
+            {
+                var obj = PropertyObject(next, point);
+                if (obj == null)
+                {
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    if (next["terrainObjects"] == null) next["terrainObjects"] = new JArray();
+                    obj = new JObject { ["id"]="tile-" + Guid.NewGuid().ToString("N"), ["cell"]=RoomFile.Point(point) };
+                    ((JArray)next["terrainObjects"]).Add(obj);
+                }
+                if (string.IsNullOrWhiteSpace(name)) ((JObject)obj).Remove("name");
+                else obj["name"] = name.Trim();
+            }
+            if (JToken.DeepEquals(next,Room)) return;
+            Commit(next,null);
+            Select(primary);
+            foreach (var point in selected) Selection.Add(point);
+        }
         public void SetBehavior(Vector2Int cell, JObject graph)
         {
             var cells = Selection.Contains(cell) ? Selection.ToArray() : new[] { cell };
@@ -116,8 +147,12 @@ namespace Sokoban
                         yield return "行为图存在悬空连线 " + graphId;
             }
         }
-        public static bool IsVisual(JToken graph) => graph["nodes"] is JArray nodes && nodes.All(n =>
-            (string)n["kind"] == "roomSolved" || (string)n["kind"] == "setVisible" || (string)n["kind"] == "condition" && n["expression"] == null);
+        public static bool IsVisualNode(JToken node)
+        {
+            string kind = (string)node["kind"];
+            return kind == "roomSolved" || kind == "setVisible" || kind == "condition" && node["expression"] == null;
+        }
+        public static bool IsVisual(JToken graph) => graph["nodes"] is JArray nodes && nodes.All(IsVisualNode);
         public static IEnumerable<JToken> Effects(JToken graph)
         {
             var nodes = graph["nodes"] as JArray;

@@ -38,7 +38,11 @@ namespace Sokoban
             var boxes = room["boxes"].Select(RoomFile.At).ToArray();
             if (!RoomFile.Floor(room, start) || boxes.Contains(start)) return new Result(Outcome.Invalid, "起点无法站立 " + start);
             var graph = room["events"].FirstOrDefault(item => !ObjectBehavior.IsVisual(item));
-            if (graph != null) return new Result(Outcome.Unsupported, $"待模拟对象 {graph["ownerId"]} 的行为图 {graph["id"]}");
+            if (graph != null)
+            {
+                var node = graph["nodes"]?.FirstOrDefault(item => !ObjectBehavior.IsVisualNode(item));
+                return new Result(Outcome.Unsupported, $"待模拟对象 {graph["ownerId"]} 的行为图 {graph["id"]}，节点 {node?["id"]}（{node?["kind"]}）");
+            }
             var targets = new HashSet<Vector2Int>(room["targets"].Select(RoomFile.At));
             if (targets.Count == 0 || boxes.Length < targets.Count) return new Result(Outcome.Unsolvable, "可占据的目标数量不足");
             var exits = new HashSet<Vector2Int>(room["doors"].Where(d =>

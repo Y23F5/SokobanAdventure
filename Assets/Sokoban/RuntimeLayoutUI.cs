@@ -179,6 +179,12 @@ namespace Sokoban
                 button.GetComponentInChildren<Text>().text=label;
                 button.onClick.AddListener(()=>ChooseEntry(item,directory));
             }
+            if (!directory && Panel.Draft.Selection.Count > 0)
+            {
+                var apply = Instantiate(entryPrefab, container, false);
+                apply.GetComponentInChildren<Text>().text = "将名称栏应用到所选 " + Panel.Draft.Selection.Count + " 格";
+                apply.onClick.AddListener(() => Panel.Run(() => Panel.Draft.SetSelectedName(roomName.text), "已修改选中对象名称"));
+            }
             if (!directory && Panel.Draft.SelectedCell.HasValue)
                 for (int i = 0; i < LayoutPanel.MarkerLabels.Length; i++)
                 {
