@@ -16,8 +16,8 @@ namespace Sokoban.Editor
         string drag, source, outlet;
         Vector2 offset;
         const float Width = 132, Height = 66;
-        static readonly string[] Kinds = { "roomSolved", "condition", "setVisible", "lua" };
-        static readonly string[] Labels = { "房间解开", "条件", "显示对象", "Lua" };
+        static readonly string[] Kinds = { "roomSolved", "condition", "setVisible", "lua", "openPassage" };
+        static readonly string[] Labels = { "房间解开", "条件", "显示对象", "Lua", "开放墙格" };
         int selectedKind;
         static Rect Position(JToken node, int index) => new Rect((float?)node["canvasX"] ?? 12 + 148 * (index % 4), (float?)node["canvasY"] ?? 14 + 88 * (index / 4), Width, Height);
         internal void Draw(JObject graph)

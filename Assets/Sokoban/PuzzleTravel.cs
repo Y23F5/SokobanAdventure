@@ -92,7 +92,7 @@ namespace Sokoban
                 foreach (var d in SearchOrder)
                 {
                     var next = p + d;
-                    if (!seen.Add(next) || !RoomFile.Floor(Room, next - Origin) || Current.Homes.ContainsValue(next)) continue;
+                    if (!seen.Add(next) || !Current.Walkable(next) || Current.Homes.ContainsValue(next)) continue;
                     if (!Boxes.ContainsValue(next)) return next;
                     queue.Enqueue(next);
                 }
@@ -106,8 +106,9 @@ namespace Sokoban
             RecoveryRemaining = Mathf.Max(0, RecoveryRemaining - Mathf.Max(0, seconds));
             if (Recovering) return false;
             if (Current.Homes.ContainsValue(Player)) Player = SafeLanding();
+            bool previouslySolved = Solved;
             foreach (var home in Current.Homes) Boxes[home.Key] = home.Value;
-            Current.EverSolved |= Solved;
+            Current.RecordSolved(previouslySolved);
             return true;
         }
     }

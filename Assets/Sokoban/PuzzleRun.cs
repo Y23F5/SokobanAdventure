@@ -84,19 +84,20 @@ namespace Sokoban
             if (Mathf.Abs(delta.x) + Mathf.Abs(delta.y) != 1) return false;
             var next = Player + delta;
             if (RoomFile.Terrain(Room, next - Origin) == RoomFile.Void) return CrossDoor(delta);
-            if (!RoomFile.Floor(Room, next - Origin) || IsReserved(next)) return false;
+            if (!Current.Walkable(next) || IsReserved(next)) return false;
             var door = Room["doors"].FirstOrDefault(d => RoomFile.At(d) == next - Origin);
             if (door != null && (string)door["role"] == "exit" && !CanApproach(door)) return false;
+            bool previouslySolved = Solved;
             string box = Boxes.FirstOrDefault(pair => pair.Value == next).Key;
             if (box != null)
             {
                 var beyond = next + delta;
-                if (Recovering || !RoomFile.Floor(Room, beyond - Origin) || Boxes.ContainsValue(beyond)) return false;
+                if (Recovering || !Current.Walkable(beyond) || Boxes.ContainsValue(beyond)) return false;
                 Boxes[box] = beyond;
                 pushed = box;
             }
             Player = next;
-            Current.EverSolved |= Solved;
+            Current.RecordSolved(previouslySolved);
             return true;
         }
 

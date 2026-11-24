@@ -49,6 +49,7 @@ namespace Sokoban.Editor
                         if (!string.IsNullOrWhiteSpace(expression)) node["expression"] = expression;
                         else ((JObject)node).Remove("expression");
                         break;
+                    case "openPassage": EditorGUILayout.LabelField("解开后允许穿过这面墙"); break;
                     case "lua":
                         EditorGUILayout.LabelField("Lua 脚本");
                         node["script"] = EditorGUILayout.TextArea((string)node["script"] ?? "", GUILayout.MinHeight(52));

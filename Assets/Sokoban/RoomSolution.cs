@@ -28,19 +28,21 @@ namespace Sokoban
             internal Vector2Int[] Boxes;
             internal Node Parent;
             internal char Direction;
+            internal bool Unlocked;
         }
         static readonly Vector2Int[] Steps = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
         const string Directions = "NESW";
-        public static Result Check(JObject room, Vector2Int start, int budget = 100000, JObject world = null, Vector2Int? destination = null, Vector2Int[] currentBoxes = null)
+        public static Result Check(JObject room, Vector2Int start, int budget = 100000, JObject world = null, Vector2Int? destination = null, Vector2Int[] currentBoxes = null, bool everSolved = false)
         {
             string issue = RoomFile.StructureIssues(room).FirstOrDefault();
             if (issue != null) return new Result(Outcome.Invalid, issue);
             var boxes = currentBoxes ?? room["boxes"].Select(RoomFile.At).ToArray();
-            if (!RoomFile.Floor(room, start) || boxes.Contains(start)) return new Result(Outcome.Invalid, "起点无法站立 " + start);
-            var graph = room["events"].FirstOrDefault(item => !ObjectBehavior.IsVisual(item));
+            var passages = ObjectBehavior.SolvedPassages(room);
+            if (!ObjectBehavior.Walkable(room, start, everSolved, passages) || boxes.Contains(start)) return new Result(Outcome.Invalid, "起点无法站立 " + start);
+            var graph = room["events"].FirstOrDefault(item => !ObjectBehavior.CanSimulate(item));
             if (graph != null)
             {
-                var node = graph["nodes"]?.FirstOrDefault(item => !ObjectBehavior.IsVisualNode(item));
+                var node = graph["nodes"]?.FirstOrDefault(item => !ObjectBehavior.CanSimulateNode(item));
                 return new Result(Outcome.Unsupported, $"待模拟对象 {graph["ownerId"]} 的行为图 {graph["id"]}，节点 {node?["id"]}（{node?["kind"]}）");
             }
             var targets = new HashSet<Vector2Int>(room["targets"].Select(RoomFile.At));
@@ -51,8 +53,8 @@ namespace Sokoban
                 return world == null || !world["connections"].Any(link => (bool?)link["allowReturn"] == true &&
                     (string)link["forwardTo"]?["levelId"] == (string)room["levelId"] && (string)link["forwardTo"]?["doorId"] == (string)d["id"]);
             }).Select(RoomFile.At));
-            if (targets.Any(goal => UnreachableTarget(room, boxes, goal))) return new Result(Outcome.Unsolvable, "存在箱子无法抵达的目标格");
-            return Search(room, start, boxes, targets, exits, budget, destination);
+            if (!everSolved && targets.Any(goal => UnreachableTarget(room, boxes, goal))) return new Result(Outcome.Unsolvable, "存在箱子无法抵达的目标格");
+            return Search(room, start, boxes, targets, exits, budget, destination, passages, everSolved);
         }
         /** @brief 从目标反向枚举推箱前的箱格和玩家站位，忽略其他箱子。无箱子能抵达某个目标时可证明静态死锁。 */
         static bool UnreachableTarget(JObject room, Vector2Int[] boxes, Vector2Int target)
@@ -101,7 +103,7 @@ namespace Sokoban
                 }
             return string.Join("\n", reports);
         }
-        static Result Search(JObject room, Vector2Int start, Vector2Int[] boxes, HashSet<Vector2Int> targets, HashSet<Vector2Int> exits, int budget, Vector2Int? destination)
+        static Result Search(JObject room, Vector2Int start, Vector2Int[] boxes, HashSet<Vector2Int> targets, HashSet<Vector2Int> exits, int budget, Vector2Int? destination, HashSet<Vector2Int> passages, bool everSolved)
         {
             var reachable = new HashSet<Vector2Int>(targets);
             var reverse = new Queue<Vector2Int>(targets);
@@ -111,10 +113,10 @@ namespace Sokoban
                 foreach (var direction in Steps)
                 {
                     var before = target - direction;
-                    if (RoomFile.Floor(room, before) && RoomFile.Floor(room, before - direction) && reachable.Add(before)) reverse.Enqueue(before);
+                    if (ObjectBehavior.Walkable(room, before, true, passages) && ObjectBehavior.Walkable(room, before - direction, true, passages) && reachable.Add(before)) reverse.Enqueue(before);
                 }
             }
-            var root = new Node { Player = start, Boxes = boxes };
+            var root = new Node { Player = start, Boxes = boxes, Unlocked = everSolved || targets.All(t => Array.IndexOf(boxes, t) >= 0) };
             var queue = new Queue<Node>();
             var seen = new HashSet<string> { Key(root) };
             queue.Enqueue(root);
@@ -129,23 +131,23 @@ namespace Sokoban
                 for (int i = 0; i < Steps.Length; i++)
                 {
                     var next = node.Player + Steps[i];
-                    if (!RoomFile.Floor(room, next) || !solved && exits.Contains(next)) continue;
+                    if (!ObjectBehavior.Walkable(room, next, node.Unlocked, passages) || !solved && exits.Contains(next)) continue;
                     var nextBoxes = node.Boxes;
                     int pushed = Array.IndexOf(nextBoxes, next);
                     if (pushed >= 0)
                     {
                         var beyond = next + Steps[i];
-                        if (!RoomFile.Floor(room, beyond) || Array.IndexOf(nextBoxes, beyond) >= 0 || boxes.Length == targets.Count && !reachable.Contains(beyond)) continue;
+                        if (!ObjectBehavior.Walkable(room, beyond, node.Unlocked, passages) || Array.IndexOf(nextBoxes, beyond) >= 0 || boxes.Length == targets.Count && !reachable.Contains(beyond)) continue;
                         nextBoxes = (Vector2Int[])nextBoxes.Clone();
                         nextBoxes[pushed] = beyond;
                     }
-                    var child = new Node { Player = next, Boxes = nextBoxes, Parent = node, Direction = Directions[i] };
+                    var child = new Node { Player = next, Boxes = nextBoxes, Parent = node, Direction = Directions[i], Unlocked = node.Unlocked || passages.Count > 0 && targets.All(t => Array.IndexOf(nextBoxes, t) >= 0) };
                     if (seen.Add(Key(child))) queue.Enqueue(child);
                 }
             }
             return new Result(Outcome.Unsolvable, "已遍历此起点的全部可达状态", expanded);
         }
-        static string Key(Node node) => node.Player.x + "," + node.Player.y + ":" + string.Join(";", node.Boxes.OrderBy(b => b.x).ThenBy(b => b.y).Select(b => b.x + "," + b.y));
+        static string Key(Node node) => (node.Unlocked ? "1:" : "0:") + node.Player.x + "," + node.Player.y + ":" + string.Join(";", node.Boxes.OrderBy(b => b.x).ThenBy(b => b.y).Select(b => b.x + "," + b.y));
         static string Trace(Node node)
         {
             var path = new Stack<char>();

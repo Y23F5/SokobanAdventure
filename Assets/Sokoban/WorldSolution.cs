@@ -23,9 +23,9 @@ namespace Sokoban
             foreach (var placement in world["rooms"])
             {
                 var room = rooms[(string)placement["levelId"]];
-                var graph = room["events"].FirstOrDefault(g => !ObjectBehavior.IsVisual(g));
+                var graph = room["events"].FirstOrDefault(g => !ObjectBehavior.CanSimulate(g));
                 if (graph == null) continue;
-                var node = graph["nodes"]?.FirstOrDefault(n => !ObjectBehavior.IsVisualNode(n));
+                var node = graph["nodes"]?.FirstOrDefault(n => !ObjectBehavior.CanSimulateNode(n));
                 return new Result(Outcome.Unsupported, $"{room["levelId"]}/{graph["ownerId"]}/{graph["id"]}/{node?["id"]}");
             }
             var run = PuzzleRun.FromWorld(world, rooms);
@@ -48,7 +48,7 @@ namespace Sokoban
                     if (!Matches(endpoint) && !world["connections"].Any(link => Matches(link["forwardFrom"]) ||
                         (bool)link["allowReturn"] && Matches(link["forwardTo"]))) continue;
                     var result = RoomSolution.Check(run.Room, run.Player - run.Origin, budget - expanded, world,
-                        RoomFile.At(door), run.Boxes.Values.Select(p => p - run.Origin).ToArray());
+                        RoomFile.At(door), run.Boxes.Values.Select(p => p - run.Origin).ToArray(), run.EverSolved);
                     expanded += System.Math.Max(1, result.Expanded);
                     if (result.Status != Outcome.Solved) continue;
                     string segment = new string(result.Detail.Select(c => Letters["NESW".IndexOf(c)]).ToArray());

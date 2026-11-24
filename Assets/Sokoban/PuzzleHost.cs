@@ -222,7 +222,7 @@ namespace Sokoban
                 JToken[] effects;
                 try { effects = ObjectBehavior.Effects(graph).ToArray(); }
                 catch (Exception error) { Debug.LogWarning($"对象 {owner} 行为 {graph["id"]} 执行失败 · {error.Message}"); continue; }
-                foreach (var effect in effects)
+                foreach (var effect in effects.Where(e => (string)e["kind"] == "setVisible"))
                     foreach (var mesh in part.GetComponentsInChildren<Renderer>(true)) mesh.enabled = (bool?)effect["visible"] ?? false;
             }
         }

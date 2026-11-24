@@ -136,6 +136,11 @@ namespace Sokoban
                 if (string.IsNullOrWhiteSpace(graphId) || !graphIds.Add(graphId)) yield return "行为图 ID 无效 " + graphId;
                 if (!owners.Contains((string)graph["ownerId"])) yield return $"行为图 {graphId} 找不到对象 {graph["ownerId"]}";
                 if (!(graph["nodes"] is JArray nodes) || !(graph["edges"] is JArray edges)) { yield return "行为图缺少节点或连线 " + graphId; continue; }
+                if (nodes.Any(n => (string)n["kind"] == "openPassage"))
+                {
+                    var tile = room["terrainObjects"]?.FirstOrDefault(t => (string)t["id"] == (string)graph["ownerId"]);
+                    if (tile == null || RoomFile.Terrain(room, RoomFile.At(tile)) != '#') yield return "开放墙格需要绑定墙体 " + graphId;
+                }
                 var ids = new HashSet<string>();
                 foreach (var node in nodes)
                 {
@@ -152,6 +157,21 @@ namespace Sokoban
             string kind = (string)node["kind"];
             return kind == "roomSolved" || kind == "setVisible" || kind == "condition" && node["expression"] == null;
         }
+        public static bool CanSimulateNode(JToken node) => IsVisualNode(node) || (string)node["kind"] == "openPassage";
+        public static bool CanSimulate(JToken graph) => graph["nodes"] is JArray nodes && nodes.All(CanSimulateNode);
+        public static HashSet<Vector2Int> SolvedPassages(JObject room)
+        {
+            var result = new HashSet<Vector2Int>();
+            foreach (var graph in room["events"])
+            {
+                if (!CanSimulate(graph) || !graph["nodes"].Any(n => (string)n["kind"] == "openPassage")) continue;
+                var owner = room["terrainObjects"]?.FirstOrDefault(t => (string)t["id"] == (string)graph["ownerId"]);
+                if (owner != null && Effects(graph).Any(n => (string)n["kind"] == "openPassage")) result.Add(RoomFile.At(owner));
+            }
+            return result;
+        }
+        public static bool Walkable(JObject room, Vector2Int cell, bool unlocked, HashSet<Vector2Int> passages) =>
+            RoomFile.Floor(room, cell) || unlocked && passages.Contains(cell);
         public static bool IsVisual(JToken graph) => graph["nodes"] is JArray nodes && nodes.All(IsVisualNode);
         public static IEnumerable<JToken> Effects(JToken graph)
         {
@@ -178,6 +198,7 @@ namespace Sokoban
                         foreach (var effect in effects) yield return effect;
                         port="out";
                         break;
+                    case "openPassage":
                     case "setVisible": yield return node; port="out"; break;
                     default: continue;
                 }

@@ -64,7 +64,7 @@ namespace Sokoban
             }
             Player = RoomFile.Cell(data["player"]);
             Heading = (int)data["heading"];
-            RoomFile.Check(Heading >= 0 && Heading <= 3 && RoomFile.Floor(Room, Player - Origin) && !Boxes.ContainsValue(Player), "玩家位置或视角无效");
+            RoomFile.Check(Heading >= 0 && Heading <= 3 && Current.Walkable(Player) && !Boxes.ContainsValue(Player), "玩家位置或视角无效");
             Motion = data["motion"] is JObject motion ? (JObject)motion.DeepClone() : null;
             if (Motion == null) return;
             float progress = (float)Motion["fraction"];
@@ -74,7 +74,7 @@ namespace Sokoban
             {
                 var delta = RoomFile.Cell(Motion["delta"]);
                 string pushed = (string)Motion["pushed"];
-                RoomFile.Check((string)Motion["kind"] == "move" && Mathf.Abs(delta.x) + Mathf.Abs(delta.y) == 1 && RoomFile.Floor(Room, Player - delta - Origin) && (pushed == null || Boxes.TryGetValue(pushed, out var box) && box == Player + delta), "存档移动与箱子位置不符");
+                RoomFile.Check((string)Motion["kind"] == "move" && Mathf.Abs(delta.x) + Mathf.Abs(delta.y) == 1 && Current.Walkable(Player - delta) && (pushed == null || Boxes.TryGetValue(pushed, out var box) && box == Player + delta), "存档移动与箱子位置不符");
             }
         }
     }
