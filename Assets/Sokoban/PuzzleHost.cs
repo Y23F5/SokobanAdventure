@@ -107,7 +107,7 @@ namespace Sokoban
                 var placement = run.World?["rooms"].FirstOrDefault(r => (string)r["levelId"] == row.Name);
                 if (run.World != null && placement == null) continue;
                 var origin = placement == null ? Vector2Int.zero : RoomFile.Cell(placement["origin"]);
-                var group = builder.BuildRoom(room, origin, null, transform);
+                var group = builder.BuildRoom(room, origin, null, transform, run.World, run.Rooms);
                 groups.Add(row.Name, group);
                 group.Find((string)room["spawn"]["id"]).gameObject.SetActive(false);
                 foreach (var box in run.BoxesIn(row.Name)) group.Find(box.Key).position = Position(box.Value);

@@ -68,7 +68,8 @@ namespace Sokoban
                     if (!mat) continue;
                     if (r.sharedMaterial == translucent) r.sharedMaterial = mat;
                     surface.Clear();
-                    if (!active && mat.HasProperty("_BaseColor")) surface.SetColor("_BaseColor",mat.GetColor("_BaseColor")*.64f);
+                    r.GetPropertyBlock(surface);
+                    if (mat.HasProperty("_BaseColor")) surface.SetColor("_BaseColor",mat.GetColor("_BaseColor") * (active ? 1f : .64f));
                     r.SetPropertyBlock(surface);
                 }
             }

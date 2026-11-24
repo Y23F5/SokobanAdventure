@@ -44,7 +44,7 @@ namespace Sokoban
                 {
                     string id = (string)entry["levelId"];
                     if (onlyRoom != null && id != onlyRoom) continue;
-                    BuildRoom((JObject)draft.Catalog[id], RoomFile.Cell(entry["origin"]), id == draft.ActiveId ? draft.Selected : null, root.transform);
+                    BuildRoom((JObject)draft.Catalog[id], RoomFile.Cell(entry["origin"]), id == draft.ActiveId ? draft.Selected : null, root.transform, draft.World, draft.Catalog);
                 }
                 settling=null;
                 if(last==draft && version!=draft.Revision && draft.PlacementRevision==draft.Revision)
@@ -125,7 +125,7 @@ namespace Sokoban
 
         public static string BoxModel(string theme) => "Diorama/" + (theme == "factory" ? "Machinery" : theme == "forest" ? "Logs" : "Cargo");
 
-        public Transform BuildRoom(JObject room, Vector2Int origin, string selected, Transform parent)
+        public Transform BuildRoom(JObject room, Vector2Int origin, string selected, Transform parent, JObject world = null, JObject catalog = null)
         {
             var group = CreateRoot((string)room["levelId"], parent, new Vector3(origin.x, 0, origin.y)).transform;
             var size = RoomFile.Size(room);
@@ -190,6 +190,7 @@ namespace Sokoban
                 if (selected == id) Marker(group, cell);
             }
             string preset = RoomFile.RecoveryPreset(room);
+            if (tracking) RoomYard.Build(room, origin, group, world, catalog);
             bool warehouse = preset == "warehouse";
             if (!warehouse && RoomFile.Terrain(room, new Vector2Int(1,size.y-1)) == RoomFile.Void) return group;
             var dressing = Model("Diorama/" + (preset == "factory" ? "Conveyor" : preset == "forest" ? "Tree" : "Lift"), "主题模型", new Vector2Int(1,size.y-1),group,Quaternion.Euler(0,-25,0));
