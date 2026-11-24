@@ -15,6 +15,7 @@ namespace Sokoban.Editor
     {
         internal static RoomWindow Current { get; private set; }
         public LayoutPanel Panel => WorldSceneSession.Panel;
+        BehaviorPage behavior;
         AssetThumbnail thumbnails;
         bool closeApproved;
         Vector2 panelScroll;
@@ -76,7 +77,11 @@ namespace Sokoban.Editor
             if (!WorldSceneSession.Active) { GUILayout.Label("在 Game 场景的编辑模式下使用"); return; }
             WorldSceneSession.OpenSession();
             panelScroll = GUILayout.BeginScrollView(panelScroll);
-            if (Panel.Modal)
+            if (behavior != null)
+            {
+                if (!behavior.Draw(Panel)) behavior = null;
+            }
+            else if (Panel.Modal)
             {
                 GUILayout.BeginVertical(GUILayout.Width(Mathf.Max(1, position.width - 20)));
                 Panel.Dialog();
@@ -102,6 +107,8 @@ namespace Sokoban.Editor
                 if (GUILayout.Button("退出房间布局")) Panel.Exit(CloseApproved);
                 EditorGUILayout.Space();
                 Panel.Properties();
+                if (Panel.Draft.SelectedCell is Vector2Int cell && RoomFile.Terrain(Panel.Draft.Room, cell) != RoomFile.Void && GUILayout.Button("编辑行为"))
+                    behavior = BehaviorPage.Open(Panel.Draft);
                 GUILayout.Label("房间素材");
                 GUILayout.BeginHorizontal();
                 foreach(var label in new[]{"导入模型","导入动作","导入贴图","导入界面图"})

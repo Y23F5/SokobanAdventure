@@ -133,6 +133,7 @@ namespace Sokoban
             }
             if (!doors.Any(d => (string)d["id"] == (string)room["primaryEntranceId"] && (string)d["role"] == "entry"))
                 yield return $"{level} 找不到主入口 {room["primaryEntranceId"]}";
+            foreach (var issue in ObjectBehavior.Issues(room)) yield return issue;
             foreach (var cell in BoundaryGaps(room))
                 yield return $"{level} {cell} 边界缺墙，请补墙或设置朝外的门";
         }

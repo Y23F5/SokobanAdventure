@@ -1,0 +1,65 @@
+/**
+ * @file BehaviorPage.cs
+ * @brief Open 读取所选格上的对象图或创建尚未写入草稿的初始图。Draw 显示节点、连接和条件参数，Apply 通过共享命令提交编辑。
+ */
+using System.Linq;
+using Newtonsoft.Json.Linq;
+using UnityEditor;
+using UnityEngine;
+
+namespace Sokoban.Editor
+{
+    internal sealed class BehaviorPage
+    {
+        readonly Vector2Int cell;
+        readonly string roomId;
+        readonly int revision;
+        readonly JObject graph;
+        BehaviorPage(RoomDraft draft, Vector2Int cell, JObject graph)
+        {
+            this.cell = cell;
+            this.graph = graph;
+            roomId = draft.ActiveId;
+            revision = draft.Revision;
+        }
+        internal static BehaviorPage Open(RoomDraft draft)
+        {
+            var cell = draft.SelectedCell.Value;
+            string owner = draft.OwnerAt(cell);
+            var existing = draft.Room["events"].FirstOrDefault(g => owner != null && (string)g["ownerId"] == owner);
+            return new BehaviorPage(draft, cell, existing == null ? ObjectBehavior.Template() : (JObject)existing.DeepClone());
+        }
+        internal bool Draw(LayoutPanel panel)
+        {
+            EditorGUILayout.LabelField("对象行为", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(roomId + "  " + cell + "  " + ((string)graph["ownerId"] ?? "新绑定"));
+            var nodes = graph["nodes"] as JArray;
+            if (nodes != null) foreach (var node in nodes)
+            {
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                string kind = (string)node["kind"];
+                switch (kind)
+                {
+                    case "roomSolved": EditorGUILayout.LabelField("事件 · 房间解开"); break;
+                    case "condition": node["enabled"] = EditorGUILayout.Toggle("条件成立", (bool?)node["enabled"] ?? true); break;
+                    case "setVisible": node["visible"] = EditorGUILayout.Toggle("动作 · 显示对象", (bool?)node["visible"] ?? false); break;
+                    default: EditorGUILayout.LabelField(kind ?? "未知节点"); break;
+                }
+                foreach (var edge in (graph["edges"] as JArray ?? new JArray()).Where(e => (string)e["from"] == (string)node["id"]))
+                {
+                    var target = nodes.FirstOrDefault(n => (string)n["id"] == (string)edge["to"]);
+                    EditorGUILayout.LabelField((string)edge["out"] + " → " + ((string)target?["kind"] ?? "缺少目标"));
+                }
+                EditorGUILayout.EndVertical();
+            }
+            if (panel.Draft.ActiveId != roomId || panel.Draft.Revision != revision)
+                EditorGUILayout.HelpBox("布局已变化，请返回后重新选择对象。", MessageType.Warning);
+            else if (GUILayout.Button("应用行为并返回"))
+            {
+                panel.Run(() => panel.Draft.SetBehavior(cell, graph), "已保存对象行为");
+                return panel.Draft.Revision == revision && panel.Status != "已保存对象行为";
+            }
+            return !GUILayout.Button("返回布局并放弃本页修改");
+        }
+    }
+}

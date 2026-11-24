@@ -178,6 +178,7 @@ namespace Sokoban
             for (int i = 0; i < Run.Heading; i++) world = new Vector2Int(world.y, -world.x);
             string oldRoom = Run.ActiveId;
             var previousCell = Run.Player;
+            bool wasSolved = Run.Solved;
             if (!Run.Step(world, out string pushed)) return false;
             if (oldRoom != Run.ActiveId)
             {
@@ -193,6 +194,7 @@ namespace Sokoban
                 Persist();
                 return true;
             }
+            if (!wasSolved && Run.Solved) ApplySolvedBehaviors();
             playerStart = actor.position;
             movingBox = pushed == null ? null : objects[pushed];
             if (movingBox) boxStart = movingBox.position;
@@ -203,6 +205,24 @@ namespace Sokoban
             return true;
         }
 
+        void ApplySolvedBehaviors()
+        {
+            foreach (var graph in Run.Room["events"])
+            {
+                string owner = (string)graph["ownerId"];
+                if (string.IsNullOrEmpty(owner)) continue;
+                if (!objects.TryGetValue(owner, out var part))
+                {
+                    var tile = Run.Room["terrainObjects"]?.FirstOrDefault(t => (string)t["id"] == owner);
+                    if (tile == null) continue;
+                    var cell = RoomFile.At(tile);
+                    string prefix = RoomFile.Floor(Run.Room, cell) ? "Floor " : "Wall ";
+                    if (!objects.TryGetValue(prefix + cell, out part)) continue;
+                }
+                foreach (var effect in ObjectBehavior.Effects(graph))
+                    foreach (var mesh in part.GetComponentsInChildren<Renderer>(true)) mesh.enabled = (bool?)effect["visible"] ?? false;
+            }
+        }
         public void Turn(int direction)
         {
             if (Busy || leaving || panels.Modal || Mathf.Abs(direction) != 1) return;

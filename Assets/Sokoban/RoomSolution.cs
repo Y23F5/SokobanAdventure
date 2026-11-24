@@ -37,7 +37,7 @@ namespace Sokoban
             if (issue != null) return new Result(Outcome.Invalid, issue);
             var boxes = room["boxes"].Select(RoomFile.At).ToArray();
             if (!RoomFile.Floor(room, start) || boxes.Contains(start)) return new Result(Outcome.Invalid, "起点无法站立 " + start);
-            var graph = room["events"].FirstOrDefault(item => item["nodes"]?.HasValues != false);
+            var graph = room["events"].FirstOrDefault(item => !ObjectBehavior.IsVisual(item));
             if (graph != null) return new Result(Outcome.Unsupported, $"待模拟对象 {graph["ownerId"]} 的行为图 {graph["id"]}");
             var targets = new HashSet<Vector2Int>(room["targets"].Select(RoomFile.At));
             if (targets.Count == 0 || boxes.Length < targets.Count) return new Result(Outcome.Unsolvable, "可占据的目标数量不足");
