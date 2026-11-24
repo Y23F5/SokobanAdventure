@@ -189,9 +189,15 @@ namespace Sokoban
                 }
                 if (selected == id) Marker(group, cell);
             }
-            if (RoomFile.Terrain(room, new Vector2Int(1,size.y-1)) == RoomFile.Void) return group;
+            bool warehouse = theme == "warehouse";
+            if (!warehouse && RoomFile.Terrain(room, new Vector2Int(1,size.y-1)) == RoomFile.Void) return group;
             var dressing = Model("Diorama/" + (factory ? "Conveyor" : forest ? "Tree" : "Lift"), "主题模型", new Vector2Int(1,size.y-1),group,Quaternion.Euler(0,-25,0));
-            dressing.localPosition += Vector3.up*1.28f;
+            if (warehouse)
+            {
+                dressing.localPosition = new Vector3(size.x + .8f,-.737f,size.y*.57f);
+                dressing.localRotation = Quaternion.Euler(0,-90,0);
+            }
+            else dressing.localPosition += Vector3.up*1.28f;
             Retrack(dressing);
             return group;
         }

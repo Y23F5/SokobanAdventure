@@ -50,7 +50,7 @@ namespace Sokoban
         }
         void EnterAtmosphere()
         {
-            if (objects.TryGetValue("主题模型", out var prop)) propRest = prop.position;
+
             bool first = shown.Add(Run.ActiveId);
             clearing = first ? clouds[Run.ActiveId] : null;
             reveal = 0;
@@ -119,22 +119,22 @@ namespace Sokoban
             if (Run.PendingItem != null) panels.ShowDiscovery("获得「" + ItemName + "」\n\n在本房按 R，使箱子回到预设位置。\n滚轮切换已获得的装置，已完成的探索会保留。");
         }
         public void AcceptDiscovery() { Run.AcceptItem(); Persist(); }
-        Vector3 propRest;
+        WarehouseLift liftRig;
+
         void AnimateRecoveryProp(float fraction)
         {
             if (!objects.TryGetValue("主题模型", out var prop) || Run.Boxes.Count == 0) return;
-            var pickup = Position(Run.Boxes.Values.First());
             float phase = Mathf.Sin(Mathf.PI*fraction);
             string style = (string)Run.Room["themeId"];
-            if (style == "warehouse") prop.position=Vector3.Lerp(propRest,pickup+Vector3.left*.65f,phase);
-            else if (style == "factory") prop.localRotation=Quaternion.Euler(0,-25+48*phase,0);
-            else prop.localScale=Vector3.one*(1-.55f*phase);
+            if (style == "factory") prop.localRotation=Quaternion.Euler(0,-25+48*phase,0);
+            else if (style == "forest") prop.localScale=Vector3.one*(1-.55f*phase);
         }
         void TickRecovery(float seconds)
         {
             if (Run.AdvanceRecovery(seconds))
             {
                 foreach (var box in Run.Boxes) { objects[box.Key].position=Position(box.Value); objects[box.Key].localScale=Vector3.one; }
+                liftRig?.Clear(); liftRig = null;
                 AnimateRecoveryProp(1);
                 actor.localScale=Vector3.one;
                 if (!turning && Busy) { duration=0; movingBox=null; Run.Motion=null; }
@@ -143,6 +143,21 @@ namespace Sokoban
                 return;
             }
             float fraction = 1 - Run.RecoveryRemaining / PuzzleRun.RecoveryDuration;
+            if ((string)Run.Room["themeId"] == "warehouse" && objects.TryGetValue("主题模型",out var truck))
+            {
+                var moved = Run.Boxes.Where(b => b.Value != Run.RecoveryCell(b.Key)).OrderBy(b => b.Key,System.StringComparer.Ordinal).ToArray();
+                if (moved.Length > 0)
+                {
+                    float progress = fraction*moved.Length;
+                    int index = Mathf.Min((int)progress,moved.Length-1);
+                    for (int i=0; i<index; i++) objects[moved[i].Key].position = Position(Run.RecoveryCell(moved[i].Key));
+                    var box = moved[index];
+                    if (liftRig == null) liftRig = new WarehouseLift(truck);
+                    liftRig.Sample(objects[box.Key],Position(box.Value),Position(Run.RecoveryCell(box.Key)),progress-index);
+                }
+                actor.localScale = Run.PlayerOnRecoveryCell ? Vector3.one*Mathf.Clamp01(Run.RecoveryRemaining/.22f) : Vector3.one;
+                return;
+            }
             AnimateRecoveryProp(fraction);
             foreach (var box in Run.Boxes)
             {
