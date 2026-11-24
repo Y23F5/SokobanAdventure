@@ -17,6 +17,8 @@ namespace Sokoban
     {
         public LayoutHost host;
         public GameObject fileMenu,workspace,fileDialog,confirmation,keepDraft;
+        public GameObject solutionDialog;
+        public Text solutionText;
         public GameObject terrainCards,objectCards;
         public Text status,properties,dialogTitle,pathText,submitText,workspaceInfo,message,confirmMessage;
         public InputField fileName,fieldX,fieldY,roomName;
@@ -34,7 +36,7 @@ namespace Sokoban
         string[] roomIds;
         bool lastDialog;
         string activeRoom;
-        public bool CoversMap => workspaceOpen;
+        public bool CoversMap => workspaceOpen || Panel.ShowingSolution;
         LayoutPanel Panel => host.Panel;
 
         void Start()
@@ -137,6 +139,7 @@ namespace Sokoban
                 case "移动对象": ApplyPoint(false);break;
                 case "移出": Panel.Run(d.RemoveRoom,"房间已移回目录");break;
                 case "名称": Panel.Run(()=>d.Rename(roomName.text),"已修改名称");break;
+                case "关闭检查": Panel.CloseSolution(); break;
                 case "检查": Panel.CheckCurrentRoom();break;
                 case "上一级": Panel.ParentDirectory();break;
                 case "提交文件": Panel.SubmitFile();break;
@@ -228,6 +231,13 @@ namespace Sokoban
         void LateUpdate()
         {
             if(!host || Panel==null)return;
+            solutionDialog.SetActive(Panel.ShowingSolution);
+            if (Panel.ShowingSolution)
+            {
+                if (Input.GetKeyDown(KeyCode.Escape)) Panel.CloseSolution();
+                solutionText.text = Panel.SolutionText;
+                solutionDialog.transform.SetAsLastSibling();
+            }
             bool dialog=Panel.Operation!=null && !Panel.Confirming;
             fileDialog.SetActive(dialog);
             confirmation.SetActive(Panel.Confirming);

@@ -137,22 +137,26 @@ namespace Sokoban
             Run(() => Draft.SetRoomMarker(Draft.SelectedCell.Value, role), MarkerLabels[index] + "已完成");
         }
         int solutionRequest;
+        public bool ShowingSolution { get; private set; }
+        public string SolutionText { get; private set; }
+        public void CloseSolution() { ShowingSolution = false; solutionRequest++; }
         public async void CheckCurrentRoom()
         {
             int request = ++solutionRequest;
             int revision = Draft.Revision;
-            if (StructuralIssue != null) { Status = StructuralIssue; return; }
+            ShowingSolution = true;
+            if (StructuralIssue != null) { SolutionText = Status = StructuralIssue; return; }
             var room = (JObject)Draft.Room.DeepClone();
             var world = (JObject)Draft.World?.DeepClone();
             var rooms = world == null ? null : (JObject)Draft.Catalog.DeepClone();
-            Status = world == null ? "正在检查房间解法" : "正在检查世界路线";
+            SolutionText = Status = world == null ? "正在检查房间解法" : "正在检查世界路线";
             try
             {
                 var result = await System.Threading.Tasks.Task.Run(() => world == null ? RoomSolution.CheckEntries(room, null) : WorldSolution.Describe(WorldSolution.Check(world, rooms)));
                 if (request != solutionRequest) return;
-                Status = revision == Draft.Revision ? result : "布局已变更，请重新检查";
+                SolutionText = Status = revision == Draft.Revision ? result : "布局已变更，请重新检查";
             }
-            catch (Exception error) { if (request == solutionRequest) Status = "检查失败 · " + error.Message; }
+            catch (Exception error) { if (request == solutionRequest) SolutionText = Status = "检查失败 · " + error.Message; }
         }
         string objectName;
         int objectNameRevision = -1;

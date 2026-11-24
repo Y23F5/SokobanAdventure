@@ -72,12 +72,29 @@ namespace Sokoban.Editor
             Close();
         }
 
+        internal void OpenBehavior()
+        {
+            if (!Panel.Draft.SelectedCell.HasValue) return;
+            behavior = BehaviorPage.Open(Panel.Draft);
+            panelScroll = Vector2.zero;
+            Focus();
+            Repaint();
+        }
+
         void OnGUI()
         {
             if (!WorldSceneSession.Active) { GUILayout.Label("在 Game 场景的编辑模式下使用"); return; }
             WorldSceneSession.OpenSession();
             panelScroll = GUILayout.BeginScrollView(panelScroll);
-            if (behavior != null)
+            if (Panel.ShowingSolution)
+            {
+                GUILayout.Label("检查结果", EditorStyles.boldLabel);
+                EditorGUILayout.SelectableLabel(Panel.SolutionText, EditorStyles.wordWrappedLabel,
+                    GUILayout.Height(EditorStyles.wordWrappedLabel.CalcHeight(new GUIContent(Panel.SolutionText), Mathf.Max(100, position.width - 30)) + 8));
+                if (GUILayout.Button("返回布局")) Panel.CloseSolution();
+                Repaint();
+            }
+            else if (behavior != null)
             {
                 if (!behavior.Draw(Panel)) behavior = null;
             }
@@ -108,7 +125,7 @@ namespace Sokoban.Editor
                 EditorGUILayout.Space();
                 Panel.Properties();
                 if (Panel.Draft.SelectedCell is Vector2Int cell && RoomFile.Terrain(Panel.Draft.Room, cell) != RoomFile.Void && GUILayout.Button("编辑行为"))
-                    behavior = BehaviorPage.Open(Panel.Draft);
+                    OpenBehavior();
                 GUILayout.Label("房间素材");
                 GUILayout.BeginHorizontal();
                 foreach(var label in new[]{"导入模型","导入动作","导入贴图","导入界面图"})

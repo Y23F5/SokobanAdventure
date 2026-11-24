@@ -245,6 +245,21 @@ namespace Sokoban.Editor
                     if(!cancelRight) ev.Use();
                     view.Repaint();Refresh();
                 }
+                else if (cancelRight && Tools.current != Tool.View && RoomWindow.Current &&
+                    (draft.World == null || draft.Placement != null) &&
+                    RoomPreview.CellFromRay(HandleUtility.GUIPointToWorldRay(ev.mousePosition), out var clicked))
+                {
+                    var cell = clicked - draft.Origin;
+                    if (RoomFile.Terrain(draft.Room, cell) != RoomFile.Void)
+                    {
+                        if (!draft.Selection.Contains(cell)) draft.Select(cell);
+                        var menu = new GenericMenu();
+                        menu.AddItem(new GUIContent("编辑行为"), false, RoomWindow.Current.OpenBehavior);
+                        menu.ShowAsContext();
+                        ev.Use();
+                        Refresh();
+                    }
+                }
                 return;
             }
             if(ev.alt || Tools.current==Tool.View || rightDown || ev.type==EventType.ScrollWheel || ev.button==2) { ghost.Hide(); return; }
