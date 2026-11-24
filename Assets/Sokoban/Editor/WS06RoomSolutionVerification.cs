@@ -1,7 +1,7 @@
 /**
  * @file WS06RoomSolutionVerification.cs
  * @brief Run 独立执行五种输入。Check 查验返回分类并记录搜索量；Replay 用正式步进回放每个方向。
- * Deadlock 将箱子置于不可推出的内角；Unknown 在可解房间中加入带未知节点的事件图。
+ * Deadlock 检查内角箱子的静态判定；SearchExhaustion 用隔离出生区验证 BFS 耗尽；Unknown 在可解房间中加入带未知节点的事件图。
  */
 using System;
 using System.Linq;
@@ -60,7 +60,22 @@ namespace Sokoban.Editor
             draft.Move(new Vector2Int(1,1));
             var run=PuzzleRun.FromDraft(draft);
             Expect(!run.Solved && run.Boxes.Count==1 && run.Targets.Count==1 && RoomFile.Terrain(draft.Room,new Vector2Int(0,1))=='#' && RoomFile.Terrain(draft.Room,new Vector2Int(1,0))=='#', "角落死锁前提错误");
-            Expect(Check(draft,run.Player,RoomSolution.Outcome.Unsolvable).Expanded>0, "未搜索死锁样例");
+            var result = Check(draft, run.Player, RoomSolution.Outcome.Unsolvable, 0);
+            Expect(result.Expanded == 0 && result.Detail.Contains("目标格"), "内角死锁应在展开任何状态前定位到不可达目标");
+        }
+        static void SearchExhaustion()
+        {
+            var draft = Default();
+            draft.SetRoomMarker(new Vector2Int(1, 5), "spawn");
+            var walls = new[] { new Vector2Int(1, 4), new Vector2Int(2, 4), new Vector2Int(3, 5) };
+            Expect(draft.Brush(walls, RoomTool.Wall) == null, "未能围出双格出生区");
+            var run = PuzzleRun.FromDraft(draft);
+            Expect(!run.Solved && run.Step(Vector2Int.right, out _) && run.Player == new Vector2Int(2, 5), "双格出生区无法步行");
+            var start = Spawn(draft);
+            var partial = Check(draft, start, RoomSolution.Outcome.BudgetReached, 1);
+            Expect(partial.Expanded == 1, "单步预算应在第二个状态前耗尽");
+            var complete = Check(draft, start, RoomSolution.Outcome.Unsolvable);
+            Expect(complete.Expanded == 2, "两个可达玩家位置应各展开一次");
         }
         static void Unknown()
         {
@@ -82,6 +97,7 @@ namespace Sokoban.Editor
             Case("default-replay",Replay);
             Case("zero-budget",()=>{var draft=Default(); Expect(Check(draft,Spawn(draft),RoomSolution.Outcome.BudgetReached,0).Expanded==0,"零预算仍展开状态");});
             Case("corner-deadlock",Deadlock);
+            Case("search-exhaustion",SearchExhaustion);
             Case("invalid-blank",()=>{var draft=Default(); draft.NewBlankRoom(); Expect(Check(draft,Vector2Int.zero,RoomSolution.Outcome.Invalid).Detail.Contains("出生点"),"空房未定位结构错误");});
             Case("unknown-event",Unknown);
             Debug.Log($"WS06BFS RESULT {passed}/{total}");

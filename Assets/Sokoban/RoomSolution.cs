@@ -42,7 +42,26 @@ namespace Sokoban
             var targets = new HashSet<Vector2Int>(room["targets"].Select(RoomFile.At));
             if (targets.Count == 0 || boxes.Length < targets.Count) return new Result(Outcome.Unsolvable, "可占据的目标数量不足");
             var exits = new HashSet<Vector2Int>(room["doors"].Where(d => (string)d["role"] == "exit").Select(RoomFile.At));
+            if (targets.Any(goal => UnreachableTarget(room, boxes, goal))) return new Result(Outcome.Unsolvable, "存在箱子无法抵达的目标格");
             return Search(room, start, boxes, targets, exits, budget);
+        }
+        /** @brief 从目标反向枚举推箱前的箱格和玩家站位，忽略其他箱子。无箱子能抵达某个目标时可证明静态死锁。 */
+        static bool UnreachableTarget(JObject room, Vector2Int[] boxes, Vector2Int target)
+        {
+            var queue = new Queue<Vector2Int>();
+            var reachable = new HashSet<Vector2Int> { target };
+            queue.Enqueue(target);
+            while (queue.Count > 0)
+            {
+                var cell = queue.Dequeue();
+                if (Array.IndexOf(boxes, cell) >= 0) return false;
+                foreach (var step in Steps)
+                {
+                    var before = cell - step;
+                    if (RoomFile.Floor(room, before) && RoomFile.Floor(room, before - step) && reachable.Add(before)) queue.Enqueue(before);
+                }
+            }
+            return true;
         }
         static Result Search(JObject room, Vector2Int start, Vector2Int[] boxes, HashSet<Vector2Int> targets, HashSet<Vector2Int> exits, int budget)
         {
