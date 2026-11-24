@@ -71,7 +71,7 @@ namespace Sokoban
             pushed = null;
             if (Mathf.Abs(delta.x) + Mathf.Abs(delta.y) != 1) return false;
             var next = Player + delta;
-            if (!RoomFile.Inside(Room, next - Origin)) return CrossDoor(delta);
+            if (RoomFile.Terrain(Room, next - Origin) == RoomFile.Void) return CrossDoor(delta);
             if (!RoomFile.Floor(Room, next - Origin) || IsReserved(next)) return false;
             var door = Room["doors"].FirstOrDefault(d => RoomFile.At(d) == next - Origin);
             if (door != null && (string)door["role"] == "exit" && !CanApproach(door)) return false;
