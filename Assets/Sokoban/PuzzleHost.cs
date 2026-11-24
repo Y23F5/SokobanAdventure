@@ -276,7 +276,7 @@ namespace Sokoban
 
         void SetCamera()
         {
-            lens.transform.rotation = Quaternion.Euler(55, angle + 32, 0);
+            lens.transform.rotation = Quaternion.Euler(DioramaLighting.Pitch, angle + DioramaLighting.Yaw, 0);
             lens.transform.position = focus - lens.transform.forward * (lens.orthographicSize * 3 + 10);
         }
 

@@ -23,8 +23,10 @@ namespace Sokoban
         readonly List<RaycastResult> hits = new List<RaycastResult>();
         LayoutOverlay overlay;
         Camera lens;
+        DioramaLighting lighting;
+        string litTheme;
         Vector3 pan, lastPointer, downPointer;
-        float zoom = 1, yaw, pitch = 66;
+        float zoom = 1, yaw = DioramaLighting.Yaw, pitch = DioramaLighting.Pitch;
         int gesture = -1;
         bool dragged, quitting;
         Vector2Int hoveredCell;
@@ -75,6 +77,7 @@ namespace Sokoban
         void Awake()
         {
             lens = Camera.main;
+            lighting = new DioramaLighting(lens);
             Panel = new LayoutPanel("runtime-editor");
             Panel.DocumentOpened += FrameDocument;
             if (Panel.HasView)
@@ -108,8 +111,8 @@ namespace Sokoban
             solo=null;
             pan = Vector3.zero;
             zoom = 1;
-            yaw = 0;
-            pitch = 66;
+            yaw = DioramaLighting.Yaw;
+            pitch = DioramaLighting.Pitch;
             gesture = -1;
             Panel.CancelTool();
             var draft = Panel.Draft;
@@ -236,6 +239,8 @@ namespace Sokoban
         void LateUpdate()
         {
             if (trial) return;
+            var theme = (string)Panel.Draft.Room["themeId"] ?? "warehouse";
+            if (theme != litTheme) { lighting.Apply(DioramaLighting.Theme(theme),1); litTheme = theme; }
             UpdateCamera();
             preview.Sync(Panel.Draft,solo);
             HoverFeedback = null;
@@ -262,6 +267,7 @@ namespace Sokoban
         void OnApplicationFocus(bool focus) { if (!focus) { rectangleStart=null; gesture=-1; Panel?.Flush(); } }
         void OnDestroy()
         {
+            lighting?.Dispose();
             Application.wantsToQuit -= RequestQuit;
             Panel?.Flush();
             preview.Clear();

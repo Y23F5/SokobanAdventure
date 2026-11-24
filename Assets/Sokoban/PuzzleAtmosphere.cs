@@ -23,22 +23,13 @@ namespace Sokoban
         bool framed;
         MeshRenderer clearing;
         Material translucent;
-        Light sunlight;
+        DioramaLighting lighting;
         Color theme;
-
-        CameraClearFlags previousFlags;
-        Color previousBackground, previousLight;
-        LightShadows previousShadows;
-        float previousStrength;
-        Material sky, previousSky;
         void InitAtmosphere()
         {
             surface = new MaterialPropertyBlock();
             translucent = Resources.Load<Material>("LayoutModels/GhostSurface");
-            sunlight = FindObjectsOfType<Light>().FirstOrDefault(l => l.type == LightType.Directional);
-            previousFlags=lens.clearFlags; previousBackground=lens.backgroundColor; previousSky=RenderSettings.skybox;
-            sky=new Material(Resources.Load<Shader>("DioramaSky")); RenderSettings.skybox=sky;
-            if (sunlight) { previousLight=sunlight.color; previousShadows=sunlight.shadows; previousStrength=sunlight.shadowStrength; sunlight.shadows = LightShadows.Soft; sunlight.shadowStrength = .55f; }
+            lighting = new DioramaLighting(lens);
             foreach (var pair in groups)
             {
                 foreach (var r in pair.Value.GetComponentsInChildren<Renderer>(true)) originals[r] = r.sharedMaterial;
@@ -56,11 +47,10 @@ namespace Sokoban
                 clouds.Add(pair.Key,rCloud);
                 if (Run.Visited(pair.Key)) shown.Add(pair.Key);
             }
-            lens.clearFlags = CameraClearFlags.Skybox;
         }
         void EnterAtmosphere()
         {
-            propRest=objects["主题模型"].position;
+            if (objects.TryGetValue("主题模型", out var prop)) propRest = prop.position;
             bool first = shown.Add(Run.ActiveId);
             clearing = first ? clouds[Run.ActiveId] : null;
             reveal = 0;
@@ -89,8 +79,8 @@ namespace Sokoban
                 clearing.sharedMaterial.SetFloat("_Reveal",0);
             }
             string id = (string)Run.Room["themeId"];
-            theme = id == "forest" ? new Color32(137,192,164,255) : id == "factory" ? new Color32(140,167,184,255) : new Color32(218,197,156,255);
-            if (!hasSkyColor) { lens.backgroundColor=theme; sky.SetColor("_Tint",theme); hasSkyColor=true; }
+            theme = DioramaLighting.Theme(id);
+            if (!hasSkyColor) { lighting.Apply(theme,1); hasSkyColor=true; }
         }
         bool hasSkyColor;
         void TickAtmosphere(float seconds)
@@ -98,9 +88,7 @@ namespace Sokoban
             float t = 1-Mathf.Exp(-4*seconds);
             focus = Vector3.Lerp(focus,targetFocus,t);
             lens.orthographicSize = Mathf.Lerp(lens.orthographicSize,targetSize,t);
-            lens.backgroundColor = Color.Lerp(lens.backgroundColor,theme,t);
-            sky.SetColor("_Tint",lens.backgroundColor);
-            if (sunlight) sunlight.color = Color.Lerp(sunlight.color,Color.Lerp(Color.white,theme,.28f),t);
+            lighting.Apply(theme,t);
             SetCamera();
             if (!clearing) return;
             reveal = Mathf.Min(1,reveal+seconds/.95f);
@@ -134,7 +122,7 @@ namespace Sokoban
         Vector3 propRest;
         void AnimateRecoveryProp(float fraction)
         {
-            var prop = objects["主题模型"];
+            if (!objects.TryGetValue("主题模型", out var prop) || Run.Boxes.Count == 0) return;
             var pickup = Position(Run.Boxes.Values.First());
             float phase = Mathf.Sin(Mathf.PI*fraction);
             string style = (string)Run.Room["themeId"];
@@ -168,13 +156,7 @@ namespace Sokoban
         }
         void OnDestroy()
         {
-            if (IsTrial && sky)
-            {
-                if (lens) { lens.clearFlags=previousFlags; lens.backgroundColor=previousBackground; }
-                if (sunlight) { sunlight.color=previousLight; sunlight.shadows=previousShadows; sunlight.shadowStrength=previousStrength; }
-            }
-            if (sky && RenderSettings.skybox==sky) RenderSettings.skybox=previousSky;
-            if (sky) Destroy(sky);
+            lighting?.Dispose();
             foreach (var r in clouds.Values) if (r) Destroy(r.sharedMaterial);
         }
     }
