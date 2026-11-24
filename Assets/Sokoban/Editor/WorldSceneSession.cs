@@ -17,6 +17,7 @@ namespace Sokoban.Editor
     [InitializeOnLoad]
     internal static class WorldSceneSession
     {
+        static Vector2Int? rectangleStart;
         internal const string GamePath = "Assets/Scenes/Game.unity";
         internal static bool Active => !EditorApplication.isPlayingOrWillChangePlaymode && !SessionState.GetBool("Sokoban.TrialTransition", false) && SceneManager.GetActiveScene().path == GamePath;
         internal static LayoutPanel Panel { get; private set; }
@@ -153,6 +154,7 @@ namespace Sokoban.Editor
             preview.Clear();
             ghost.Dispose();
             soloId = null;
+            rectangleStart = null;
             dragging = rightDown = rightDragged = false;
         }
 
@@ -285,6 +287,7 @@ namespace Sokoban.Editor
             }
             if(ev.type==EventType.Repaint) {
                 foreach (var gap in RoomFile.BoundaryGaps(draft.Room)) SceneGhost.Mark(origin+gap, Color.red, "边界缺墙");
+                if (draft.Selection.Count > 1) foreach (var point in draft.Selection) SceneGhost.Mark(origin + point, Color.yellow, "");
                 if(obj!=null) SceneGhost.Mark(RoomFile.At(obj)+origin,Color.yellow,draft.Tool==RoomTool.Select && !dragging?draft.Selected+"  "+(RoomFile.At(obj)+origin):"");
                 bool showGhost=false;
                 if(hit && EditorWindow.mouseOverWindow==view) {
@@ -307,7 +310,14 @@ namespace Sokoban.Editor
             }
             int control=GUIUtility.GetControlID(FocusType.Passive);
             if(ev.type==EventType.Layout) HandleUtility.AddDefaultControl(control);
+            if (rectangleStart.HasValue && ev.rawType == EventType.MouseUp && ev.button == 0)
+            {
+                if (hit) draft.SelectRectangle(rectangleStart.Value,local);
+                rectangleStart=null; GUIUtility.hotControl=0; ev.Use(); Refresh(); view.Repaint(); return;
+            }
             if(ev.type==EventType.MouseDown && ev.button==0 && hit && HandleUtility.nearestControl==control) {
+                if (draft.Tool == RoomTool.Select && ev.shift) { rectangleStart=local; GUIUtility.hotControl=control; ev.Use(); return; }
+                if (draft.Tool == RoomTool.Select && (ev.control || ev.shift || ev.command)) { draft.Select(local, true); ev.Use(); Refresh(); view.Repaint(); return; }
                 if(IsSolo && !Panel.IsBrush && !RoomFile.Inside(draft.Room,local)) { ev.Use(); return; } if(Panel.IsBrush) {Panel.StartStroke(world);GUIUtility.hotControl=control;} else Panel.ClickWorld(world);
                 ev.Use();Refresh();view.Repaint();
             } else if(Panel.Painting && ev.type==EventType.MouseDrag && hit) {Panel.ExtendStroke(world);ev.Use();view.Repaint();}

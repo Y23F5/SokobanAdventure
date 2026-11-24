@@ -20,6 +20,7 @@ namespace Sokoban
         public string Selected { get; private set; }
         public string WorkPath { get; private set; }
         public Vector2Int? SelectedCell { get; private set; }
+        public readonly HashSet<Vector2Int> Selection = new HashSet<Vector2Int>();
         public RoomTool Tool;
         public int Revision { get; private set; }
         JObject saved;
@@ -56,11 +57,34 @@ namespace Sokoban
             if(!export) { WorkPath=Path.GetFullPath(path); saved=Design(); Revision++; }
         }
         public JToken Find(string id) => RoomFile.Objects(Room).FirstOrDefault(o => (string)o["id"] == id);
-        public void Select(Vector2Int cell)
+        public void Select(Vector2Int cell) => Select(cell, false);
+        public void Select(Vector2Int cell, bool additive)
         {
+            if (!additive) Selection.Clear();
+            if (RoomFile.Terrain(Room, cell) != RoomFile.Void && !Selection.Add(cell) && additive)
+            {
+                Selection.Remove(cell);
+                if (Selection.Count == 0) { Selected = null; SelectedCell = null; Revision++; return; }
+                cell = Selection.OrderBy(p => p.y).ThenBy(p => p.x).First();
+            }
             var item = RoomFile.Objects(Room).FirstOrDefault(o => RoomFile.At(o) == cell);
             SelectedCell = RoomFile.Inside(Room, cell) ? cell : (Vector2Int?)null;
             Selected = (string)item?["id"];
+            Revision++;
+        }
+        public void SelectRectangle(Vector2Int start, Vector2Int finish)
+        {
+            var low = Vector2Int.Max(Vector2Int.Min(start, finish), Vector2Int.zero);
+            var high = Vector2Int.Min(Vector2Int.Max(start, finish), RoomFile.Size(Room) - Vector2Int.one);
+            for (int y=low.y; y<=high.y; y++)
+                for (int x=low.x; x<=high.x; x++)
+                {
+                    var point = new Vector2Int(x,y);
+                    if (RoomFile.Terrain(Room, point) == RoomFile.Void) continue;
+                    Selection.Add(point);
+                    SelectedCell = point;
+                }
+            if (SelectedCell.HasValue) Selected = (string)RoomFile.Objects(Room).FirstOrDefault(item => RoomFile.At(item) == SelectedCell.Value)?["id"];
             Revision++;
         }
         public void Click(Vector2Int cell)
@@ -144,7 +168,7 @@ namespace Sokoban
         }
         void Commit(JObject next, string id)
         {
-            Remember(); Room=next; Catalog[ActiveId]=next; Selected=id;
+            Remember(); Selection.Clear(); Room=next; Catalog[ActiveId]=next; Selected=id;
             SelectedCell=id==null?null:(Vector2Int?)RoomFile.At(Find(id)); Revision++;
         }
         public void Undo() => Restore(undo,redo);

@@ -53,6 +53,7 @@ namespace Sokoban
                 for(int i=0;i<=size.x;i++) Line(low+Vector3.right*i,low+Vector3.right*i+Vector3.forward*size.y,color,.014f);
                 for(int i=0;i<=size.y;i++) Line(low+Vector3.forward*i,low+Vector3.forward*i+Vector3.right*size.x,color,.014f);
             }
+            if (draft.Selection.Count > 1) foreach (var point in draft.Selection) Outline(origin + point, Color.yellow);
             if(draft.SelectedCell.HasValue) Outline(draft.SelectedCell.Value+origin,new Color(1,.72f,.2f));
             foreach (var gap in RoomFile.BoundaryGaps(draft.Room)) Outline(origin + gap, Color.red);
             string error=null;

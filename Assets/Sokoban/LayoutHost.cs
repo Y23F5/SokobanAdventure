@@ -16,6 +16,7 @@ namespace Sokoban
     {
         public LayoutPanel Panel { get; private set; }
         public bool GridVisible = true;
+        Vector2Int? rectangleStart;
         public string HoverFeedback { get; private set; }
         public RuntimeLayoutUI Interface;
         readonly RoomPreview preview = new RoomPreview();
@@ -185,7 +186,7 @@ namespace Sokoban
             hovering = !modal && !OverUI(pointer) && new Rect(0,0,Screen.width,Screen.height).Contains(pointer)
                 && RoomPreview.CellFromRay(lens.ScreenPointToRay(pointer), out hoveredCell);
             if (modal) { gesture = -1; return; }
-            if (Input.GetKeyDown(KeyCode.Escape)) { Panel.CancelTool(); gesture = -1; }
+            if (Input.GetKeyDown(KeyCode.Escape)) { rectangleStart=null; Panel.CancelTool(); gesture = -1; }
             if (hovering && Input.mouseScrollDelta.y != 0)
             {
                 zoom = Mathf.Clamp(zoom * Mathf.Pow(1.12f,-Input.mouseScrollDelta.y),.1f,5);
@@ -202,6 +203,10 @@ namespace Sokoban
                     if (i==0)
                     {
                         if (!Panel.PlacingRoom && Panel.IsBrush) Panel.StartStroke(hoveredCell);
+                        else if (Panel.Draft.Tool == RoomTool.Select && (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)))
+                            rectangleStart = hoveredCell - Panel.Draft.Origin;
+                        else if (Panel.Draft.Tool == RoomTool.Select && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl) || Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)))
+                            Panel.Draft.Select(hoveredCell - Panel.Draft.Origin, true);
                         else Panel.ClickWorld(hoveredCell);
                     }
                     break;
@@ -214,6 +219,11 @@ namespace Sokoban
             if (hovering && gesture==0 && Panel.Painting) Panel.ExtendStroke(hoveredCell);
             lastPointer=pointer;
             if (!Input.GetMouseButtonUp(gesture)) return;
+            if (gesture == 0 && rectangleStart.HasValue)
+            {
+                if (hovering) Panel.Draft.SelectRectangle(rectangleStart.Value, hoveredCell - Panel.Draft.Origin);
+                rectangleStart = null;
+            }
             if (gesture == 0 && Panel.Painting) Panel.EndStroke();
             if (gesture == 1 && !dragged && hovering)
             {
@@ -249,7 +259,7 @@ namespace Sokoban
             Panel.RequestExit(()=>{ quitting=true; Application.Quit(); });
             return false;
         }
-        void OnApplicationFocus(bool focus) { if (!focus) { gesture=-1; Panel?.Flush(); } }
+        void OnApplicationFocus(bool focus) { if (!focus) { rectangleStart=null; gesture=-1; Panel?.Flush(); } }
         void OnDestroy()
         {
             Application.wantsToQuit -= RequestQuit;

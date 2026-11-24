@@ -24,7 +24,7 @@ namespace Sokoban
         public Vector2Int Origin => World == null ? editorOrigin : Placement == null ? Vector2Int.zero : RoomFile.Cell(Placement["origin"]);
         void Reset(JObject room,JObject world,JObject catalog,string path)
         {
-            editorOrigin=Vector2Int.zero; removedPlacements=new JObject(); Room=room; World=world; Catalog=catalog??new JObject(); Catalog[ActiveId]=room;
+            Selection.Clear(); editorOrigin=Vector2Int.zero; removedPlacements=new JObject(); Room=room; World=world; Catalog=catalog??new JObject(); Catalog[ActiveId]=room;
             Selected=null; SelectedCell=null; Tool=RoomTool.Select; BrushAsset=null; WorkPath=path; undo.Clear(); redo.Clear(); saved=Design(); Revision++;
         }
         public void NewRoom(string name="新房间") {
@@ -57,6 +57,7 @@ namespace Sokoban
         {
             var state = new JObject { ["data"]=Design(),["removed"]=removedPlacements.DeepClone(),["active"]=ActiveId,["selected"]=Selected,["cell"]=SelectedCell.HasValue?RoomFile.Point(SelectedCell.Value):null };
             if (World == null && editorOrigin != Vector2Int.zero) state["editorOrigin"] = RoomFile.Point(editorOrigin);
+            if (Selection.Count > 1) state["selection"] = new JArray(Selection.OrderBy(p=>p.y).ThenBy(p=>p.x).Select(RoomFile.Point));
             return state;
         }
         void Remember() { undo.Push(State()); redo.Clear(); }
@@ -66,6 +67,9 @@ namespace Sokoban
             Room=(JObject)Catalog[(string)state["active"]]; RoomFile.Check(Room!=null,"草稿缺少选中房间");
             if (BrushAsset!=null && Room["assets"]?[BrushAsset]==null) { BrushAsset=null; if(Tool==RoomTool.Decoration) Tool=RoomTool.Select; }
             Selected=(string)state["selected"]; SelectedCell=state["cell"] is JArray?RoomFile.Cell(state["cell"]):(Vector2Int?)null;
+            Selection.Clear();
+            if (state["selection"] is JArray selected) foreach (var selectedPoint in selected) Selection.Add(RoomFile.Cell(selectedPoint));
+            else if (SelectedCell.HasValue && RoomFile.Terrain(Room, SelectedCell.Value) != RoomFile.Void) Selection.Add(SelectedCell.Value);
         }
         public JObject Snapshot() => new JObject { ["version"]=1,["current"]=State(),["path"]=WorkPath,["saved"]=saved?.DeepClone(),["tool"]=(int)Tool,["brushAsset"]=BrushAsset,["undo"]=new JArray(undo.Reverse()),["redo"]=new JArray(redo.Reverse()) };
         public void Recover(JObject snapshot) {
@@ -94,7 +98,7 @@ namespace Sokoban
             var candidate=RoomAssets.ReadRoom(path);string id=(string)candidate["levelId"];
             RoomFile.Check(World!=null && Catalog[id]==null,"房间已在目录中或尚未创建世界");Remember();Catalog[id]=candidate;UseRoom(id);
         }
-        public void UseRoom(string id) { Room=(JObject)Catalog[id];Selected=null;SelectedCell=null;Tool=RoomTool.Select;BrushAsset=null;Revision++; }
+        public void UseRoom(string id) { Selection.Clear(); Room=(JObject)Catalog[id];Selected=null;SelectedCell=null;Tool=RoomTool.Select;BrushAsset=null;Revision++; }
         public string RoomAt(Vector2Int point) {
             if(World==null) return ActiveId;
             foreach(var row in World["rooms"]) {string id=(string)row["levelId"];if(RoomFile.Inside((JObject)Catalog[id],point-RoomFile.Cell(row["origin"]))) return id;}

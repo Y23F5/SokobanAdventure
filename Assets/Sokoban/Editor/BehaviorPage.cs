@@ -11,6 +11,7 @@ namespace Sokoban.Editor
 {
     internal sealed class BehaviorPage
     {
+        readonly BehaviorCanvas canvas = new BehaviorCanvas();
         readonly Vector2Int cell;
         readonly string roomId;
         readonly int revision;
@@ -33,6 +34,7 @@ namespace Sokoban.Editor
         {
             EditorGUILayout.LabelField("对象行为", EditorStyles.boldLabel);
             EditorGUILayout.LabelField(roomId + "  " + cell + "  " + ((string)graph["ownerId"] ?? "新绑定"));
+            canvas.Draw(graph);
             var nodes = graph["nodes"] as JArray;
             if (nodes != null) foreach (var node in nodes)
             {
@@ -54,10 +56,13 @@ namespace Sokoban.Editor
                     case "setVisible": node["visible"] = EditorGUILayout.Toggle("动作 · 显示对象", (bool?)node["visible"] ?? false); break;
                     default: EditorGUILayout.LabelField(kind ?? "未知节点"); break;
                 }
-                foreach (var edge in (graph["edges"] as JArray ?? new JArray()).Where(e => (string)e["from"] == (string)node["id"]))
+                foreach (var edge in (graph["edges"] as JArray ?? new JArray()).Where(e => (string)e["from"] == (string)node["id"]).ToList())
                 {
                     var target = nodes.FirstOrDefault(n => (string)n["id"] == (string)edge["to"]);
+                    GUILayout.BeginHorizontal();
                     EditorGUILayout.LabelField((string)edge["out"] + " → " + ((string)target?["kind"] ?? "缺少目标"));
+                    if (GUILayout.Button("断开", GUILayout.Width(48))) edge.Remove();
+                    GUILayout.EndHorizontal();
                 }
                 EditorGUILayout.EndVertical();
             }

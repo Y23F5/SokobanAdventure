@@ -22,8 +22,20 @@ namespace Sokoban
         }
         public void SetBehavior(Vector2Int cell, JObject graph)
         {
-            RoomFile.Check(RoomFile.Terrain(Room, cell) != RoomFile.Void, "请选择地形或对象");
+            var cells = Selection.Contains(cell) ? Selection.ToArray() : new[] { cell };
             var next = (JObject)Room.DeepClone();
+            foreach (var target in cells)
+            {
+                RoomFile.Check(RoomFile.Terrain(Room, target) != RoomFile.Void, "请选择地形或对象");
+                WriteBehavior(next, target, target == cell ? graph : ObjectBehavior.CopyFor(graph));
+            }
+            if (JToken.DeepEquals(next, Room)) return;
+            Commit(next, null);
+            Select(cell);
+            foreach (var target in cells) Selection.Add(target);
+        }
+        void WriteBehavior(JObject next, Vector2Int cell, JObject graph)
+        {
             string owner = OwnerAt(cell);
             if (owner == null)
             {
@@ -42,8 +54,6 @@ namespace Sokoban
                 if (JToken.DeepEquals(previous, value)) return;
                 previous.Replace(value);
             }
-            Commit(next, null);
-            Select(cell);
         }
     }
     public static class ObjectBehavior
