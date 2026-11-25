@@ -118,3 +118,8 @@ InitTestScene*.unity*
 *.[mM][dD]
 *.[mM][dD].meta
 /[Dd]ocs/
+
+# dotnet test project outputs
+/Tests/**/bin/
+/Tests/**/obj/
+!/Tests/Core.Tests/Core.Tests.csproj
