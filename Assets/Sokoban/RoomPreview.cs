@@ -163,6 +163,7 @@ namespace Sokoban
                     var tile = Model(model, kind + " " + cell, cell, group, Quaternion.identity);
                     if (kind == "Wall") { tile.localScale = new Vector3(1,2.6f,1); Retrack(tile); }
                 }
+            bool northRail = RoomFile.RecoveryPreset(room) == "warehouse" && room["doors"].Any(d => RoomFile.Inward(d) == Vector2Int.left);
             foreach (var item in RoomFile.Objects(room))
             {
                 var cell = RoomFile.At(item);
@@ -180,6 +181,8 @@ namespace Sokoban
                     rotation = Quaternion.LookRotation(new Vector3(inward.x, 0, inward.y));
                 }
                 var visual = item["visual"];
+                if (northRail && kind == "Diorama/Cargo" && visual?["model"] == null)
+                    rotation = Quaternion.Euler(0, 90, 0);
                 if (kind == null || visual?["model"] != null)
                 {
                     var anchor = CreateRoot(id, group, new Vector3(cell.x, 0, cell.y));
@@ -218,11 +221,10 @@ namespace Sokoban
             var dressing = Model("Diorama/" + (preset == "factory" ? "Conveyor" : preset == "forest" ? "Tree" : "Lift"), "主题模型", new Vector2Int(1,size.y-1),group,Quaternion.Euler(0,-25,0));
             if (warehouse)
             {
-                bool eastDoor = room["doors"].Any(d => RoomFile.Inward(d) == Vector2Int.left);
-                dressing.localPosition = eastDoor
+                dressing.localPosition = northRail
                     ? new Vector3((size.x - 1) * .5f, -.737f, size.y + .8f)
                     : new Vector3(size.x + .8f, -.737f, size.y * .57f);
-                dressing.localRotation = Quaternion.Euler(0, eastDoor ? 180 : -90, 0);
+                dressing.localRotation = Quaternion.Euler(0, northRail ? 180 : -90, 0);
             }
             else dressing.localPosition += Vector3.up*1.28f;
             Retrack(dressing);

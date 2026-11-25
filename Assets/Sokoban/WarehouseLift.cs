@@ -60,19 +60,21 @@ namespace Sokoban
             var mount = truck.position + inward * .4f + Vector3.up * 1.24f;
             var top = mount;
             top.y = Mathf.Lerp(mount.y + .21f, 2.74f, raise);
-            float depth = Vector3.Dot(load - mount, inward) - .46f;
+            float depth = Vector3.Dot(load - mount, inward) - .57f;
             var tip = top + inward * Mathf.Lerp(.2f, depth, reach);
             cargo.position = load + Vector3.up * (1.52f * lift);
             var fork = tip;
-            fork.y = Mathf.Lerp(top.y - .16f, cargo.position.y + .0935f, lower);
+            fork.y = Mathf.Lerp(top.y - .16f, cargo.position.y + .11f - .0165f, lower);
             Pose(tower,mount,top,.14f,.16f);
             Pose(boom,top,tip,.13f,.14f);
             Pose(mast,tip,fork,.062f,.092f);
             Pose(crossbar,fork-alongRail*.19f,fork+alongRail*.19f,.07f,.048f);
             var length = inward*Mathf.Lerp(.018f,.78f,insertion);
             var offset = alongRail*.15f;
-            Pose(left,fork-offset,fork-offset+length,.033f,.064f);
-            Pose(right,fork+offset,fork+offset+length,.033f,.064f);
+            Pose(left,fork-offset,fork-offset+length,.064f,.033f);
+            left.rotation = Quaternion.LookRotation(Vector3.up, inward);
+            Pose(right,fork+offset,fork+offset+length,.064f,.033f);
+            right.rotation = left.rotation;
         }
         internal void Clear()
         {
