@@ -64,7 +64,7 @@ namespace Sokoban.Editor
             var boxes=host.Run.Boxes.Keys.OrderBy(id=>id,StringComparer.Ordinal).Select(id=>room.Find(id)).ToArray();
             var scales=boxes.Append(truck).SelectMany(t=>t.GetComponentsInChildren<Transform>(true)).ToDictionary(t=>t,t=>t.localScale);
             var homes=boxes.Select(t=>t.position).ToArray();
-            Require(park.x>8 && !room.Find("叉车伸缩机构"),"initial exterior parking");
+            Require(park.z>7 && !room.Find("叉车伸缩机构"),"initial exterior parking");
             foreach(char c in boxes.Length==1?"EE":"EEWNNE")
             {
                 Vector2Int dir=c=='E'?Vector2Int.right:c=='W'?Vector2Int.left:Vector2Int.up;
@@ -81,7 +81,7 @@ namespace Sokoban.Editor
                 while(1-host.Run.RecoveryRemaining/PuzzleRun.RecoveryDuration<elapsed) yield return null;
                 var rig=room.Find("叉车伸缩机构"); var blade=rig.Find("左货叉"); var boom=rig.Find("伸缩臂"); var box=boxes[i];
                 Debug.Log($"LIFTQA box={box.name} stage={names[j]} remaining={host.Run.RecoveryRemaining:F4} truck={truck.position:F4} bladeLength={blade.localScale.y:F4} boomLength={boom.localScale.y:F4} cargo={box.position:F4} scale={box.localScale:F4}");
-                Require(Mathf.Abs(truck.position.x-park.x)<.001f && scales.All(p=>p.Key.localScale==p.Value),"perimeter and original proportions");
+                Require(Mathf.Abs(truck.position.z-park.z)<.001f && scales.All(p=>p.Key.localScale==p.Value),"perimeter and original proportions");
                 Require(boxes.Select((b,k)=>k==i || Vector3.Distance(b.position,k<i?homes[k]:sources[k])<.001f).All(ok=>ok),"inactive load displaced");
                 if(j==0) Require(blade.localScale.y>.7f && boom.localScale.y>2 && box.position==sources[i],"fork insertion");
                 if(j==1) Require(box.position.y>1.45f && box.position.x<homes[i].x+1 && box.position.x>homes[i].x && blade.localScale.y>.7f,"raised transit");

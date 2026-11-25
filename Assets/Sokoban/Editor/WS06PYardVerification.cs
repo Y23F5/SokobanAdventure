@@ -68,6 +68,17 @@ namespace Sokoban.Editor
                     }
                     if (id == "warehouse")
                     {
+                        var truck = group.Find("主题模型");
+                        var truckBounds = truck.GetComponentsInChildren<Renderer>().Select(r => r.bounds).Aggregate((a, b) => { a.Encapsulate(b); return a; });
+                        foreach (var placement in world["rooms"])
+                        {
+                            var origin = RoomFile.Cell(placement["origin"]);
+                            var dimensions = RoomFile.Size((JObject)catalog[(string)placement["levelId"]]);
+                            var footprint = new Rect(origin.x - .5f, origin.y - .5f, dimensions.x, dimensions.y);
+                            var parked = Rect.MinMaxRect(truckBounds.min.x, truckBounds.min.z, truckBounds.max.x, truckBounds.max.z);
+                            RoomFile.Check(!parked.Overlaps(footprint), "叉车停车位侵入房间 " + placement["levelId"]);
+                        }
+                        Debug.Log("PARK PASS " + truckBounds);
                         var props = group.Find("调度岗亭与装卸区");
                         RoomFile.Check(props && props.GetComponentsInChildren<Collider>().Length == 0,"外围陈设缺失或含有碰撞体");
                         var mesh = props.GetComponent<MeshFilter>().sharedMesh;

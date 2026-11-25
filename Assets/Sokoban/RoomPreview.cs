@@ -218,8 +218,11 @@ namespace Sokoban
             var dressing = Model("Diorama/" + (preset == "factory" ? "Conveyor" : preset == "forest" ? "Tree" : "Lift"), "主题模型", new Vector2Int(1,size.y-1),group,Quaternion.Euler(0,-25,0));
             if (warehouse)
             {
-                dressing.localPosition = new Vector3(size.x + .8f,-.737f,size.y*.57f);
-                dressing.localRotation = Quaternion.Euler(0,-90,0);
+                bool eastDoor = room["doors"].Any(d => RoomFile.Inward(d) == Vector2Int.left);
+                dressing.localPosition = eastDoor
+                    ? new Vector3((size.x - 1) * .5f, -.737f, size.y + .8f)
+                    : new Vector3(size.x + .8f, -.737f, size.y * .57f);
+                dressing.localRotation = Quaternion.Euler(0, eastDoor ? 180 : -90, 0);
             }
             else dressing.localPosition += Vector3.up*1.28f;
             Retrack(dressing);
