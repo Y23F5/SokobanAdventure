@@ -111,6 +111,7 @@ namespace Sokoban
                 groups.Add(row.Name, group);
                 group.Find((string)room["spawn"]["id"]).gameObject.SetActive(false);
                 foreach (var box in run.BoxesIn(row.Name)) group.Find(box.Key).position = Position(box.Value);
+                SyncObjectStates(row.Name, group);
             }
             InitAtmosphere();
         }
@@ -194,6 +195,7 @@ namespace Sokoban
                 Persist();
                 return true;
             }
+            SyncObjectStates(Run.ActiveId, groups[Run.ActiveId]);
             if (!wasSolved && Run.Solved) ApplySolvedBehaviors();
             playerStart = actor.position;
             movingBox = pushed == null ? null : objects[pushed];

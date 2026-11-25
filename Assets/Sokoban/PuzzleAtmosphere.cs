@@ -153,6 +153,9 @@ namespace Sokoban
                 belts.Clear();
                 foreach (var forest in forestEffects.Values) forest.Clear();
                 forestEffects.Clear();
+                foreach (var effect in stateEffects.Values) effect.Clear();
+                stateEffects.Clear();
+                SyncObjectStates(Run.ActiveId, groups[Run.ActiveId]);
                 actor.localScale=Vector3.one;
                 if (!turning && Busy) { duration=0; movingBox=null; Run.Motion=null; }
                 actor.position=Position(Run.Player);
@@ -161,10 +164,11 @@ namespace Sokoban
                 return;
             }
             float fraction = 1 - Run.RecoveryRemaining / PuzzleRun.RecoveryDuration;
+            SampleObjectStateRecovery(fraction);
             string preset = RoomFile.RecoveryPreset(Run.Room);
             if (preset == "warehouse" && objects.TryGetValue("主题模型",out var truck))
             {
-                var moved = Run.Boxes.Where(b => b.Value != Run.RecoveryCell(b.Key)).OrderBy(b => b.Key,System.StringComparer.Ordinal).ToArray();
+                var moved = Run.Boxes.Where(b => b.Value != Run.RecoveryCell(b.Key) && !stateEffects.ContainsKey(b.Key)).OrderBy(b => b.Key,System.StringComparer.Ordinal).ToArray();
                 if (moved.Length > 0)
                 {
                     float progress = fraction*moved.Length;
@@ -182,7 +186,7 @@ namespace Sokoban
                 foreach (var box in Run.Boxes)
                 {
                     var home = Run.RecoveryCell(box.Key);
-                    if (box.Value == home) continue;
+                    if (box.Value == home || stateEffects.ContainsKey(box.Key)) continue;
                     if (!belts.TryGetValue(box.Key,out var belt))
                     {
                         belt = new FactoryBelt(groups[Run.ActiveId],Position(box.Value),Position(home));
@@ -199,7 +203,7 @@ namespace Sokoban
                 foreach (var box in Run.Boxes)
                 {
                     var home = Run.RecoveryCell(box.Key);
-                    if (box.Value == home) continue;
+                    if (box.Value == home || objects[box.Key].GetComponent<ObjectStateView>()) continue;
                     if (!forestEffects.TryGetValue(box.Key,out var forest))
                     {
                         forest = new ForestRecovery(groups[Run.ActiveId],objects[box.Key],Position(home));
@@ -213,6 +217,7 @@ namespace Sokoban
             }
             foreach (var box in Run.Boxes)
             {
+                if (stateEffects.ContainsKey(box.Key)) continue;
                 var part = objects[box.Key];
                 float lift = Mathf.Sin(Mathf.PI*fraction);
                 part.position = Vector3.Lerp(Position(box.Value),Position(Run.RecoveryCell(box.Key)),Mathf.SmoothStep(0,1,fraction)) + Vector3.up*lift*.8f;

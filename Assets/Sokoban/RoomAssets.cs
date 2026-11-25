@@ -81,17 +81,34 @@ namespace Sokoban
                 CheckDescriptor(entry.Value);
                 RoomFile.Check(entry.Name==(string)entry.Value["id"],"素材表键与 ID 不一致");
             }
+            RoomFile.Check(room["appearanceCatalog"] == null || room["appearanceCatalog"] is JObject, "分类素材目录格式错误");
+            if (room["appearanceCatalog"] is JObject catalog)
+                foreach (var category in catalog.Properties())
+                {
+                    RoomFile.Check(category.Value is JObject && new[] { "box", "target", "floor", "wall", "decoration" }.Contains(category.Name),
+                        "未知素材基础分类：" + category.Name);
+                    foreach (var look in ((JObject)category.Value).Properties())
+                    {
+                        RoomFile.Check(look.Value is JObject && (string)look.Value["model"] == look.Name, "分类素材键与模型不一致");
+                        RequireBinding(assets, "model", look.Value["model"], category.Name);
+                    }
+                }
             if (room["objectDefinitions"] is JObject definitions)
                 foreach (var entry in definitions.Properties())
+                {
                     ValidateVisual(assets, (entry.Value as JObject)?["visual"], entry.Name, true);
+                    ObjectStateProfile.Validate(room, (entry.Value as JObject)?["stateProfile"], RoomTool.Decoration);
+                }
             foreach (var item in RoomFile.Objects(room).Concat(room["terrainObjects"] as JArray ?? new JArray()))
             {
-                if (item["builtinModel"] != null) RoomFile.Check(item.Parent == room["boxes"] && Array.IndexOf(RoomDraft.BuiltinBoxes,(string)item["builtinModel"]) >= 0 && item["visual"]?["model"] == null,"箱体模型绑定无效");
-                ValidateVisual(assets, item["visual"], (string)item["id"], item.Parent == room["decorations"]);
+                if (item["builtinModel"] != null) RoomFile.Check(AppearanceLibrary.Find((string)item["builtinModel"])?.Type == AppearanceLibrary.TypeOf(room, item)
+                    && item["visual"]?["model"] == null, "对象外观与基础类型不符：" + item["id"]);
+                ValidateVisual(assets, item["visual"], (string)item["id"], item.Parent == room["decorations"] && item["builtinModel"] == null);
+                ObjectStateProfile.Validate(room, item["stateProfile"], AppearanceLibrary.TypeOf(room, item));
             }
             if(room["uiImage"]!=null) RequireBinding(assets,"uiImage",room["uiImage"],(string)room["levelId"]);
         }
-        static void ValidateVisual(JObject assets, JToken visual, string owner, bool needsModel)
+        internal static void ValidateVisual(JObject assets, JToken visual, string owner, bool needsModel)
         {
             RoomFile.Check(!needsModel || visual is JObject model && model["model"] != null, owner + " 缺少模型绑定");
             if (visual == null) return;

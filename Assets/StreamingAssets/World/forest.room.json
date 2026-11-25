@@ -1,5 +1,5 @@
 {
-  "formatVersion": 2,
+  "formatVersion": 3,
   "levelId": "forest",
   "name": "海岛森林",
   "themeId": "forest",
@@ -49,7 +49,33 @@
         2,
         5
       ],
-      "builtinModel": "Logs"
+      "builtinModel": "Logs",
+      "stateProfile": {
+        "initial": "tree",
+        "states": {
+          "tree": {
+            "builtinModel": "ForestTree"
+          },
+          "logs": {
+            "builtinModel": "Logs"
+          }
+        },
+        "transitions": [
+          {
+            "from": "tree",
+            "to": "logs",
+            "trigger": "firstPush",
+            "leave": "TreeStump"
+          },
+          {
+            "from": "logs",
+            "to": "tree",
+            "trigger": "restore",
+            "depart": "forestDecay",
+            "arrive": "grow"
+          }
+        ]
+      }
     },
     {
       "id": "box-2",
@@ -61,7 +87,33 @@
         7,
         4
       ],
-      "builtinModel": "Logs"
+      "builtinModel": "Logs",
+      "stateProfile": {
+        "initial": "tree",
+        "states": {
+          "tree": {
+            "builtinModel": "ForestTree"
+          },
+          "logs": {
+            "builtinModel": "Logs"
+          }
+        },
+        "transitions": [
+          {
+            "from": "tree",
+            "to": "logs",
+            "trigger": "firstPush",
+            "leave": "TreeStump"
+          },
+          {
+            "from": "logs",
+            "to": "tree",
+            "trigger": "restore",
+            "depart": "forestDecay",
+            "arrive": "grow"
+          }
+        ]
+      }
     }
   ],
   "targets": [

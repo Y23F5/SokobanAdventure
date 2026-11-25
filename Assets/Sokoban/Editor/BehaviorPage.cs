@@ -16,6 +16,7 @@ namespace Sokoban.Editor
         readonly string roomId;
         readonly int revision;
         readonly JObject graph;
+        ObjectStateEditor states;
         BehaviorPage(RoomDraft draft, Vector2Int cell, JObject graph)
         {
             this.cell = cell;
@@ -32,8 +33,14 @@ namespace Sokoban.Editor
         }
         internal bool Draw(LayoutPanel panel)
         {
+            if (states != null) return states.Draw(panel);
             EditorGUILayout.LabelField("对象行为", EditorStyles.boldLabel);
             EditorGUILayout.LabelField(roomId + "  " + cell + "  " + ((string)graph["ownerId"] ?? "新绑定"));
+            if (panel.Draft.CanEditStateProfile && GUILayout.Button("编辑物件状态与转换"))
+            {
+                states = new ObjectStateEditor(panel.Draft);
+                return true;
+            }
             canvas.Draw(graph);
             var nodes = graph["nodes"] as JArray;
             if (nodes != null) foreach (var node in nodes)
@@ -50,6 +57,11 @@ namespace Sokoban.Editor
                         else ((JObject)node).Remove("expression");
                         break;
                     case "openPassage": EditorGUILayout.LabelField("解开后允许穿过这面墙"); break;
+                    case "setState":
+                        var names = (panel.Draft.Find(panel.Draft.Selected)?["stateProfile"]?["states"] as JObject)?.Properties().Select(state => state.Name).ToArray();
+                        if (names == null || names.Length == 0) EditorGUILayout.HelpBox("先为当前物件添加状态配置。", MessageType.Info);
+                        else node["state"] = names[EditorGUILayout.Popup("切换到状态", Mathf.Max(0, System.Array.IndexOf(names, (string)node["state"])), names)];
+                        break;
                     case "lua":
                         EditorGUILayout.LabelField("Lua 脚本");
                         node["script"] = EditorGUILayout.TextArea((string)node["script"] ?? "", GUILayout.MinHeight(52));

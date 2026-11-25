@@ -39,6 +39,8 @@ namespace Sokoban
                 Check(room[key] is JObject, key + " 必须是目录对象");
                 if (room[key].HasValues) room["formatVersion"] = 3;
             }
+            if (Objects(room).Any(item => item["builtinModel"] != null && item.Parent != room["boxes"] || item["stateProfile"] != null) ||
+                (room["terrainObjects"] as JArray)?.Any(item => item["builtinModel"] != null) == true) room["formatVersion"] = 3;
             return room;
         }
 

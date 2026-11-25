@@ -71,13 +71,13 @@ namespace Sokoban
             removedPlacements=state["removed"] is JObject removed?(JObject)removed.DeepClone():new JObject();var data=state["data"]; Catalog=(JObject)data["rooms"].DeepClone(); World=data["world"] as JObject;
             Room=(JObject)Catalog[(string)state["active"]]; RoomFile.Check(Room!=null,"草稿缺少选中房间");
             if (BrushDefinition != null && Room["objectDefinitions"]?[BrushDefinition] == null) Tool = RoomTool.Select;
-            if (BrushAsset!=null && Room["assets"]?[BrushAsset]==null) { BrushAsset=null; if(Tool==RoomTool.Decoration) Tool=RoomTool.Select; }
+            if (BrushAsset!=null && AssetDefinition(BrushAsset)==null) { BrushAsset=null; if(Tool==RoomTool.Decoration) Tool=RoomTool.Select; }
             Selected=(string)state["selected"]; SelectedCell=state["cell"] is JArray?RoomFile.Cell(state["cell"]):(Vector2Int?)null;
             Selection.Clear();
             if (state["selection"] is JArray selected) foreach (var selectedPoint in selected) Selection.Add(RoomFile.Cell(selectedPoint));
             else if (SelectedCell.HasValue && RoomFile.Terrain(Room, SelectedCell.Value) != RoomFile.Void) Selection.Add(SelectedCell.Value);
         }
-        public JObject Snapshot() => new JObject { ["version"]=1,["current"]=State(),["path"]=WorkPath,["saved"]=saved?.DeepClone(),["tool"]=(int)Tool,["brushAsset"]=BrushAsset,["brushDefinition"]=BrushDefinition,["typedBrush"]=BrushAsset != null,["undo"]=new JArray(undo.Reverse()),["redo"]=new JArray(redo.Reverse()) };
+        public JObject Snapshot() => new JObject { ["version"]=1,["current"]=State(),["path"]=WorkPath,["saved"]=saved?.DeepClone(),["tool"]=(int)Tool,["brushAsset"]=BrushAsset,["brushDefinition"]=BrushDefinition,["brushBuiltin"]=BrushBuiltin,["typedBrush"]=BrushAsset != null,["undo"]=new JArray(undo.Reverse()),["redo"]=new JArray(redo.Reverse()) };
         public void Recover(JObject snapshot) {
             RoomFile.Check((int?)snapshot["version"]==1,"草稿版本无效");
             foreach(var state in snapshot["undo"].Concat(snapshot["redo"]).Append(snapshot["current"])) {
@@ -89,6 +89,7 @@ namespace Sokoban
             var definition = (string)snapshot["brushDefinition"];
             if (!string.IsNullOrEmpty(definition)) SelectDefinition(definition);
             else if (model != null && (Tool == RoomTool.Decoration || (bool?)snapshot["typedBrush"] == true)) SelectAsset(model, Tool);
+            else if ((string)snapshot["brushBuiltin"] is string builtin) ChooseAppearance(builtin, Tool);
             undo.Clear(); redo.Clear();foreach(JObject value in snapshot["undo"]) undo.Push(value);foreach(JObject value in snapshot["redo"]) redo.Push(value);Revision++;
         }
         public void BeginWorld()
@@ -177,12 +178,13 @@ namespace Sokoban
             if (min != Vector2Int.zero || max != size - Vector2Int.one)
             {
                 var extent = max - min + Vector2Int.one;
-                next["size"] = RoomFile.Point(extent);
                 if (placement != null)
                 {
                     string conflict = WorldLayout.PlacementIssue(World, Catalog, ActiveId, origin, true, extent);
                     if (conflict != null) return conflict;
                 }
+                if (min != Vector2Int.zero) FreezeTerrainAppearances(next);
+                next["size"] = RoomFile.Point(extent);
                 var rows = new JArray();
                 for (int y = max.y; y >= min.y; y--)
                 {
@@ -222,15 +224,8 @@ namespace Sokoban
                     row[cell.x] = tile;
                     next["terrainRowsNorthToSouth"][index] = new string(row);
                 }
-                if (tool != Tool || BrushAsset == null || (tool != RoomTool.Floor && tool != RoomTool.Wall)) continue;
-                if (identity == null)
-                {
-                    if (next["terrainObjects"] == null) next["terrainObjects"] = new JArray();
-                    identity = new JObject { ["id"] = "tile-" + Guid.NewGuid().ToString("N"), ["cell"] = RoomFile.Point(cell) };
-                    ((JArray)next["terrainObjects"]).Add(identity);
-                }
-                if (identity["visual"] == null) identity["visual"] = new JObject();
-                identity["visual"]["model"] = BrushAsset;
+                if (tool == RoomTool.Floor || tool == RoomTool.Wall)
+                    ApplyBrush(next, (JObject)identity ?? TerrainRecord(next, cell), tool, cell);
             }
             if (!JToken.DeepEquals(Room, next))
             {

@@ -1,7 +1,7 @@
 /**
  * @file ImportedAppearance.cs
  * @brief Apply resolves room bindings and builds the visible hierarchy at its grid anchor. Load verifies cached GLB bytes and imports geometry or clips.
- * InspectModel loads an offscreen model for import validation. The visible root is centered once without resizing.
+ * InspectModel validates the offscreen model. SampleMotion follows the gameplay clock for explicitly configured recovery clips.
  * LateUpdate reports the first visible animation pose outside the single-cell bounds and keeps the original pose.
  * SetGhost substitutes the preview material across every submesh. ReadImage decodes UI and surface images. OnDestroy releases instance-owned assets after pending imports finish.
  */
@@ -31,12 +31,19 @@ namespace Sokoban
         Texture2D image;
         Material ghost;
         bool loading;
+        bool sampledMotion;
         public string Error { get; private set; }
         public Task Ready { get; private set; }
 
-        public void Apply(JObject room, JToken visual)
+        public void Apply(JObject room, JToken visual, bool sampleExternally = false)
         {
+            sampledMotion = sampleExternally;
             Ready = Build(room["assets"], visual);
+        }
+
+        internal void SampleMotion(float fraction)
+        {
+            if (playback && playback.clip) playback.clip.SampleAnimation(playback.gameObject, Mathf.Clamp01(fraction) * playback.clip.length);
         }
 
         public static async Task InspectModel(JObject asset)
@@ -104,7 +111,8 @@ namespace Sokoban
                     player.clip = clips[0];
                 }
                 var animation = playback = clipRoot.GetComponent<Animation>();
-                if (animation && animation.clip && Application.isPlaying)
+                if (animation && animation.clip && sampledMotion) { animation.playAutomatically = false; animation.Stop(); }
+                else if (animation && animation.clip && Application.isPlaying)
                 {
                     animation.wrapMode = WrapMode.Loop;
                     animation.playAutomatically = true;

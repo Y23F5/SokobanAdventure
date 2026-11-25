@@ -126,16 +126,9 @@ namespace Sokoban
             return model.transform;
         }
 
-        public static string BoxModel(string theme, JToken box = null) => box?["builtinModel"] != null ? "Diorama/" + (string)box["builtinModel"] : "Diorama/" + (theme == "factory" ? "Machinery" : theme == "forest" ? "Logs" : "Cargo");
-        public static string BrushModel(RoomTool tool, string theme, Vector2Int local = default)
-        {
-            if (tool == RoomTool.Box) return BoxModel(theme);
-            if (tool == RoomTool.Wall) return "LayoutModels/Wall";
-            if (tool != RoomTool.Floor) return "LayoutModels/Target";
-            if (theme != "warehouse" && theme != "factory" && theme != "forest") return "LayoutModels/Floor";
-            int variant = Mathf.Abs((local.x * 17 + local.y * 29 + local.x * local.y) % 3);
-            return "Diorama/" + theme + "Tile" + variant;
-        }
+        public static string BoxModel(string theme, JToken box = null) => AppearanceLibrary.Resolve(RoomTool.Box, theme, Vector2Int.zero, box).Prefab;
+        public static string BrushModel(RoomTool tool, string theme, Vector2Int local = default) =>
+            (AppearanceLibrary.Resolve(tool, theme, local) ?? AppearanceLibrary.Find("Target")).Prefab;
 
         public Transform BuildRoom(JObject room, Vector2Int origin, string selected, Transform parent, JObject world = null, JObject catalog = null)
         {
@@ -152,8 +145,7 @@ namespace Sokoban
                 baseModel.GetComponentInChildren<Renderer>().sharedMaterial = Resources.Load<Material>("LayoutModels/" + (factory ? "Stone" : forest ? "Moss" : "Kraft"));
                 Retrack(baseModel);
             }
-            var terrainVisuals = (room["terrainObjects"] as JArray ?? new JArray())
-                .Where(record => record["visual"] is JObject).ToDictionary(RoomFile.At, record => record["visual"]);
+            var terrainRecords = (room["terrainObjects"] as JArray ?? new JArray()).ToDictionary(RoomFile.At);
             for (int y = 0; y < size.y; y++)
                 for (int x = 0; x < size.x; x++)
                 {
@@ -168,8 +160,9 @@ namespace Sokoban
                         Retrack(foundation);
                     }
                     string kind = RoomFile.Floor(room, cell) ? "Floor" : "Wall";
-                    string model = BrushModel(kind == "Floor" ? RoomTool.Floor : RoomTool.Wall, theme, cell);
-                    terrainVisuals.TryGetValue(cell, out var tileVisual);
+                    terrainRecords.TryGetValue(cell, out var record);
+                    string model = AppearanceLibrary.Resolve(kind == "Floor" ? RoomTool.Floor : RoomTool.Wall, theme, cell, record).Prefab;
+                    var tileVisual = record?["visual"];
                     string tileName = kind + " " + cell;
                     Transform tile;
                     if (tileVisual?["model"] != null)
@@ -177,7 +170,7 @@ namespace Sokoban
                     else
                     {
                         tile = Model(model, tileName, cell, group, Quaternion.identity);
-                        if (kind == "Wall") { tile.localScale = new Vector3(1,2.6f,1); Retrack(tile); }
+                        if (model == "LayoutModels/Wall") { tile.localScale = new Vector3(1,2.6f,1); Retrack(tile); }
                     }
                     if (tileVisual != null) tile.gameObject.AddComponent<ImportedAppearance>().Apply(room, tileVisual);
                 }
@@ -189,9 +182,9 @@ namespace Sokoban
                 string kind;
                 Quaternion rotation = Quaternion.identity;
                 if (item.Parent == room["boxes"]) kind = BoxModel(theme,item);
-                else if (item.Parent == room["targets"]) kind = "Target";
+                else if (item.Parent == room["targets"]) kind = AppearanceLibrary.Resolve(RoomTool.Target, theme, cell, item).Prefab;
                 else if (item == room["spawn"]) kind = "Spawn";
-                else if (item.Parent == room["decorations"]) kind = null;
+                else if (item.Parent == room["decorations"]) kind = AppearanceLibrary.Find((string)item["builtinModel"])?.Prefab;
                 else
                 {
                     kind = "Door";
@@ -201,7 +194,12 @@ namespace Sokoban
                 var visual = item["visual"];
                 if (northRail && kind == "Diorama/Cargo" && visual?["model"] == null)
                     rotation = Quaternion.Euler(0, 90, 0);
-                if (kind == null || visual?["model"] != null)
+                if (item["stateProfile"] != null)
+                {
+                    var anchor = CreateRoot(id, group, new Vector3(cell.x, 0, cell.y));
+                    anchor.AddComponent<ObjectStateView>().Configure(room, item, kind);
+                }
+                else if (kind == null || visual?["model"] != null)
                 {
                     var anchor = CreateRoot(id, group, new Vector3(cell.x, 0, cell.y));
                     anchor.transform.localRotation = rotation;

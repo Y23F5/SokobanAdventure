@@ -194,6 +194,16 @@ namespace Sokoban
                 if (!owners.Contains((string)graph["ownerId"])) yield return $"行为图 {graphId} 找不到对象 {graph["ownerId"]}";
                 var tile = room["terrainObjects"]?.FirstOrDefault(t => (string)t["id"] == (string)graph["ownerId"]);
                 foreach (var issue in GraphIssues(graph, tile != null && RoomFile.Terrain(room, RoomFile.At(tile)) == '#')) yield return issue;
+                var profile = RoomFile.Objects(room).FirstOrDefault(item => (string)item["id"] == (string)graph["ownerId"])?["stateProfile"];
+                foreach (var issue in StateNodeIssues(graph, profile)) yield return issue;
+            }
+        }
+        internal static IEnumerable<string> StateNodeIssues(JToken graph, JToken profile)
+        {
+            foreach (var node in (graph["nodes"] as JArray ?? new JArray()).OfType<JObject>().Where(item => (string)item["kind"] == "setState"))
+            {
+                string state = (string)node["state"];
+                if (state == null || profile?["states"]?[state] == null) yield return $"行为图 {graph["id"]} 引用了不存在的物件状态：{state}";
             }
         }
         internal static IEnumerable<string> GraphIssues(JToken graph, bool ownsWall)
@@ -228,7 +238,7 @@ namespace Sokoban
                 bool allowed = source switch
                 {
                     "condition" => output == "true" || output == "false",
-                    "roomSolved" or "openPassage" or "setVisible" or "lua" => output == "out",
+                    "roomSolved" or "openPassage" or "setVisible" or "setState" or "lua" => output == "out",
                     _ => !string.IsNullOrEmpty(output)
                 };
                 if (!allowed) yield return $"行为图 {graphId} 节点 {from} 没有输出端口 {output}";
@@ -237,7 +247,7 @@ namespace Sokoban
         public static bool IsVisualNode(JToken node)
         {
             string kind = (string)node["kind"];
-            return kind == "roomSolved" || kind == "setVisible" || kind == "condition" && node["expression"] == null;
+            return kind == "roomSolved" || kind == "setVisible" || kind == "setState" || kind == "condition" && node["expression"] == null;
         }
         public static bool CanSimulateNode(JToken node) => IsVisualNode(node) || (string)node["kind"] == "openPassage";
         public static bool CanSimulate(JToken graph) => graph["nodes"] is JArray nodes && nodes.All(CanSimulateNode);
@@ -281,6 +291,7 @@ namespace Sokoban
                         port="out";
                         break;
                     case "openPassage":
+                    case "setState":
                     case "setVisible": yield return node; port="out"; break;
                     default: continue;
                 }

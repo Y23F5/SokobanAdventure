@@ -32,9 +32,9 @@ namespace Sokoban
         public RectTransform assetEntries;
         readonly AssetThumbnail thumbnails = new AssetThumbnail();
         readonly Dictionary<string,Button> cards = new Dictionary<string,Button>();
-        string pickedAsset, paletteKey;
+        string pickedAsset, pickedBuiltin, paletteKey;
         RoomTool paletteCategory = RoomTool.Decoration;
-        bool custom, workspaceOpen,terrain;
+        bool custom, categoryOpen, workspaceOpen,terrain;
         string[] listedEntries;
         string[] roomIds;
         bool lastDialog;
@@ -47,7 +47,19 @@ namespace Sokoban
         void Start()
         {
             fileName.onValueChanged.AddListener(value => Panel.Filename=value);
+            SetToolLabel(RoomTool.Box, "箱子");
+            SetToolLabel(RoomTool.Target, "目标点");
+            var target = toolButtons[(int)RoomTool.Target];
+            var other = Instantiate(target, target.transform.parent, false);
+            var rect = (RectTransform)other.transform;
+            rect.anchoredPosition += Vector2.down * (rect.rect.height + 10);
+            other.GetComponentInChildren<Text>().text = "其他";
+            other.onClick = new Button.ButtonClickedEvent();
+            other.onClick.AddListener(() => OpenCategory(RoomTool.Decoration));
+            if (other.transform.Find("图标") is Transform icon) icon.gameObject.SetActive(false);
         }
+
+        void SetToolLabel(RoomTool type, string name) => toolButtons[(int)type].GetComponentInChildren<Text>().text = name;
 
         void OnDestroy() => thumbnails.Dispose();
 
@@ -69,65 +81,83 @@ namespace Sokoban
         }
         void RefreshAssets()
         {
-            var draft=Panel.Draft;
-            var assets=draft.Room["assets"] as JObject;
-            var catalog = draft.Room["appearanceCatalog"]?[paletteCategory.ToString().ToLowerInvariant()] as JObject;
-            var definitions = paletteCategory == RoomTool.Decoration ? draft.Room["objectDefinitions"] as JObject : null;
-            string themeId = (string)draft.Room["themeId"];
-            string key = draft.ActiveId + themeId + paletteCategory + catalog + definitions + string.Join(",",assets?.Properties().Select(p=>p.Name)??Enumerable.Empty<string>());
-            if(paletteKey!=key)
+            var draft = Panel.Draft;
+            var assets = custom ? (draft.Room["assets"] as JObject)?.Properties().Select(entry => entry.Name).ToArray() ?? System.Array.Empty<string>()
+                : categoryOpen ? draft.CategoryAssets(paletteCategory).ToArray() : System.Array.Empty<string>();
+            var definitions = custom ? draft.Room["objectDefinitions"] as JObject : null;
+            string theme = (string)draft.Room["themeId"];
+            string key = draft.ActiveId + theme + custom + categoryOpen + paletteCategory + definitions + string.Join(",", assets);
+            if (paletteKey != key)
             {
-                paletteKey=key;
-                foreach (RoomTool tool in new[] { RoomTool.Box, RoomTool.Target, RoomTool.Floor, RoomTool.Wall })
-                    if ((int)tool < toolButtons.Length && toolButtons[(int)tool])
-                        PreviewCard(toolButtons[(int)tool], draft.Room, RoomPreview.BrushModel(tool, themeId), true);
-                foreach(var b in cards.Values) {b.gameObject.SetActive(false);Destroy(b.gameObject);}
+                paletteKey = key;
+                foreach (var button in cards.Values) { button.gameObject.SetActive(false); Destroy(button.gameObject); }
                 cards.Clear();
-                if(pickedAsset!=null && assets?[pickedAsset]==null) pickedAsset=null;
+                if (pickedAsset != null && draft.AssetDefinition(pickedAsset) == null) pickedAsset = null;
+                if (categoryOpen)
+                {
+                    AddPaletteCard("back", "返回分类", null, () => { categoryOpen = false; pickedAsset = pickedBuiltin = null; Panel.CancelTool(); });
+                    AddPaletteCard("import", "导入" + AppearanceLibrary.TypeName(paletteCategory) + "模型", null,
+                        () => { pickedAsset = pickedBuiltin = null; Tool(paletteCategory); Panel.ChooseFile("导入模型"); });
+                    foreach (var entry in AppearanceLibrary.Entries(paletteCategory, theme))
+                        AddPaletteCard(entry.Id, entry.Name, entry.Prefab, () =>
+                        {
+                            Panel.CancelTool();
+                            pickedAsset = null;
+                            pickedBuiltin = entry.Id;
+                            Panel.Run(() => draft.ChooseAppearance(entry.Id, paletteCategory), "已选 " + entry.Name + "，在地图放置");
+                        }, true);
+                }
+                else if (custom)
+                    AddPaletteCard("import", "导入装饰模型", null, () => { Panel.CancelTool(); Panel.ChooseFile("导入模型"); });
                 if (definitions != null)
                     foreach (var entry in definitions.Properties())
                     {
                         string id = entry.Name;
-                        AddPaletteCard(id, (string)entry.Value["name"] + " · 功能物件", (string)entry.Value["visual"]["model"], () =>
+                        string model = (string)entry.Value["visual"]["model"];
+                        AddPaletteCard(id, (string)entry.Value["name"] + " · 功能物件", model, () =>
                         {
                             Panel.CancelTool();
-                            pickedAsset = null;
-                            string issue = thumbnails.ModelIssue(draft.Room, (string)draft.Room["objectDefinitions"][id]["visual"]["model"]);
+                            pickedAsset = pickedBuiltin = null;
+                            string issue = thumbnails.ModelIssue(draft.Room, model);
                             if (issue != null) Panel.Status = issue;
                             else Panel.Run(() => draft.SelectDefinition(id), "左键放置功能物件，短按右键取消");
                         });
                     }
-                if(assets!=null) foreach(var entry in assets.Properties())
+                foreach (string id in assets)
                 {
-                    string id=entry.Name;
-                    if (paletteCategory != RoomTool.Decoration && catalog?[id] == null) continue;
-                    string kind=(string)entry.Value["kind"];
-                    string category=kind=="model"?"模型":kind=="animation"?"动作":kind=="texture"?"贴图":"界面图";
-                    AddPaletteCard(id, (string)entry.Value["name"] + " · " + category, id, () =>
+                    var asset = draft.AssetDefinition(id);
+                    string kind = (string)asset["kind"];
+                    string label = kind == "model" ? "" : kind == "animation" ? " · 动作" : kind == "texture" ? " · 贴图" : " · 界面图";
+                    AddPaletteCard(id, (string)asset["name"] + label, id, () =>
                     {
                         Panel.CancelTool();
                         pickedAsset = id;
-                        if (kind == "model")
-                        {
-                            string issue = thumbnails.ModelIssue(draft.Room, id);
-                            if (issue != null) { Panel.Status = issue; return; }
-                            draft.SelectAsset(id, paletteCategory);
-                            Panel.Status = "左键放置，短按右键取消";
-                        }
+                        pickedBuiltin = null;
+                        if (kind != "model") return;
+                        string issue = thumbnails.ModelIssue(draft.AssetRoom(id), id);
+                        if (issue != null) Panel.Status = issue;
+                        else Panel.Run(() => draft.SelectAsset(id, custom ? RoomTool.Decoration : paletteCategory), "左键放置，短按右键取消");
                     });
                 }
             }
-            bindAsset.gameObject.SetActive(custom && pickedAsset!=null);
-            if (custom && pickedAsset != null)
-                bindAsset.interactable = draft.CanBindAsset(pickedAsset) && thumbnails.ModelIssue(draft.Room, pickedAsset) == null;
-            foreach (var card in cards) card.Value.image.color = card.Key == (draft.BrushDefinition ?? pickedAsset) ? SelectedTint : NormalTint;
+            bindAsset.gameObject.SetActive((custom || categoryOpen) && (pickedAsset != null || pickedBuiltin != null));
+            if (pickedBuiltin != null)
+                bindAsset.interactable = draft.CanReplaceAppearance(pickedBuiltin);
+            else if (pickedAsset != null)
+                bindAsset.interactable = draft.CanBindAsset(pickedAsset, categoryOpen ? paletteCategory : RoomTool.Select) &&
+                    thumbnails.ModelIssue(draft.AssetRoom(pickedAsset), pickedAsset) == null;
+            foreach (var card in cards) card.Value.image.color = card.Key == (draft.BrushDefinition ?? draft.BrushBuiltin ?? draft.BrushAsset ?? pickedBuiltin ?? pickedAsset)
+                ? SelectedTint : NormalTint;
         }
-        void AddPaletteCard(string id, string title, string model, UnityEngine.Events.UnityAction action)
+
+        void AddPaletteCard(string id, string title, string model, UnityEngine.Events.UnityAction action, bool builtin = false)
         {
             var button = Instantiate(entryPrefab, assetEntries, false);
             cards.Add(id, button);
             var label = button.GetComponentInChildren<Text>();
             label.text = title;
+            button.onClick.AddListener(action);
+            if (model == null) return;
             label.rectTransform.offsetMin = new Vector2(36, label.rectTransform.offsetMin.y);
             var thumb = new GameObject("缩略图", typeof(RectTransform), typeof(RawImage)).GetComponent<RawImage>();
             thumb.rectTransform.SetParent(button.transform, false);
@@ -136,8 +166,16 @@ namespace Sokoban
             thumb.rectTransform.sizeDelta = new Vector2(30, 30);
             thumb.raycastTarget = false;
             thumb.enabled = false;
-            button.onClick.AddListener(action);
-            PreviewCard(button, Panel.Draft.Room, model);
+            PreviewCard(button, Panel.Draft.AssetRoom(builtin ? null : model), model, builtin);
+        }
+
+        void OpenCategory(RoomTool type)
+        {
+            custom = false;
+            categoryOpen = true;
+            paletteCategory = type;
+            pickedAsset = pickedBuiltin = null;
+            Panel.CancelTool();
         }
         public void Act(string action)
         {
@@ -155,20 +193,24 @@ namespace Sokoban
                 case "离开": host.Leave();break;
                 case "工作区": workspaceOpen=true;break;
                 case "返回": workspaceOpen=false;break;
-                case "选物件": custom=false;terrain=false;break;
-                case "选地形": custom=false;terrain=true;break;
+                case "选物件": custom = categoryOpen = false; terrain = false; pickedAsset = pickedBuiltin = null; break;
+                case "选地形": custom = categoryOpen = false; terrain = true; pickedAsset = pickedBuiltin = null; break;
                 case "选素材":
-                    paletteCategory = !custom && RoomDraft.IsAppearanceTool(d.Tool) ? d.Tool : RoomTool.Decoration;
-                    custom=true; pickedAsset=null;break;
+                    custom = true; categoryOpen = false; pickedAsset = pickedBuiltin = null; break;
                 case "绑定素材":
-                    Panel.Run(() => { d.BindAsset(pickedAsset); Panel.CancelTool(); }, "已更新绑定");
+                    Panel.Run(() =>
+                    {
+                        if (pickedBuiltin != null) d.ReplaceAppearance(pickedBuiltin);
+                        else d.BindAsset(pickedAsset, categoryOpen ? paletteCategory : RoomTool.Select);
+                        Panel.CancelTool();
+                    }, "已更新外观绑定");
                     break;
                 case "切换房间视图": host.ToggleRoomView();workspaceOpen=false;break;
                 case "选择": Tool(RoomTool.Select);break;
-                case "纸箱": Tool(RoomTool.Box);break;
-                case "目标": Tool(RoomTool.Target);break;
-                case "墙壁": Tool(RoomTool.Wall);break;
-                case "地板": Tool(RoomTool.Floor);break;
+                case "纸箱": OpenCategory(RoomTool.Box); break;
+                case "目标": OpenCategory(RoomTool.Target); break;
+                case "墙壁": OpenCategory(RoomTool.Wall); break;
+                case "地板": OpenCategory(RoomTool.Floor); break;
                 case "擦除": Tool(RoomTool.Erase);break;
                 case "移动": Tool(RoomTool.Move);break;
                 case "建世界": Panel.Run(d.BeginWorld,"世界已创建，请放置房间");break;
@@ -234,6 +276,9 @@ namespace Sokoban
                 var preset = Instantiate(entryPrefab,container,false);
                 preset.GetComponentInChildren<Text>().text = Panel.RecoveryLabel;
                 preset.onClick.AddListener(Panel.CycleRecovery);
+                var theme = Instantiate(entryPrefab, container, false);
+                theme.GetComponentInChildren<Text>().text = Panel.ThemeLabel;
+                theme.onClick.AddListener(Panel.CycleTheme);
             }
             if (!directory && Panel.Draft.Selection.Count > 0)
             {
@@ -273,7 +318,10 @@ namespace Sokoban
         void RefreshTools()
         {
             var draft=Panel.Draft;
-            objectCards.SetActive(!custom && !terrain);terrainCards.SetActive(!custom && terrain);assetList.SetActive(custom);RefreshAssets();
+            objectCards.SetActive(!custom && !categoryOpen && !terrain);
+            terrainCards.SetActive(!custom && !categoryOpen && terrain);
+            assetList.SetActive(custom || categoryOpen);
+            RefreshAssets();
             Color selected = SelectedTint, normal = NormalTint;
             objectTab.image.color=!custom && !terrain?selected:normal;terrainTab.image.color=!custom && terrain?selected:normal;assetTab.image.color=custom?selected:normal;
             for(int i=0;i<toolButtons.Length;i++)
@@ -284,13 +332,19 @@ namespace Sokoban
                 properties.text = (string)draft.Room["objectDefinitions"][draft.BrushDefinition]["name"] + "\n每次放置都会创建独立行为。";
                 return;
             }
-            if (custom && pickedAsset != null)
+            if ((custom || categoryOpen) && pickedAsset != null)
             {
-                var asset = draft.Room["assets"][pickedAsset];
+                var asset = draft.AssetDefinition(pickedAsset);
                 properties.text = (string)asset["name"] + "  " + thumbnails.SizeReport(pickedAsset) + "\n" + draft.AssetBindingTarget(pickedAsset);
                 return;
             }
-            properties.text=draft.Tool==RoomTool.Box?"纸箱\n在空地上放置一个箱子。"
+            if (categoryOpen && pickedBuiltin != null)
+            {
+                var look = AppearanceLibrary.Find(pickedBuiltin);
+                properties.text = look.Name + "\n" + AppearanceLibrary.TypeName(look.Type);
+                return;
+            }
+            properties.text=draft.Tool==RoomTool.Box?"箱子\n在空地上放置一个箱子。"
                 :draft.Tool==RoomTool.Target?"目标点\n标记箱子需要到达的格子。"
                 :obj!=null?((string)obj["name"] == null ? "" : (string)obj["name"] + "\n")+draft.Selected+"\n当前格 "+RoomFile.At(obj)+(obj["recoveryCell"]!=null?"\n恢复格 "+RoomFile.Cell(obj["recoveryCell"]):"")
                 :(string)draft.Room["name"]+"\n"+RoomFile.Size(draft.Room);

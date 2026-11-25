@@ -15,9 +15,10 @@ namespace Sokoban
     public sealed partial class RoomDraft
     {
         public string BrushDefinition { get; private set; }
-        public bool CanDefineObject => Selected != null && Find(Selected)?.Parent == Room["decorations"] &&
-            Room["events"].Any(graph => (string)graph["ownerId"] == Selected);
+        public bool CanDefineObject => Selected != null && Find(Selected) is JToken item && item.Parent == Room["decorations"] &&
+            item["visual"]?["model"] != null && (item["stateProfile"] != null || Room["events"].Any(graph => (string)graph["ownerId"] == Selected));
         public JObject DefinitionVisual => Room["objectDefinitions"]?[BrushDefinition ?? ""]?["visual"] as JObject;
+        public JToken DefinitionStateProfile => Room["objectDefinitions"]?[BrushDefinition ?? ""]?["stateProfile"];
 
         public void DefineObject(string name)
         {
@@ -41,6 +42,7 @@ namespace Sokoban
                 graphs.Add(graph);
             }
             definitions[id] = new JObject { ["name"] = name.Trim(), ["visual"] = source["visual"].DeepClone(), ["events"] = graphs };
+            if (source["stateProfile"] != null) definitions[id]["stateProfile"] = source["stateProfile"].DeepClone();
             var issue = DefinitionIssues(next).FirstOrDefault();
             RoomFile.Check(issue == null, issue);
             Commit(next, Selected);
@@ -61,6 +63,7 @@ namespace Sokoban
             instance["definitionId"] = BrushDefinition;
             instance["name"] = definition["name"].DeepClone();
             instance["visual"] = definition["visual"].DeepClone();
+            if (definition["stateProfile"] != null) instance["stateProfile"] = definition["stateProfile"].DeepClone();
             foreach (JObject template in definition["events"])
             {
                 var graph = ObjectBehavior.CopyFor(template);
@@ -81,7 +84,7 @@ namespace Sokoban
             {
                 var definition = entry.Value as JObject;
                 if (string.IsNullOrWhiteSpace(entry.Name) || definition?["name"]?.Type != JTokenType.String ||
-                    string.IsNullOrWhiteSpace((string)definition["name"]) || !(definition["events"] is JArray graphs) || graphs.Count == 0)
+                    string.IsNullOrWhiteSpace((string)definition["name"]) || !(definition["events"] is JArray graphs) || graphs.Count == 0 && definition["stateProfile"] == null)
                 {
                     yield return "功能物件定义缺少名称或行为：" + entry.Name;
                     continue;
@@ -97,6 +100,8 @@ namespace Sokoban
                     string graphId = (string)graph["id"];
                     if (string.IsNullOrWhiteSpace(graphId) || !seen.Add(graphId)) yield return entry.Name + "：模板图 ID 缺失或重复";
                     foreach (string issue in ObjectBehavior.GraphIssues(graph, false))
+                        yield return entry.Name + "：" + issue;
+                    foreach (string issue in ObjectBehavior.StateNodeIssues(graph, definition["stateProfile"]))
                         yield return entry.Name + "：" + issue;
                 }
             }

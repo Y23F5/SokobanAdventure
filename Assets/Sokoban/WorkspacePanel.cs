@@ -203,6 +203,7 @@ namespace Sokoban
                     if (GUILayout.Button("绑定内置模型 · " + RoomDraft.BuiltinBoxNames[i])) Run(() => Draft.BindBuiltinBox(model),"已绑定箱体模型");
                 }
             if (GUILayout.Button(RecoveryLabel)) CycleRecovery();
+            if (GUILayout.Button(ThemeLabel)) CycleTheme();
             roomName=GUILayout.TextField(roomName); if(GUILayout.Button("应用房间名称")) Run(()=>Draft.Rename(roomName),"已更新名称");
         }
         public string RecoveryLabel => "恢复演出 · " + ((string)Draft.Room["recoveryPresentation"] switch {
@@ -212,6 +213,13 @@ namespace Sokoban
             int index = Array.IndexOf(RoomFile.RecoveryPresets, (string)Draft.Room["recoveryPresentation"]) + 1;
             string next = index == RoomFile.RecoveryPresets.Length ? null : RoomFile.RecoveryPresets[index];
             Run(() => Draft.SetRecoveryPreset(next), "已切换恢复演出，可进入试玩查看");
+        }
+        public string ThemeLabel => "房间主题 · " + AppearanceLibrary.ThemeName((string)Draft.Room["themeId"]);
+        public void CycleTheme()
+        {
+            var themes = AppearanceLibrary.Themes;
+            string next = themes[(Array.IndexOf(themes, (string)Draft.Room["themeId"]) + 1) % themes.Length];
+            Run(() => Draft.SetTheme(next), "已切换房间主题，已放置素材保留原样");
         }
         public void CancelTool() {PlacingRoom=false;placementId=null;Painting=false;stroke.Clear();Draft.Tool=RoomTool.Select;Status="已返回选择";}
         public void StartStroke(Vector2Int point) {Painting=true;stroke.Clear();lastCell=point;stroke.Add(point);}

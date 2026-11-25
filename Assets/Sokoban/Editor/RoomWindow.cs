@@ -19,19 +19,22 @@ namespace Sokoban.Editor
         internal static RoomWindow Current { get; private set; }
         public LayoutPanel Panel => WorldSceneSession.Panel;
         BehaviorPage behavior;
+        ObjectStateEditor stateEditor;
         AssetThumbnail thumbnails;
         bool closeApproved;
         Vector2 panelScroll;
         string definitionName = "";
+        int category;
 
         bool ModelButton(string title, string model, bool builtin)
         {
-            var preview = thumbnails.Get(Panel.Draft.Room, model, builtin);
+            var room = Panel.Draft.AssetRoom(builtin ? null : model);
+            var preview = thumbnails.Get(room, model, builtin);
             if (!preview.IsCompleted) Repaint();
             var thumbnail = preview.Status == System.Threading.Tasks.TaskStatus.RanToCompletion ? preview.Result : null;
             GUILayout.BeginHorizontal();
             GUILayout.Label(thumbnail, GUILayout.Width(38), GUILayout.Height(38));
-            string issue = builtin ? null : thumbnails.ModelIssue(Panel.Draft.Room, model);
+            string issue = builtin ? null : thumbnails.ModelIssue(room, model);
             bool pressed = GUILayout.Button(new GUIContent(title, issue ?? "选取后在 Scene View 中吸附放置"), GUILayout.Height(38));
             GUILayout.EndHorizontal();
             if (pressed && issue != null) { Panel.Status = issue; return false; }
@@ -132,6 +135,10 @@ namespace Sokoban.Editor
                 if (GUILayout.Button("返回布局")) Panel.CloseSolution();
                 Repaint();
             }
+            else if (stateEditor != null)
+            {
+                if (!stateEditor.Draw(Panel)) stateEditor = null;
+            }
             else if (behavior != null)
             {
                 if (!behavior.Draw(Panel)) behavior = null;
@@ -163,27 +170,16 @@ namespace Sokoban.Editor
                 if (GUILayout.Button("退出房间布局")) Panel.Exit(CloseApproved);
                 EditorGUILayout.Space();
                 Panel.Properties();
+                if (Panel.Draft.CanEditStateProfile && GUILayout.Button("配置物件状态"))
+                    stateEditor = new ObjectStateEditor(Panel.Draft);
                 if (Panel.Draft.SelectedCell is Vector2Int cell && RoomFile.Terrain(Panel.Draft.Room, cell) != RoomFile.Void && GUILayout.Button("编辑行为"))
                     OpenBehavior();
                 DrawFunctionObjects();
-                if (RoomDraft.IsAppearanceTool(Panel.Draft.Tool))
-                {
-                    var tool = Panel.Draft.Tool;
-                    GUILayout.Label("当前工具的模型", EditorStyles.boldLabel);
-                    if (ModelButton("使用默认外观", RoomPreview.BrushModel(tool, (string)Panel.Draft.Room["themeId"]), true)) Panel.Draft.Tool = tool;
-                    var catalog = Panel.Draft.Room["appearanceCatalog"]?[tool.ToString().ToLowerInvariant()] as Newtonsoft.Json.Linq.JObject;
-                    if (catalog != null) foreach (var look in catalog.Properties())
-                    {
-                        string id = (string)look.Value["model"];
-                        if (ModelButton((string)Panel.Draft.Room["assets"]?[id]?["name"] ?? id, id, false))
-                            Panel.Run(() => Panel.Draft.SelectAsset(id, tool), "已选模型，在场景中放置");
-                    }
-                    if (GUILayout.Button("向当前工具导入模型")) Panel.ChooseFile("导入模型");
-                }
-                GUILayout.Label("房间素材");
+                DrawAppearanceCatalog();
+                GUILayout.Label("自定义资源");
                 GUILayout.BeginHorizontal();
                 foreach(var label in new[]{"导入模型","导入动作","导入贴图","导入界面图"})
-                    if(GUILayout.Button(label)) Panel.ChooseFile(label);
+                    if(GUILayout.Button(label)) { Panel.CancelTool(); Panel.ChooseFile(label); }
                 GUILayout.EndHorizontal();
                 if(Panel.Draft.Room["assets"] is Newtonsoft.Json.Linq.JObject assets)
                     foreach(var entry in assets.Properties())
@@ -210,6 +206,38 @@ namespace Sokoban.Editor
             if (Panel.StructuralIssue != null) EditorGUILayout.HelpBox(Panel.StructuralIssue, MessageType.Error);
             GUILayout.EndScrollView();
             if (GUI.changed) SceneView.RepaintAll();
+        }
+
+        void DrawAppearanceCatalog()
+        {
+            var draft = Panel.Draft;
+            GUILayout.Label("素材库", EditorStyles.boldLabel);
+            category = GUILayout.SelectionGrid(category, new[] { "箱子", "目标点", "墙壁", "地板", "其他" }, 3);
+            var type = new[] { RoomTool.Box, RoomTool.Target, RoomTool.Wall, RoomTool.Floor, RoomTool.Decoration }[category];
+            if (GUILayout.Button("导入" + AppearanceLibrary.TypeName(type) + "模型"))
+            {
+                Panel.CancelTool();
+                draft.Tool = type;
+                Panel.ChooseFile("导入模型");
+            }
+            foreach (var entry in AppearanceLibrary.Entries(type, (string)draft.Room["themeId"]))
+            {
+                GUILayout.BeginHorizontal();
+                if (ModelButton(entry.Name, entry.Prefab, true))
+                    Panel.Run(() => draft.ChooseAppearance(entry.Id, type), "已选 " + entry.Name + "，在场景中放置");
+                using (new EditorGUI.DisabledScope(!draft.CanReplaceAppearance(entry.Id)))
+                    if (GUILayout.Button("替换", GUILayout.Width(46))) Panel.Run(() => draft.ReplaceAppearance(entry.Id), "已替换所选外观");
+                GUILayout.EndHorizontal();
+            }
+            foreach (string id in draft.CategoryAssets(type))
+            {
+                GUILayout.BeginHorizontal();
+                if (ModelButton((string)draft.AssetDefinition(id)["name"], id, false))
+                    Panel.Run(() => draft.SelectAsset(id, type), "已选模型，在场景中放置");
+                using (new EditorGUI.DisabledScope(!draft.CanBindAsset(id, type) || thumbnails.ModelIssue(draft.AssetRoom(id), id) != null))
+                    if (GUILayout.Button("替换", GUILayout.Width(46))) Panel.Run(() => draft.BindAsset(id, type), "已替换所选外观");
+                GUILayout.EndHorizontal();
+            }
         }
     }
 }

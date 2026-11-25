@@ -73,6 +73,9 @@ namespace Sokoban
             return true;
         }
         public Vector2Int RecoveryCell(string boxId) => Current.Homes[boxId];
+        public string ObjectState(string roomId, string id) => states[roomId].StateOf(id);
+        internal JObject ObjectStateRecords(string roomId) => states[roomId].ObjectStates;
+        internal JToken StateRestoreEdge(string id) => Current.RestoreEdge(id);
         public bool PlayerOnRecoveryCell => Current.Homes.ContainsValue(Player);
         bool IsReserved(Vector2Int p) => Recovering && Current.Homes.ContainsValue(p);
         public bool BeginRecovery()
@@ -108,6 +111,7 @@ namespace Sokoban
             if (Current.Homes.ContainsValue(Player)) Player = SafeLanding();
             bool previouslySolved = Solved;
             foreach (var home in Current.Homes) Boxes[home.Key] = home.Value;
+            Current.RestoreObjectStates();
             Current.RecordSolved(previouslySolved);
             return true;
         }

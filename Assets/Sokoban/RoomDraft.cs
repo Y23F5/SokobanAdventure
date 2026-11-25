@@ -25,7 +25,7 @@ namespace Sokoban
         public RoomTool Tool
         {
             get => tool;
-            set { tool = value; BrushAsset = null; BrushDefinition = null; }
+            set { tool = value; BrushAsset = null; BrushDefinition = null; BrushBuiltin = null; }
         }
         public int Revision { get; private set; }
         JObject saved;
@@ -154,8 +154,7 @@ namespace Sokoban
             var next = (JObject)Room.DeepClone();
             var obj = new JObject { ["id"] = id, ["cell"] = RoomFile.Point(cell) };
             if (box) obj["recoveryCell"] = RoomFile.Point(cell);
-            if (BrushAsset != null && Tool == (box ? RoomTool.Box : RoomTool.Target))
-                obj["visual"] = new JObject { ["model"] = BrushAsset };
+            ApplyBrush(next, obj, box ? RoomTool.Box : RoomTool.Target, cell);
             ((JArray)next[box ? "boxes" : "targets"]).Add(obj);
             Commit(next, id);
             NotifyPlacement(id);

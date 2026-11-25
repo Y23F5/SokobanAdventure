@@ -38,11 +38,20 @@ namespace Sokoban
             }
             var obj = moving ? draft.Find(draft.Selected) : null;
             var visual = obj?["visual"] as JObject;
+            var profile = obj?["stateProfile"] ?? (!moving ? draft.DefinitionStateProfile : null);
             if (!moving && draft.BrushAsset != null)
                 visual = draft.DefinitionVisual ?? new JObject { ["model"] = draft.BrushAsset };
             bool box = moving ? obj != null && obj.Parent == draft.Room["boxes"] : draft.Tool == RoomTool.Box;
             string theme = (string)draft.Room["themeId"];
-            string prefab = box ? RoomPreview.BoxModel(theme, obj) : RoomPreview.BrushModel(moving ? RoomTool.Target : draft.Tool, theme, world - draft.Origin);
+            var builtin = AppearanceLibrary.Find(moving ? (string)obj?["builtinModel"] : draft.BrushBuiltin);
+            string prefab = builtin?.Prefab ?? (box ? RoomPreview.BoxModel(theme, obj) : RoomPreview.BrushModel(moving ? RoomTool.Target : draft.Tool, theme, world - draft.Origin));
+            if (profile != null)
+            {
+                var state = profile["states"][(string)profile["initial"]];
+                string previewPrefab = ObjectStateProfile.Prefab((string)state["builtinModel"]);
+                if (previewPrefab != null) { prefab = previewPrefab; visual = state["visual"] as JObject; }
+                else if (state["visual"]?["model"] != null) visual = (JObject)state["visual"];
+            }
             string key = draft.ActiveId + prefab + visual;
             if (!model || previous != key)
             {
@@ -55,7 +64,7 @@ namespace Sokoban
                 if (visual != null)
                 {
                     var appearance = model.AddComponent<ImportedAppearance>();
-                    appearance.Apply(draft.Room, visual);
+                    appearance.Apply(draft.AssetRoom((string)visual["model"]), visual);
                     appearance.SetGhost(tint);
                 }
                 foreach (var renderer in model.GetComponentsInChildren<Renderer>(true))

@@ -254,7 +254,9 @@ namespace Sokoban.Editor
             string path = Path.GetFullPath(Path.Combine(Application.dataPath, "../Logs/WS05A-" + draft.ActiveId + ".room.json"));
             draft.Save(path, false);
             string contents = File.ReadAllText(path);
-            Require(!draft.Dirty && draft.WorkPath == path && JToken.DeepEquals(JObject.Parse(contents), states.Last()), "正式文件或保存状态错误");
+            var publicDesign = RoomFile.ForExport((JObject)states.Last());
+            Require((int)publicDesign["formatVersion"] == 3 && !draft.Dirty && draft.WorkPath == path &&
+                JToken.DeepEquals(JObject.Parse(contents), publicDesign), "正式文件或保存状态错误");
             for (int i = states.Count - 2; i >= 0; i--)
             {
                 draft.Undo();
@@ -268,7 +270,7 @@ namespace Sokoban.Editor
             Require(!draft.Dirty && File.ReadAllText(path) == contents, "重做后保存基线或磁盘改变");
             draft.Open(path, false);
             var reopened = draft.Snapshot();
-            Require(!draft.Dirty && draft.WorkPath == path && JToken.DeepEquals(draft.Room, states.Last()), "正式文件重读不一致");
+            Require(!draft.Dirty && draft.WorkPath == path && JToken.DeepEquals(draft.Room, publicDesign), "正式文件重读不一致");
             Require(!reopened["undo"].Any() && !reopened["redo"].Any(), "重开继承旧编辑历史");
             Debug.Log("WS05A ROOM " + path);
         }
@@ -345,7 +347,7 @@ namespace Sokoban.Editor
         {
             var draft = new LayoutPanel().Draft;
             ExpandSolo(draft);
-            var expected = draft.Room.DeepClone();
+            var expected = RoomFile.ForExport(draft.Room);
             string path = Path.GetFullPath(Path.Combine(Application.dataPath,"../Logs/solo-" + Guid.NewGuid().ToString("N") + ".room.json"));
             draft.Save(path,true);
             var file = JObject.Parse(File.ReadAllText(path));

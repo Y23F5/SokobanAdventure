@@ -173,7 +173,8 @@ namespace Sokoban
                 var asset = RoomAssets.Import(path, "model");
                 await ImportedAppearance.InspectModel(asset);
                 if (version != fileDialogVersion || input != filename || room != Draft.Room || kind != Draft.Tool) return;
-                Draft.RegisterAsset(asset);
+                string id = Draft.RegisterAsset(asset);
+                if (RoomDraft.IsAppearanceTool(kind) || kind == RoomTool.Decoration) Draft.SelectAsset(id, kind);
                 operation = null;
                 Status = "已导入素材 " + Path.GetFileName(path);
             }

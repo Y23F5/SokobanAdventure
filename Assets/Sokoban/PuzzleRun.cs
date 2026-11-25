@@ -94,6 +94,7 @@ namespace Sokoban
                 var beyond = next + delta;
                 if (Recovering || !Current.Walkable(beyond) || Boxes.ContainsValue(beyond)) return false;
                 Boxes[box] = beyond;
+                Current.Pushed(box, next);
                 pushed = box;
             }
             Player = next;
