@@ -1,0 +1,14 @@
+function pose(t, ctx)
+  local n = #ctx.route
+  local from = ctx.route[1]
+  local home = ctx.route[n]
+  local growth = math.max(0, math.min(1, (t - 0.605) / (0.97 - 0.605)))
+  local cracked = t >= 0.09
+  return {
+    { id = ctx.boxId, resource = 'Diorama/Logs', x = from.x, z = from.y, visible = not cracked },
+    { id = ctx.boxId .. '-decay', resource = 'Diorama/ForestDecay', clipName = 'ForestDecay',
+      clip = 0.4 + t * 4, x = from.x, z = from.y, visible = cracked and t < 0.70 },
+    { id = ctx.boxId .. '-tree', resource = 'Diorama/Tree', clipName = 'TreeGrowth',
+      clip = growth, x = home.x, z = home.y, visible = growth > 0 }
+  }
+end
