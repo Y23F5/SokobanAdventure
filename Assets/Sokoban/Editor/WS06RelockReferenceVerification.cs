@@ -1,6 +1,6 @@
 /**
  * @file WS06RelockReferenceVerification.cs
- * @brief Run executes independent world and reference cases. Relock replays the formal solver and probes the same factory exit with two measured warehouse snapshots. Reference erases a bound target, checks export failure and reopens the undo-restored export.
+ * @brief Run executes independent world and reference cases. Relock replays the formal solver and probes the same factory exit with two measured warehouse snapshots. Ports exercises valid branches and invalid input and output ports. Reference erases a bound target, checks export failure and reopens the undo-restored export.
  */
 using System;
 using System.IO;
@@ -54,6 +54,33 @@ namespace Sokoban.Editor
             var restored=draft.Catalog["warehouse"]["events"].Single();var reference=ObjectBehavior.Effects((JObject)restored).Single()["target"];
             Check(JToken.DeepEquals(target,draft.Find((string)reference["objectId"])) && (string)reference["levelId"]==draft.ActiveId && JToken.DeepEquals(bound,restored),"reimported action resolves original factory object");
         }
-        public static void Run(){Directory.CreateDirectory(Folder);int errors=0;foreach(Action action in new Action[]{Relock,Reference})try{action();}catch(Exception ex){errors++;Debug.LogError("GATEQA FAIL "+action.Method.Name+" "+ex);}Debug.Log("GATEQA failures="+errors);if(errors!=0)throw new Exception("verification failed");}
+        static void Ports()
+        {
+            var draft = Campaign();
+            var graph = ObjectBehavior.Template();
+            draft.SetBehavior(RoomFile.At(draft.Room["spawn"]), graph);
+            var room = (JObject)draft.Room.DeepClone();
+            var stored = room["events"].Last;
+            var edge = stored["edges"].Last;
+            RoomFile.Parse(room.ToString());
+            edge["out"] = "false";
+            RoomFile.Parse(room.ToString());
+            void Reject(string node, string port)
+            {
+                try { RoomFile.Parse(room.ToString()); }
+                catch (InvalidDataException ex)
+                {
+                    Check(ex.Message.Contains(node) && ex.Message.Contains(port), ex.Message);
+                    return;
+                }
+                throw new Exception("无效端口通过了正式文件检查");
+            }
+            edge["out"] = "out";
+            Reject((string)edge["from"], "out");
+            edge["out"] = "true";
+            edge["to"] = stored["edges"].First["from"].DeepClone();
+            Reject((string)edge["to"], "in");
+        }
+        public static void Run(){Directory.CreateDirectory(Folder);int errors=0;foreach(Action action in new Action[]{Relock,Reference,Ports})try{action();}catch(Exception ex){errors++;Debug.LogError("GATEQA FAIL "+action.Method.Name+" "+ex);}Debug.Log("GATEQA failures="+errors);if(errors!=0)throw new Exception("verification failed");}
     }
 }

@@ -191,15 +191,33 @@ namespace Sokoban
                     var tile = room["terrainObjects"]?.FirstOrDefault(t => (string)t["id"] == (string)graph["ownerId"]);
                     if (tile == null || RoomFile.Terrain(room, RoomFile.At(tile)) != '#') yield return "开放墙格需要绑定墙体 " + graphId;
                 }
-                var ids = new HashSet<string>();
+                var kinds = new Dictionary<string, string>();
                 foreach (var node in nodes)
                 {
                     string id = (string)node["id"];
-                    if (string.IsNullOrWhiteSpace(id) || !ids.Add(id)) yield return $"行为图 {graphId} 节点 ID 无效 {id}";
+                    if (string.IsNullOrWhiteSpace(id) || kinds.ContainsKey(id))
+                        yield return $"行为图 {graphId} 节点 ID 无效 {id}";
+                    else kinds.Add(id, (string)node["kind"]);
                 }
                 foreach (var edge in edges)
-                    if (!ids.Contains((string)edge["from"]) || !ids.Contains((string)edge["to"]) || (string)edge["in"] != "in" || string.IsNullOrEmpty((string)edge["out"]))
-                        yield return "行为图存在悬空连线 " + graphId;
+                {
+                    string from = (string)edge["from"] ?? "", to = (string)edge["to"] ?? "";
+                    string output = (string)edge["out"], input = (string)edge["in"];
+                    if (!kinds.TryGetValue(from, out var source) || !kinds.TryGetValue(to, out var destination))
+                    {
+                        yield return $"行为图 {graphId} 存在悬空连线 {from} → {to}";
+                        continue;
+                    }
+                    if (destination == "roomSolved" || input != "in")
+                        yield return $"行为图 {graphId} 节点 {to} 没有输入端口 {input}";
+                    bool allowed = source switch
+                    {
+                        "condition" => output == "true" || output == "false",
+                        "roomSolved" or "openPassage" or "setVisible" or "lua" => output == "out",
+                        _ => !string.IsNullOrEmpty(output)
+                    };
+                    if (!allowed) yield return $"行为图 {graphId} 节点 {from} 没有输出端口 {output}";
+                }
             }
         }
         public static bool IsVisualNode(JToken node)
