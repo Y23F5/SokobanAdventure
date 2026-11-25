@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c6f053f94172b574e8a7fafc677e4b01, type: 3}
+  m_Name: WarmPixel
+  m_EditorClassIdentifier: 
+  font: {fileID: 0}
+  ink: {r: 0.32941177, g: 0.21568628, b: 0.16862746, a: 1}
+  parchment: {r: 1, g: 0.89411765, b: 0.7137255, a: 1}
+  active: {r: 1, g: 0.8, b: 0.4509804, a: 1}
+  panel: {r: 1, g: 0.9372549, b: 0.8039216, a: 1}
+  field: {r: 0.972549, g: 0.84705883, b: 0.6509804, a: 1}
+  trim: {r: 0.5686275, g: 0.3882353, b: 0.25882354, a: 1}
+  hover: {r: 1, g: 0.9529412, b: 0.83137256, a: 1}
+  pressed: {r: 0.8784314, g: 0.74509805, b: 0.59607846, a: 1}
+  focus: {r: 0.98039216, g: 0.8235294, b: 0.5411765, a: 1}
+  disabled: {r: 0.7529412, g: 0.7176471, b: 0.627451, a: 0.7254902}
+  fontSizeAdjustment: 0
+  spacingAdjustment: 0
+  transitionSeconds: 0.12
+  controlFrame: {fileID: 21300000, guid: 989c2a24d8c0d1246b77abfdaa57c401, type: 3}

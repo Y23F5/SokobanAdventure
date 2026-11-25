@@ -25,7 +25,7 @@ namespace Sokoban
         public RoomTool Tool
         {
             get => tool;
-            set { tool = value; BrushAsset = null; }
+            set { tool = value; BrushAsset = null; BrushDefinition = null; }
         }
         public int Revision { get; private set; }
         JObject saved;
@@ -165,7 +165,7 @@ namespace Sokoban
             var item = Find(Selected);
             bool box = item != null && item.Parent == Room["boxes"];
             bool decor = item != null && item.Parent == Room["decorations"];
-            RoomFile.Check(item != null && (box || decor || item.Parent == Room["targets"]), "请选择箱子或目标");
+            RoomFile.Check(item != null && (box || decor || item.Parent == Room["targets"]), "请选择箱子、目标或装饰");
             if (RoomFile.At(item) == cell) return;
             var error = PlacementError(box, cell, Selected); RoomFile.Check(error == null, error);
             var next = (JObject)Room.DeepClone();

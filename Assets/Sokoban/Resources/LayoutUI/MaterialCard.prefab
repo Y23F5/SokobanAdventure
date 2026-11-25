@@ -58,7 +58,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 0.39607844, g: 0.28627452, b: 0.21568628, a: 1}
+  m_Color: {r: 0.32941177, g: 0.21568628, b: 0.16862746, a: 1}
   m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -93,6 +93,7 @@ GameObject:
   - component: {fileID: 3248997855615493469}
   - component: {fileID: 9039710608256026868}
   - component: {fileID: 5111916970440304040}
+  - component: {fileID: 5616793744813461229}
   m_Layer: 0
   m_Name: MaterialCard
   m_TagString: Untagged
@@ -149,8 +150,8 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 0}
-  m_Type: 0
+  m_Sprite: {fileID: 21300000, guid: 989c2a24d8c0d1246b77abfdaa57c401, type: 3}
+  m_Type: 1
   m_PreserveAspect: 0
   m_FillCenter: 1
   m_FillMethod: 4
@@ -196,12 +197,12 @@ MonoBehaviour:
   m_Transition: 1
   m_Colors:
     m_NormalColor: {r: 1, g: 1, b: 1, a: 1}
-    m_HighlightedColor: {r: 0.9607843, g: 0.9607843, b: 0.9607843, a: 1}
-    m_PressedColor: {r: 0.78431374, g: 0.78431374, b: 0.78431374, a: 1}
-    m_SelectedColor: {r: 0.9607843, g: 0.9607843, b: 0.9607843, a: 1}
-    m_DisabledColor: {r: 0.78431374, g: 0.78431374, b: 0.78431374, a: 0.5019608}
+    m_HighlightedColor: {r: 1, g: 0.9529412, b: 0.83137256, a: 1}
+    m_PressedColor: {r: 0.8784314, g: 0.74509805, b: 0.59607846, a: 1}
+    m_SelectedColor: {r: 0.98039216, g: 0.8235294, b: 0.5411765, a: 1}
+    m_DisabledColor: {r: 0.7529412, g: 0.7176471, b: 0.627451, a: 0.7254902}
     m_ColorMultiplier: 1
-    m_FadeDuration: 0.1
+    m_FadeDuration: 0.12
   m_SpriteState:
     m_HighlightedSprite: {fileID: 0}
     m_PressedSprite: {fileID: 0}
@@ -238,6 +239,29 @@ MonoBehaviour:
   m_FlexibleWidth: -1
   m_FlexibleHeight: -1
   m_LayoutPriority: 1
+--- !u!114 &5616793744813461229
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4649060521192105774}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7c6843fda58e3a2479f05c0a692e8295, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  theme: {fileID: 11400000, guid: 7391bafe0b20a7342ad7f8a6df73680b, type: 2}
+  panels: []
+  labels:
+  - text: {fileID: 5718018751048089756}
+    size: 20
+    min: 10
+    max: 40
+    insetMin: {x: 55, y: 0}
+    insetMax: {x: -8, y: 0}
+    stretched: 1
+  layout: []
 --- !u!1 &7635704713852335321
 GameObject:
   m_ObjectHideFlags: 0

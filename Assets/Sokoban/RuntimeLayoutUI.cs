@@ -2,7 +2,7 @@
  * @file RuntimeLayoutUI.cs
  * @brief Act 把场景按钮的操作交给布局会话；Tool 选择素材或移动工具，ApplyPoint 执行手动输入的世界格命令。
  * LateUpdate 刷新布局、文件及确认面板；RefreshEntries 按目录或房间清单生成可滚动按钮；
- * CanBindSelection 检查当前格能否绑定外观，BindingTarget 显示绑定对象和格子。
+ * AddPaletteCard 生成带缩略图的素材和功能物件卡片。绑定状态和目标来自共享草稿命令。
  * ChooseEntry 分派文件和房间选取，RefreshTools 同步书签、选中高亮及属性说明。
  */
 using System.IO;
@@ -27,6 +27,7 @@ namespace Sokoban
         public Button terrainTab,objectTab,entryPrefab;
         public RectTransform entries,rooms;
         public Button assetTab, bindAsset;
+        public InterfaceThemeScope interfaceStyle;
         public GameObject assetList;
         public RectTransform assetEntries;
         readonly AssetThumbnail thumbnails = new AssetThumbnail();
@@ -40,10 +41,11 @@ namespace Sokoban
         string activeRoom;
         public bool CoversMap => workspaceOpen || Panel.ShowingSolution;
         LayoutPanel Panel => host.Panel;
+        Color SelectedTint => interfaceStyle && interfaceStyle.theme ? interfaceStyle.theme.active : new Color32(255, 195, 104, 255);
+        Color NormalTint => interfaceStyle && interfaceStyle.theme ? interfaceStyle.theme.parchment : new Color32(255, 228, 182, 255);
 
         void Start()
         {
-            foreach (var b in toolButtons) if(b) b.gameObject.AddComponent<PaletteHover>();
             fileName.onValueChanged.AddListener(value => Panel.Filename=value);
         }
 
@@ -70,58 +72,73 @@ namespace Sokoban
             var draft=Panel.Draft;
             var assets=draft.Room["assets"] as JObject;
             var catalog = draft.Room["appearanceCatalog"]?[paletteCategory.ToString().ToLowerInvariant()] as JObject;
-            string key=draft.ActiveId+paletteCategory+catalog+string.Join(",",assets?.Properties().Select(p=>p.Name)??Enumerable.Empty<string>());
+            var definitions = paletteCategory == RoomTool.Decoration ? draft.Room["objectDefinitions"] as JObject : null;
+            string themeId = (string)draft.Room["themeId"];
+            string key = draft.ActiveId + themeId + paletteCategory + catalog + definitions + string.Join(",",assets?.Properties().Select(p=>p.Name)??Enumerable.Empty<string>());
             if(paletteKey!=key)
             {
                 paletteKey=key;
-                PreviewCard(toolButtons[(int)RoomTool.Box],draft.Room,RoomPreview.BoxModel((string)draft.Room["themeId"]),true);
-                PreviewCard(toolButtons[(int)RoomTool.Target],draft.Room,"LayoutModels/Target",true);
+                foreach (RoomTool tool in new[] { RoomTool.Box, RoomTool.Target, RoomTool.Floor, RoomTool.Wall })
+                    if ((int)tool < toolButtons.Length && toolButtons[(int)tool])
+                        PreviewCard(toolButtons[(int)tool], draft.Room, RoomPreview.BrushModel(tool, themeId), true);
                 foreach(var b in cards.Values) {b.gameObject.SetActive(false);Destroy(b.gameObject);}
                 cards.Clear();
                 if(pickedAsset!=null && assets?[pickedAsset]==null) pickedAsset=null;
+                if (definitions != null)
+                    foreach (var entry in definitions.Properties())
+                    {
+                        string id = entry.Name;
+                        AddPaletteCard(id, (string)entry.Value["name"] + " · 功能物件", (string)entry.Value["visual"]["model"], () =>
+                        {
+                            Panel.CancelTool();
+                            pickedAsset = null;
+                            string issue = thumbnails.ModelIssue(draft.Room, (string)draft.Room["objectDefinitions"][id]["visual"]["model"]);
+                            if (issue != null) Panel.Status = issue;
+                            else Panel.Run(() => draft.SelectDefinition(id), "左键放置功能物件，短按右键取消");
+                        });
+                    }
                 if(assets!=null) foreach(var entry in assets.Properties())
                 {
                     string id=entry.Name;
                     if (paletteCategory != RoomTool.Decoration && catalog?[id] == null) continue;
-                    var b=Instantiate(entryPrefab,assetEntries,false);
-                    cards.Add(id,b);
                     string kind=(string)entry.Value["kind"];
                     string category=kind=="model"?"模型":kind=="animation"?"动作":kind=="texture"?"贴图":"界面图";
-                    b.GetComponentInChildren<Text>().text=(string)entry.Value["name"]+" · "+category;
-                    var label=b.GetComponentInChildren<Text>().rectTransform;label.offsetMin=new Vector2(36,label.offsetMin.y);
-                    var thumb=new GameObject("缩略图",typeof(RectTransform),typeof(RawImage)).GetComponent<RawImage>();
-                    thumb.rectTransform.SetParent(b.transform,false);thumb.rectTransform.anchorMin=thumb.rectTransform.anchorMax=new Vector2(0,.5f);thumb.rectTransform.anchoredPosition=new Vector2(20,0);thumb.rectTransform.sizeDelta=new Vector2(30,30);thumb.raycastTarget=false;thumb.enabled=false;
-                    b.gameObject.AddComponent<PaletteHover>();
-                    b.onClick.AddListener(() =>
+                    AddPaletteCard(id, (string)entry.Value["name"] + " · " + category, id, () =>
                     {
                         Panel.CancelTool();
                         pickedAsset = id;
                         if (kind == "model")
                         {
+                            string issue = thumbnails.ModelIssue(draft.Room, id);
+                            if (issue != null) { Panel.Status = issue; return; }
                             draft.SelectAsset(id, paletteCategory);
                             Panel.Status = "左键放置，短按右键取消";
                         }
                     });
-                    PreviewCard(b,draft.Room,id);
                 }
             }
             bindAsset.gameObject.SetActive(custom && pickedAsset!=null);
             if (custom && pickedAsset != null)
-                bindAsset.interactable = (string)assets[pickedAsset]["kind"] == "uiImage" || CanBindSelection(draft);
-            foreach(var c in cards) c.Value.image.color=c.Key==pickedAsset?new Color32(255,195,104,255):new Color32(255,228,182,255);
+                bindAsset.interactable = draft.CanBindAsset(pickedAsset) && thumbnails.ModelIssue(draft.Room, pickedAsset) == null;
+            foreach (var card in cards) card.Value.image.color = card.Key == (draft.BrushDefinition ?? pickedAsset) ? SelectedTint : NormalTint;
         }
-        static bool CanBindSelection(RoomDraft draft) => draft.SelectedCell is Vector2Int cell
-            && RoomFile.Terrain(draft.Room, cell) != RoomFile.Void;
-
-        string BindingTarget(RoomDraft draft, JToken asset)
+        void AddPaletteCard(string id, string title, string model, UnityEngine.Events.UnityAction action)
         {
-            if ((string)asset["kind"] == "uiImage") return "绑定位置：当前房间界面";
-            if (!CanBindSelection(draft)) return "选择地图上的物件或地形格后，可为它绑定素材";
-            var cell = draft.SelectedCell.Value;
-            var target = draft.Selected ?? (RoomFile.Terrain(draft.Room, cell) == '#' ? "墙壁" : "地板");
-            return "绑定位置：" + target + " " + cell;
+            var button = Instantiate(entryPrefab, assetEntries, false);
+            cards.Add(id, button);
+            var label = button.GetComponentInChildren<Text>();
+            label.text = title;
+            label.rectTransform.offsetMin = new Vector2(36, label.rectTransform.offsetMin.y);
+            var thumb = new GameObject("缩略图", typeof(RectTransform), typeof(RawImage)).GetComponent<RawImage>();
+            thumb.rectTransform.SetParent(button.transform, false);
+            thumb.rectTransform.anchorMin = thumb.rectTransform.anchorMax = new Vector2(0, .5f);
+            thumb.rectTransform.anchoredPosition = new Vector2(20, 0);
+            thumb.rectTransform.sizeDelta = new Vector2(30, 30);
+            thumb.raycastTarget = false;
+            thumb.enabled = false;
+            button.onClick.AddListener(action);
+            PreviewCard(button, Panel.Draft.Room, model);
         }
-
         public void Act(string action)
         {
             var d=Panel.Draft;
@@ -257,20 +274,25 @@ namespace Sokoban
         {
             var draft=Panel.Draft;
             objectCards.SetActive(!custom && !terrain);terrainCards.SetActive(!custom && terrain);assetList.SetActive(custom);RefreshAssets();
-            Color selected=new Color32(255,195,104,255), normal=new Color32(255,228,182,255);
+            Color selected = SelectedTint, normal = NormalTint;
             objectTab.image.color=!custom && !terrain?selected:normal;terrainTab.image.color=!custom && terrain?selected:normal;assetTab.image.color=custom?selected:normal;
             for(int i=0;i<toolButtons.Length;i++)
                 if(toolButtons[i])toolButtons[i].image.color=(int)draft.Tool==i?selected:normal;
             var obj=draft.Find(draft.Selected);
+            if (custom && draft.BrushDefinition != null)
+            {
+                properties.text = (string)draft.Room["objectDefinitions"][draft.BrushDefinition]["name"] + "\n每次放置都会创建独立行为。";
+                return;
+            }
             if (custom && pickedAsset != null)
             {
                 var asset = draft.Room["assets"][pickedAsset];
-                properties.text = (string)asset["name"] + "  " + thumbnails.SizeReport(pickedAsset) + "\n" + BindingTarget(draft, asset);
+                properties.text = (string)asset["name"] + "  " + thumbnails.SizeReport(pickedAsset) + "\n" + draft.AssetBindingTarget(pickedAsset);
                 return;
             }
             properties.text=draft.Tool==RoomTool.Box?"纸箱\n在空地上放置一个箱子。"
                 :draft.Tool==RoomTool.Target?"目标点\n标记箱子需要到达的格子。"
-                :obj!=null?draft.Selected+"\n当前格 "+RoomFile.At(obj)+(obj["recoveryCell"]!=null?"\n恢复格 "+RoomFile.Cell(obj["recoveryCell"]):"")
+                :obj!=null?((string)obj["name"] == null ? "" : (string)obj["name"] + "\n")+draft.Selected+"\n当前格 "+RoomFile.At(obj)+(obj["recoveryCell"]!=null?"\n恢复格 "+RoomFile.Cell(obj["recoveryCell"]):"")
                 :(string)draft.Room["name"]+"\n"+RoomFile.Size(draft.Room);
         }
 
@@ -316,7 +338,7 @@ namespace Sokoban
                 }
                 workspaceInfo.text=(string)d.Room["name"]+" · "+(d.World==null?"独立房间":d.Placement==null?"尚未放置":"原点 "+d.Origin)+"\n"+(Panel.StructuralIssue??Panel.Status);
             }
-            status.text=host.HoverFeedback??Panel.StructuralIssue??Panel.Status;
+            status.text = host.HoverFeedback ?? host.AppearanceIssue ?? Panel.StructuralIssue ?? Panel.Status;
             RefreshTools();
         }
     }

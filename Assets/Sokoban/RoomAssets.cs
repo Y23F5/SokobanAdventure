@@ -81,19 +81,26 @@ namespace Sokoban
                 CheckDescriptor(entry.Value);
                 RoomFile.Check(entry.Name==(string)entry.Value["id"],"素材表键与 ID 不一致");
             }
+            if (room["objectDefinitions"] is JObject definitions)
+                foreach (var entry in definitions.Properties())
+                    ValidateVisual(assets, (entry.Value as JObject)?["visual"], entry.Name, true);
             foreach (var item in RoomFile.Objects(room).Concat(room["terrainObjects"] as JArray ?? new JArray()))
             {
                 if (item["builtinModel"] != null) RoomFile.Check(item.Parent == room["boxes"] && Array.IndexOf(RoomDraft.BuiltinBoxes,(string)item["builtinModel"]) >= 0 && item["visual"]?["model"] == null,"箱体模型绑定无效");
-                if (item.Parent == room["decorations"]) RoomFile.Check(item["visual"] is JObject decoration && decoration["model"]!=null,"装饰缺少模型绑定");
-                if (item["visual"]==null) continue;
-                RoomFile.Check(item["visual"] is JObject,"对象外观格式无效");
-                foreach (var binding in ((JObject)item["visual"]).Properties())
-                {
-                    RoomFile.Check(binding.Name=="model" || binding.Name=="texture" || binding.Name=="animation","未知外观绑定 "+binding.Name);
-                    RequireBinding(assets,binding.Name,binding.Value,(string)item["id"]);
-                }
+                ValidateVisual(assets, item["visual"], (string)item["id"], item.Parent == room["decorations"]);
             }
             if(room["uiImage"]!=null) RequireBinding(assets,"uiImage",room["uiImage"],(string)room["levelId"]);
+        }
+        static void ValidateVisual(JObject assets, JToken visual, string owner, bool needsModel)
+        {
+            RoomFile.Check(!needsModel || visual is JObject model && model["model"] != null, owner + " 缺少模型绑定");
+            if (visual == null) return;
+            RoomFile.Check(visual is JObject, owner + " 的外观格式无效");
+            foreach (var binding in ((JObject)visual).Properties())
+            {
+                RoomFile.Check(binding.Name == "model" || binding.Name == "texture" || binding.Name == "animation", "未知外观绑定 " + binding.Name);
+                RequireBinding(assets, binding.Name, binding.Value, owner);
+            }
         }
         static void RequireBinding(JObject assets,string kind,JToken id,string owner)
         {

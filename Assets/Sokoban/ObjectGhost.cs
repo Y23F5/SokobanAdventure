@@ -39,11 +39,10 @@ namespace Sokoban
             var obj = moving ? draft.Find(draft.Selected) : null;
             var visual = obj?["visual"] as JObject;
             if (!moving && draft.BrushAsset != null)
-                visual = new JObject { ["model"] = draft.BrushAsset };
+                visual = draft.DefinitionVisual ?? new JObject { ["model"] = draft.BrushAsset };
             bool box = moving ? obj != null && obj.Parent == draft.Room["boxes"] : draft.Tool == RoomTool.Box;
-            string prefab = box ? RoomPreview.BoxModel((string)draft.Room["themeId"],obj) : "LayoutModels/Target";
-            if (!moving && draft.Tool == RoomTool.Floor) prefab = "LayoutModels/Floor";
-            if (!moving && draft.Tool == RoomTool.Wall) prefab = "LayoutModels/Wall";
+            string theme = (string)draft.Room["themeId"];
+            string prefab = box ? RoomPreview.BoxModel(theme, obj) : RoomPreview.BrushModel(moving ? RoomTool.Target : draft.Tool, theme, world - draft.Origin);
             string key = draft.ActiveId + prefab + visual;
             if (!model || previous != key)
             {

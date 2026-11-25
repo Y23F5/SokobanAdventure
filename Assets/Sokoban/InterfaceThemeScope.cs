@@ -1,0 +1,107 @@
+/**
+ * @file InterfaceThemeScope.cs
+ * @brief OnEnable and Update refresh the native Unity page when its theme changes. Capture records authored text sizing and layout spacing for repeatable live previews.
+ * Apply updates typography and linked controls, retaining per-page typography and spacing offsets. Reusable prefab roots can have their own scope.
+ */
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+namespace Sokoban
+{
+    [ExecuteAlways, DisallowMultipleComponent]
+    public sealed class InterfaceThemeScope : MonoBehaviour
+    {
+        [Serializable] struct Label
+        {
+            public Text text;
+            public int size, min, max;
+            public Vector2 insetMin, insetMax;
+            public bool stretched;
+        }
+        [Serializable] struct Spacing { public HorizontalOrVerticalLayoutGroup group; public float value; }
+        public InterfaceTheme theme;
+        public Image[] panels = Array.Empty<Image>();
+        [SerializeField] List<Label> labels = new List<Label>();
+        [SerializeField] List<Spacing> layout = new List<Spacing>();
+        InterfaceTheme applied;
+        int revision = -1;
+
+        void OnEnable() => Apply();
+        void Update()
+        {
+            if (theme != applied || theme && theme.Revision != revision) Apply();
+        }
+
+        public void Capture()
+        {
+            labels.Clear();
+            foreach (var text in GetComponentsInChildren<Text>(true))
+                CaptureLabel(text);
+            layout.Clear();
+            foreach (var stack in GetComponentsInChildren<HorizontalOrVerticalLayoutGroup>(true))
+                layout.Add(new Spacing { group = stack, value = stack.spacing });
+        }
+
+        void CaptureLabel(Text text)
+        {
+            var rect = text.rectTransform;
+            labels.Add(new Label
+            {
+                text = text, size = text.fontSize, min = text.resizeTextMinSize, max = text.resizeTextMaxSize,
+                insetMin = rect.offsetMin, insetMax = rect.offsetMax,
+                stretched = rect.anchorMax.x > rect.anchorMin.x && (!rect.parent || !rect.parent.GetComponent<LayoutGroup>())
+            });
+        }
+
+        public void Apply()
+        {
+            applied = theme;
+            if (!theme) return;
+            revision = theme.Revision;
+            foreach (var entry in labels)
+            {
+                if (!entry.text) continue;
+                if (theme.font) entry.text.font = theme.font;
+                entry.text.color = theme.ink;
+                entry.text.fontSize = Mathf.Max(1, entry.size + theme.fontSizeAdjustment);
+                entry.text.resizeTextMinSize = Mathf.Max(1, entry.min + theme.fontSizeAdjustment);
+                entry.text.resizeTextMaxSize = Mathf.Max(entry.text.resizeTextMinSize, entry.max + theme.fontSizeAdjustment);
+                if (entry.stretched)
+                {
+                    var inset = new Vector2(theme.spacingAdjustment, 0);
+                    entry.text.rectTransform.offsetMin = entry.insetMin + inset;
+                    entry.text.rectTransform.offsetMax = entry.insetMax - inset;
+                }
+            }
+            foreach (var entry in layout)
+                if (entry.group) entry.group.spacing = entry.value + theme.spacingAdjustment;
+            foreach (var image in panels)
+                if (image) ApplySurface(image, theme.panel);
+            foreach (var control in GetComponentsInChildren<Selectable>(true))
+            {
+                if (control.transition == Selectable.Transition.ColorTint) control.colors = theme.Controls;
+                var image = control.targetGraphic as Image;
+                if (!image) continue;
+                if (control is Button || control is Dropdown) ApplySurface(image, theme.parchment);
+                else if (control is InputField)
+                {
+                    ApplySurface(image, theme.field);
+                    var field = (InputField)control;
+                    field.customCaretColor = true;
+                    field.caretColor = theme.ink;
+                    field.selectionColor = theme.active;
+                }
+            }
+        }
+
+        void ApplySurface(Image image, Color tint)
+        {
+            image.color = tint;
+            if (!theme.controlFrame) return;
+            image.sprite = theme.controlFrame;
+            image.type = Image.Type.Sliced;
+        }
+    }
+}

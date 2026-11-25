@@ -2,7 +2,7 @@
  * @file ObjectBehavior.cs
  * @brief OwnerAt 在已占用格或绑定地形上解析稳定身份。SetBehavior 将图与首次生成的地形身份一起记入历史。
  * Template 创建房间解开、条件、隐藏对象三个节点和两条边。CopyFor 给复制图及节点分配独立 ID 并重连边。
- * Effects 按具名端口遍历当前对象图，IsVisual 判断求解时可忽略的纯表现节点。
+ * GraphIssues 检查节点和端口，并验证开放墙格的所有者。Effects 按具名端口遍历当前对象图，IsVisual 判断求解时可忽略的纯表现节点。
  */
 using System;
 using System.Collections.Generic;
@@ -151,13 +151,19 @@ namespace Sokoban
         public static IEnumerable<string> TargetIssues(JObject room, JObject world = null, JObject catalog = null)
         {
             string here = (string)room["levelId"];
-            foreach (var graph in room["events"])
-                foreach (var node in graph["nodes"] as JArray ?? new JArray())
+            var subjects = room["events"].OfType<JObject>().Select(graph => ((string)graph["ownerId"], graph));
+            if (room["objectDefinitions"] is JObject definitions)
+                subjects = subjects.Concat(definitions.Properties().SelectMany(definition =>
+                    (definition.Value as JObject)?["events"] is JArray templates
+                        ? templates.OfType<JObject>().Select(graph => (definition.Name, graph))
+                        : Enumerable.Empty<(string, JObject)>()));
+            foreach (var (owner, graph) in subjects)
+                foreach (var node in (graph["nodes"] as JArray ?? new JArray()).OfType<JObject>())
                 {
                     if (node["target"] == null) continue;
                     var target = node["target"] as JObject;
                     string id = (string)target?["objectId"], level = (string)target?["levelId"] ?? here;
-                    string location = $"{here}/{graph["ownerId"]}/{graph["id"]}/{node["id"]}";
+                    string location = $"{here}/{owner}/{graph["id"]}/{node["id"]}";
                     if ((string)node["kind"] != "setVisible" || string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(level))
                     { yield return location + " 的显式目标无效"; continue; }
                     if (level != here && world == null) continue;
@@ -182,42 +188,50 @@ namespace Sokoban
             var graphIds = new HashSet<string>();
             foreach (var graph in room["events"])
             {
+                if (!(graph is JObject)) { yield return "行为图格式错误"; continue; }
                 string graphId = (string)graph["id"];
                 if (string.IsNullOrWhiteSpace(graphId) || !graphIds.Add(graphId)) yield return "行为图 ID 无效 " + graphId;
                 if (!owners.Contains((string)graph["ownerId"])) yield return $"行为图 {graphId} 找不到对象 {graph["ownerId"]}";
-                if (!(graph["nodes"] is JArray nodes) || !(graph["edges"] is JArray edges)) { yield return "行为图缺少节点或连线 " + graphId; continue; }
-                if (nodes.Any(n => (string)n["kind"] == "openPassage"))
+                var tile = room["terrainObjects"]?.FirstOrDefault(t => (string)t["id"] == (string)graph["ownerId"]);
+                foreach (var issue in GraphIssues(graph, tile != null && RoomFile.Terrain(room, RoomFile.At(tile)) == '#')) yield return issue;
+            }
+        }
+        internal static IEnumerable<string> GraphIssues(JToken graph, bool ownsWall)
+        {
+            string graphId = (string)graph["id"];
+            if (!(graph["nodes"] is JArray nodes) || !(graph["edges"] is JArray edges) ||
+                nodes.Any(node => !(node is JObject)) || edges.Any(edge => !(edge is JObject)))
+            {
+                yield return "行为图缺少有效节点或连线 " + graphId;
+                yield break;
+            }
+            if (!ownsWall && nodes.Any(node => (string)node["kind"] == "openPassage")) yield return "开放墙格需要绑定墙体 " + graphId;
+            var kinds = new Dictionary<string, string>();
+            foreach (var node in nodes)
+            {
+                string id = (string)node["id"];
+                if (string.IsNullOrWhiteSpace(id) || kinds.ContainsKey(id))
+                    yield return $"行为图 {graphId} 节点 ID 无效 {id}";
+                else kinds.Add(id, (string)node["kind"]);
+            }
+            foreach (var edge in edges)
+            {
+                string from = (string)edge["from"] ?? "", to = (string)edge["to"] ?? "";
+                string output = (string)edge["out"], input = (string)edge["in"];
+                if (!kinds.TryGetValue(from, out var source) || !kinds.TryGetValue(to, out var destination))
                 {
-                    var tile = room["terrainObjects"]?.FirstOrDefault(t => (string)t["id"] == (string)graph["ownerId"]);
-                    if (tile == null || RoomFile.Terrain(room, RoomFile.At(tile)) != '#') yield return "开放墙格需要绑定墙体 " + graphId;
+                    yield return $"行为图 {graphId} 存在悬空连线 {from} → {to}";
+                    continue;
                 }
-                var kinds = new Dictionary<string, string>();
-                foreach (var node in nodes)
+                if (destination == "roomSolved" || input != "in")
+                    yield return $"行为图 {graphId} 节点 {to} 没有输入端口 {input}";
+                bool allowed = source switch
                 {
-                    string id = (string)node["id"];
-                    if (string.IsNullOrWhiteSpace(id) || kinds.ContainsKey(id))
-                        yield return $"行为图 {graphId} 节点 ID 无效 {id}";
-                    else kinds.Add(id, (string)node["kind"]);
-                }
-                foreach (var edge in edges)
-                {
-                    string from = (string)edge["from"] ?? "", to = (string)edge["to"] ?? "";
-                    string output = (string)edge["out"], input = (string)edge["in"];
-                    if (!kinds.TryGetValue(from, out var source) || !kinds.TryGetValue(to, out var destination))
-                    {
-                        yield return $"行为图 {graphId} 存在悬空连线 {from} → {to}";
-                        continue;
-                    }
-                    if (destination == "roomSolved" || input != "in")
-                        yield return $"行为图 {graphId} 节点 {to} 没有输入端口 {input}";
-                    bool allowed = source switch
-                    {
-                        "condition" => output == "true" || output == "false",
-                        "roomSolved" or "openPassage" or "setVisible" or "lua" => output == "out",
-                        _ => !string.IsNullOrEmpty(output)
-                    };
-                    if (!allowed) yield return $"行为图 {graphId} 节点 {from} 没有输出端口 {output}";
-                }
+                    "condition" => output == "true" || output == "false",
+                    "roomSolved" or "openPassage" or "setVisible" or "lua" => output == "out",
+                    _ => !string.IsNullOrEmpty(output)
+                };
+                if (!allowed) yield return $"行为图 {graphId} 节点 {from} 没有输出端口 {output}";
             }
         }
         public static bool IsVisualNode(JToken node)

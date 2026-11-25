@@ -22,6 +22,7 @@ namespace Sokoban.Editor
         internal static bool Active => !EditorApplication.isPlayingOrWillChangePlaymode && !SessionState.GetBool("Sokoban.TrialTransition", false) && SceneManager.GetActiveScene().path == GamePath;
         internal static LayoutPanel Panel { get; private set; }
         static readonly RoomPreview preview = new RoomPreview();
+        internal static string AppearanceIssue => preview.AppearanceIssue;
         static readonly SceneGhost ghost = new SceneGhost();
         static bool dragging, rightDown, rightDragged, viewPending;
         static Vector2 rightStart;

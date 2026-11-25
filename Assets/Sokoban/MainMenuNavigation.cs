@@ -15,7 +15,11 @@ namespace Sokoban
         bool loading;
         public Button continueButton;
         public PlayPanels panels;
-        void Start() { continueButton.interactable = CampaignSlot.Available(); }
+        void Start()
+        {
+            continueButton.interactable = CampaignSlot.Available();
+            PlayPanels.FocusPage(continueButton.transform.parent.gameObject);
+        }
         public void StartGame()
         {
             if (File.Exists(CampaignSlot.PathName)) panels.Confirm(); else NewCampaign();

@@ -1,6 +1,6 @@
 /**
  * @file AssetThumbnail.cs
- * @brief Get caches a thumbnail per content ID or built-in Prefab for the palette lifetime. Render asynchronously instantiates real geometry and frames its renderer bounds using an orthographic camera. Dispose releases completed and pending previews.
+ * @brief Get caches a thumbnail per content ID or built-in Prefab for the palette lifetime. Render frames the real geometry; ModelIssue exposes the geometry validation independently of its bitmap. Dispose releases previews.
  */
 using System;
 using System.Collections.Generic;
@@ -15,7 +15,15 @@ namespace Sokoban
     {
         readonly Dictionary<string,Task<Texture2D>> cache = new Dictionary<string,Task<Texture2D>>();
         readonly Dictionary<string,string> sizes = new Dictionary<string,string>();
+        readonly Dictionary<string,string> modelIssues = new Dictionary<string,string>();
         public string SizeReport(string key) => sizes.TryGetValue(key, out var report) ? report : "";
+        public string ModelIssue(JObject room, string key)
+        {
+            if ((string)room["assets"]?[key]?["kind"] != "model") return null;
+            var preview = Get(room, key);
+            if (!preview.IsCompleted) return "正在检查模型尺寸";
+            return modelIssues.TryGetValue(key, out string issue) ? issue : null;
+        }
         bool disposed;
         public Task<Texture2D> Get(JObject room,string key,bool builtin=false)
         {
@@ -42,7 +50,9 @@ namespace Sokoban
                     appearance.Apply(room,new JObject { ["model"]=key });
                     await appearance.Ready;
                     if(disposed) return null;
-                    sizes[key] = appearance.Error ?? appearance.SizeReport;
+                    string issue = appearance.Error ?? appearance.FootprintIssue;
+                    if (issue != null) modelIssues[key] = issue;
+                    sizes[key] = issue ?? appearance.SizeReport;
                     if(appearance.Error!=null) return null;
                 }
                 var renderers=stage.GetComponentsInChildren<Renderer>();

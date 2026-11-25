@@ -1,7 +1,7 @@
 /**
  * @file RoomPreview.cs
  * @brief Sync 按草稿版本与查看范围同步房间，修复外部 Transform 变更；BuildRoom 按整数格生成内置 Prefab。
- * CreateRoot 和 Model 建立临时层级，Track 缓存模型的设计姿态，Marker 生成选择轮廓。
+ * CreateRoot 和 Model 建立临时层级，Track 缓存模型的设计姿态，Marker 生成选择轮廓；AppearanceIssue 向两个编辑界面提供当前场景的资源诊断。
  * ShowPlacement 使用同一房间模型生成候选虚影；CreateOutline 沿房间外缘标记候选和原有占地。
  * HidePlacement、Clear 和 DestroyTemporary 清理会话私有实例和材质。CellFromRay 拾取地平面格。
  */
@@ -27,6 +27,8 @@ namespace Sokoban
         bool tracking = true;
         Transform settling;
         ImportedAppearance settlingAppearance;
+        ImportedAppearance[] appearances = System.Array.Empty<ImportedAppearance>();
+        public string AppearanceIssue => appearances.Where(part => part).Select(part => part.Error ?? part.FootprintIssue ?? part.AnimationIssue).FirstOrDefault(issue => issue != null);
         Vector3 rest;
         float landedAt;
         public bool Settling => settling;
@@ -47,6 +49,7 @@ namespace Sokoban
                     BuildRoom((JObject)draft.Catalog[id], RoomFile.Cell(entry["origin"]), id == draft.ActiveId ? draft.Selected : null, root.transform, draft.World, draft.Catalog);
                 }
                 settling=null;
+                appearances = root.GetComponentsInChildren<ImportedAppearance>(true);
                 if(last==draft && version!=draft.Revision && draft.PlacementRevision==draft.Revision)
                 {
                     var roomRoot=root.transform.Find(draft.ActiveId);
@@ -124,6 +127,15 @@ namespace Sokoban
         }
 
         public static string BoxModel(string theme, JToken box = null) => box?["builtinModel"] != null ? "Diorama/" + (string)box["builtinModel"] : "Diorama/" + (theme == "factory" ? "Machinery" : theme == "forest" ? "Logs" : "Cargo");
+        public static string BrushModel(RoomTool tool, string theme, Vector2Int local = default)
+        {
+            if (tool == RoomTool.Box) return BoxModel(theme);
+            if (tool == RoomTool.Wall) return "LayoutModels/Wall";
+            if (tool != RoomTool.Floor) return "LayoutModels/Target";
+            if (theme != "warehouse" && theme != "factory" && theme != "forest") return "LayoutModels/Floor";
+            int variant = Mathf.Abs((local.x * 17 + local.y * 29 + local.x * local.y) % 3);
+            return "Diorama/" + theme + "Tile" + variant;
+        }
 
         public Transform BuildRoom(JObject room, Vector2Int origin, string selected, Transform parent, JObject world = null, JObject catalog = null)
         {
@@ -156,12 +168,7 @@ namespace Sokoban
                         Retrack(foundation);
                     }
                     string kind = RoomFile.Floor(room, cell) ? "Floor" : "Wall";
-                    string model = kind;
-                    if (kind == "Floor" && (theme == "warehouse" || factory || forest))
-                    {
-                        int variant = (x * 17 + y * 29 + x * y) % 3;
-                        model = "Diorama/" + theme + "Tile" + variant;
-                    }
+                    string model = BrushModel(kind == "Floor" ? RoomTool.Floor : RoomTool.Wall, theme, cell);
                     terrainVisuals.TryGetValue(cell, out var tileVisual);
                     string tileName = kind + " " + cell;
                     Transform tile;

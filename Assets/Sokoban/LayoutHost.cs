@@ -18,6 +18,7 @@ namespace Sokoban
         public bool GridVisible = true;
         Vector2Int? rectangleStart;
         public string HoverFeedback { get; private set; }
+        public string AppearanceIssue => preview.AppearanceIssue;
         public RuntimeLayoutUI Interface;
         readonly RoomPreview preview = new RoomPreview();
         readonly List<RaycastResult> hits = new List<RaycastResult>();

@@ -1,7 +1,8 @@
 /**
  * @file ImportedAppearance.cs
  * @brief Apply resolves room bindings and builds the visible hierarchy at its grid anchor. Load verifies cached GLB bytes and imports geometry or clips.
- * FitPose centers and sizes the visual footprint without changing the cell or the vertical motion. LateUpdate fits the evaluated animation pose.
+ * InspectModel loads an offscreen model for import validation. The visible root is centered once without resizing.
+ * LateUpdate reports the first visible animation pose outside the single-cell bounds and keeps the original pose.
  * SetGhost substitutes the preview material across every submesh. ReadImage decodes UI and surface images. OnDestroy releases instance-owned assets after pending imports finish.
  */
 using System;
@@ -24,6 +25,9 @@ namespace Sokoban
         GridFootprint footprint;
         Animation playback;
         public string SizeReport { get; private set; }
+        public string FootprintIssue { get; private set; }
+        public string AnimationIssue { get; private set; }
+        string modelName;
         Texture2D image;
         Material ghost;
         bool loading;
@@ -33,6 +37,22 @@ namespace Sokoban
         public void Apply(JObject room, JToken visual)
         {
             Ready = Build(room["assets"], visual);
+        }
+
+        public static async Task InspectModel(JObject asset)
+        {
+            string id = (string)asset["id"];
+            var stage = new GameObject("模型尺寸检查") { hideFlags = HideFlags.HideAndDontSave };
+            stage.transform.position = Vector3.down * 10000;
+            try
+            {
+                var appearance = stage.AddComponent<ImportedAppearance>();
+                appearance.Apply(new JObject { ["assets"] = new JObject { [id] = asset.DeepClone() } }, new JObject { ["model"] = id });
+                await appearance.Ready;
+                string issue = appearance.Error ?? appearance.FootprintIssue;
+                RoomFile.Check(issue == null, issue);
+            }
+            finally { DisposeObject(stage); }
         }
 
         async Task<GltfImport> Load(JToken asset)
@@ -54,6 +74,7 @@ namespace Sokoban
                 var clipRoot = gameObject;
                 if (modelId != null)
                 {
+                    modelName = (string)assets[modelId]["name"];
                     var model = await Load(assets[modelId]);
                     footprintRoot = new GameObject("单格外观").transform;
                     footprintRoot.SetParent(transform, false);
@@ -67,8 +88,10 @@ namespace Sokoban
                 {
                     footprint = new GridFootprint(footprintRoot);
                     var original = footprint.Measure();
-                    FitPose(original);
-                    SizeReport = GridFootprint.Matches(original) ? "1 × 1 格" : "原始 " + GridFootprint.Describe(original) + " → 居中 1 × 1 格";
+                    footprintRoot.localPosition = new Vector3(-original.center.x, 0, -original.center.z);
+                    SizeReport = GridFootprint.Describe(original);
+                    if (!GridFootprint.HasUnitSize(original))
+                        FootprintIssue = $"模型「{modelName}」占地 {SizeReport}，需要 1 × 1 格（宽和深各允许 ±0.001 格）";
                 }
                 string motionId = (string)visual["animation"];
                 if (motionId != null)
@@ -112,17 +135,15 @@ namespace Sokoban
             finally { loading = false; if (lifetime.IsCancellationRequested) Release(); }
         }
 
-        void FitPose(Bounds bounds)
-        {
-            var scale = new Vector3(1 / bounds.size.x, 1, 1 / bounds.size.z);
-            footprintRoot.localScale = scale;
-            footprintRoot.localPosition = new Vector3(-bounds.center.x * scale.x, 0, -bounds.center.z * scale.z);
-        }
-
         void LateUpdate()
         {
-            if (footprint != null && playback && playback.isPlaying && footprint.TryMeasure(out var bounds))
-                FitPose(bounds);
+            if (AnimationIssue != null || footprint == null || !playback || !playback.isPlaying || !footprint.TryMeasure(out var bounds)) return;
+            bounds.center += footprintRoot.localPosition;
+            if (GridFootprint.Matches(bounds)) return;
+            var state = playback[playback.clip.name];
+            string time = state == null ? "" : $" {state.time:0.000} 秒";
+            AnimationIssue = $"模型「{modelName}」的动作「{playback.clip.name}」{time}占地 {GridFootprint.Describe(bounds)}，中心偏移 ({bounds.center.x:0.####}, {bounds.center.z:0.####}) 格，超出单格要求";
+            Debug.LogWarning(AnimationIssue, this);
         }
 
         public static Texture2D ReadImage(JToken asset)

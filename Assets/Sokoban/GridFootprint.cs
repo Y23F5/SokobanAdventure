@@ -1,7 +1,7 @@
 /**
  * @file GridFootprint.cs
  * @brief Measure projects visible mesh vertices into the cell coordinate system. Skinned meshes use their deformed pose.
- * TryMeasure handles hidden or degenerate animation frames. Matches checks both dimensions and the grid anchor. Describe reports the measured footprint in grid units.
+ * TryMeasure skips hidden branches and degenerate frames. HasUnitSize checks dimensions; Matches also checks the anchor. Describe reports the measured footprint in grid units.
  */
 using System;
 using System.Collections.Generic;
@@ -37,16 +37,23 @@ namespace Sokoban
             bounds = new Bounds();
             bool started = false;
             foreach (var filter in solids)
-                if (filter.sharedMesh && filter.TryGetComponent<MeshRenderer>(out var renderer) && renderer.enabled)
+                if (VisibleBranch(filter.transform) && filter.sharedMesh && filter.TryGetComponent<MeshRenderer>(out var renderer) && renderer.enabled)
                     Include(filter.sharedMesh, filter.transform, ref bounds, ref started);
             foreach (var skin in skins)
             {
-                if (!skin.enabled || !skin.sharedMesh) continue;
+                if (!VisibleBranch(skin.transform) || !skin.enabled || !skin.sharedMesh) continue;
                 if (!baked) baked = new Mesh { hideFlags = HideFlags.HideAndDontSave };
                 skin.BakeMesh(baked, true);
                 Include(baked, skin.transform, ref bounds, ref started);
             }
             return started && bounds.size.x > .000001f && bounds.size.z > .000001f;
+        }
+
+        bool VisibleBranch(Transform part)
+        {
+            for (var current = part; current != basis; current = current.parent)
+                if (!current.gameObject.activeSelf) return false;
+            return true;
         }
 
         void Include(Mesh mesh, Transform part, ref Bounds bounds, ref bool started)
@@ -65,9 +72,9 @@ namespace Sokoban
             }
         }
 
-        public static bool Matches(Bounds bounds) => Mathf.Abs(bounds.size.x - 1) <= Tolerance && Mathf.Abs(bounds.size.z - 1) <= Tolerance
-            && Mathf.Abs(bounds.center.x) <= Tolerance && Mathf.Abs(bounds.center.z) <= Tolerance;
-        public static string Describe(Bounds bounds) => $"{bounds.size.x:0.###} × {bounds.size.z:0.###} 格";
+        public static bool HasUnitSize(Bounds bounds) => Mathf.Abs(bounds.size.x - 1) <= Tolerance && Mathf.Abs(bounds.size.z - 1) <= Tolerance;
+        public static bool Matches(Bounds bounds) => HasUnitSize(bounds) && Mathf.Abs(bounds.center.x) <= Tolerance && Mathf.Abs(bounds.center.z) <= Tolerance;
+        public static string Describe(Bounds bounds) => $"{bounds.size.x:0.####} × {bounds.size.z:0.####} 格";
         public void Dispose()
         {
             if (!baked) return;

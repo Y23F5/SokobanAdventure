@@ -2,7 +2,7 @@
  * @file AssetDraft.cs
  * @brief ImportAsset registers a verified payload as one undoable change. BindAsset assigns a typed reference to an object or room HUD.
  * SelectAsset chooses a model brush without changing the design. PlaceAsset adds a one-cell decoration with a stable identity.
- * RequireAsset rejects references outside the active room. Uses Commit for history, dirty tracking and both editor projections.
+ * CanBindAsset guards the two palettes; AssetBindingTarget reports the bound room or selected cell. Uses Commit for history, dirty tracking and both editor projections.
  */
 using System;
 using Newtonsoft.Json.Linq;
@@ -18,7 +18,11 @@ namespace Sokoban
         public string BrushAsset { get; private set; }
         public string ImportAsset(string path,string kind)
         {
-            var asset=RoomAssets.Import(path,kind);
+            return RegisterAsset(RoomAssets.Import(path,kind));
+        }
+        internal string RegisterAsset(JObject asset)
+        {
+            string kind = (string)asset["kind"];
             string id=(string)asset["id"];
             var next=(JObject)Room.DeepClone();
             if(next["assets"]==null) next["assets"]=new JObject();
@@ -58,15 +62,26 @@ namespace Sokoban
             }
             if (!JToken.DeepEquals(Room,next)) Commit(next,Selected);
         }
+        public bool CanBindAsset(string id) => id != null && Room["assets"]?[id] is JObject asset &&
+            ((string)asset["kind"] == "uiImage" || SelectedCell is Vector2Int cell && RoomFile.Terrain(Room, cell) != RoomFile.Void);
+
+        public string AssetBindingTarget(string id)
+        {
+            if (!CanBindAsset(id)) return "选择地图上的物件或地形格后，可为它绑定素材";
+            if ((string)Room["assets"][id]["kind"] == "uiImage") return "绑定位置：当前房间界面";
+            var cell = SelectedCell.Value;
+            string target = Selected ?? (RoomFile.Terrain(Room, cell) == '#' ? "墙壁" : "地板");
+            return "绑定位置：" + target + " " + cell;
+        }
+
         public void BindAsset(string id)
         {
             var kind=(string)RequireAsset(id)["kind"];
+            RoomFile.Check(CanBindAsset(id), "请先选择需要绑定素材的地图对象或地形格");
             var next=(JObject)Room.DeepClone();
             if(kind=="uiImage") next["uiImage"]=id;
             else
             {
-                RoomFile.Check(SelectedCell.HasValue && RoomFile.Terrain(Room, SelectedCell.Value) != RoomFile.Void,
-                    "请先选择需要绑定素材的地图对象或地形格");
                 var point = SelectedCell.Value;
                 var item = PropertyObject(next, point);
                 if (item == null)
@@ -101,7 +116,9 @@ namespace Sokoban
             var next=(JObject)Room.DeepClone();
             if(next["decorations"]==null) next["decorations"]=new JArray();
             string id="decor-"+Guid.NewGuid().ToString("N");
-            ((JArray)next["decorations"]).Add(new JObject { ["id"]=id,["cell"]=RoomFile.Point(cell),["visual"]=new JObject { ["model"]=BrushAsset } });
+            var instance = new JObject { ["id"]=id,["cell"]=RoomFile.Point(cell),["visual"]=new JObject { ["model"]=BrushAsset } };
+            AddDefinedObject(next, instance, id);
+            ((JArray)next["decorations"]).Add(instance);
             Commit(next,id);
             NotifyPlacement(id);
         }

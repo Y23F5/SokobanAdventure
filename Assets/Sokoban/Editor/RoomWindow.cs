@@ -2,12 +2,15 @@
  * @file RoomWindow.cs
  * @brief 房间布局窗口持有工具面板的窗口状态。Open 切换到 Game 并打开工具；
  * OnGUI 调用共享文件、命令及属性入口，定位、整图取景和单独查看委托场景会话；
+ * DrawFunctionObjects 将带行为的装饰存入当前房间的功能物件目录，并列出可放置的定义；
+ * ModelButton 用预览缓存显示实际模型缩略图，并让编辑器在首张图生成后刷新；
  * RequestQuit 保护未保存的修改，CloseApproved 结束本次显式退出。
  */
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Newtonsoft.Json.Linq;
 
 namespace Sokoban.Editor
 {
@@ -19,6 +22,41 @@ namespace Sokoban.Editor
         AssetThumbnail thumbnails;
         bool closeApproved;
         Vector2 panelScroll;
+        string definitionName = "";
+
+        bool ModelButton(string title, string model, bool builtin)
+        {
+            var preview = thumbnails.Get(Panel.Draft.Room, model, builtin);
+            if (!preview.IsCompleted) Repaint();
+            var thumbnail = preview.Status == System.Threading.Tasks.TaskStatus.RanToCompletion ? preview.Result : null;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(thumbnail, GUILayout.Width(38), GUILayout.Height(38));
+            string issue = builtin ? null : thumbnails.ModelIssue(Panel.Draft.Room, model);
+            bool pressed = GUILayout.Button(new GUIContent(title, issue ?? "选取后在 Scene View 中吸附放置"), GUILayout.Height(38));
+            GUILayout.EndHorizontal();
+            if (pressed && issue != null) { Panel.Status = issue; return false; }
+            return pressed;
+        }
+
+        void DrawFunctionObjects()
+        {
+            var draft = Panel.Draft;
+            if (draft.CanDefineObject)
+            {
+                definitionName = EditorGUILayout.TextField("功能物件名称", definitionName);
+                using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(definitionName)))
+                    if (GUILayout.Button("将所选装饰存为功能物件"))
+                        Panel.Run(() => draft.DefineObject(definitionName), "已添加功能物件，可在两端放置");
+            }
+            if (!(draft.Room["objectDefinitions"] is JObject definitions) || definitions.Count == 0) return;
+            GUILayout.Label("功能物件", EditorStyles.boldLabel);
+            foreach (var entry in definitions.Properties())
+            {
+                string id = entry.Name;
+                if (ModelButton("放置 · " + (string)entry.Value["name"], (string)entry.Value["visual"]["model"], false))
+                    Panel.Run(() => draft.SelectDefinition(id), "在场景中选择放置格");
+            }
+        }
 
         [MenuItem("Tools/Sokoban/房间布局")]
         public static void ShowLayout() => Open();
@@ -127,16 +165,17 @@ namespace Sokoban.Editor
                 Panel.Properties();
                 if (Panel.Draft.SelectedCell is Vector2Int cell && RoomFile.Terrain(Panel.Draft.Room, cell) != RoomFile.Void && GUILayout.Button("编辑行为"))
                     OpenBehavior();
+                DrawFunctionObjects();
                 if (RoomDraft.IsAppearanceTool(Panel.Draft.Tool))
                 {
                     var tool = Panel.Draft.Tool;
                     GUILayout.Label("当前工具的模型", EditorStyles.boldLabel);
-                    if (GUILayout.Button("使用默认外观")) Panel.Draft.Tool = tool;
+                    if (ModelButton("使用默认外观", RoomPreview.BrushModel(tool, (string)Panel.Draft.Room["themeId"]), true)) Panel.Draft.Tool = tool;
                     var catalog = Panel.Draft.Room["appearanceCatalog"]?[tool.ToString().ToLowerInvariant()] as Newtonsoft.Json.Linq.JObject;
                     if (catalog != null) foreach (var look in catalog.Properties())
                     {
                         string id = (string)look.Value["model"];
-                        if (GUILayout.Button((string)Panel.Draft.Room["assets"]?[id]?["name"] ?? id))
+                        if (ModelButton((string)Panel.Draft.Room["assets"]?[id]?["name"] ?? id, id, false))
                             Panel.Run(() => Panel.Draft.SelectAsset(id, tool), "已选模型，在场景中放置");
                     }
                     if (GUILayout.Button("向当前工具导入模型")) Panel.ChooseFile("导入模型");
@@ -154,13 +193,20 @@ namespace Sokoban.Editor
                         GUILayout.Label(thumb.Status==System.Threading.Tasks.TaskStatus.RanToCompletion ? thumb.Result : null,GUILayout.Width(38),GUILayout.Height(38));
                         if(!thumb.IsCompleted) Repaint();
                         GUILayout.Label((string)entry.Value["name"] + "\n" + thumbnails.SizeReport(entry.Name));
+                        string issue = thumbnails.ModelIssue(Panel.Draft.Room, entry.Name);
                         if((string)entry.Value["kind"]=="model" && GUILayout.Button("放置"))
-                            Panel.Run(()=>Panel.Draft.SelectAsset(entry.Name),"在场景中选择放置格");
-                        if(GUILayout.Button("绑定")) Panel.Run(()=>Panel.Draft.BindAsset(entry.Name),"已绑定素材");
+                        {
+                            if (issue != null) Panel.Status = issue;
+                            else Panel.Run(()=>Panel.Draft.SelectAsset(entry.Name),"在场景中选择放置格");
+                        }
+                        using (new EditorGUI.DisabledScope(!Panel.Draft.CanBindAsset(entry.Name) || issue != null))
+                            if (GUILayout.Button(new GUIContent("绑定", issue ?? Panel.Draft.AssetBindingTarget(entry.Name))))
+                                Panel.Run(() => { Panel.Draft.BindAsset(entry.Name); Panel.CancelTool(); }, "已绑定素材");
                         GUILayout.EndHorizontal();
                     }
             }
             EditorGUILayout.HelpBox(Panel.Status, MessageType.Info);
+            if (WorldSceneSession.AppearanceIssue is string appearanceIssue) EditorGUILayout.HelpBox(appearanceIssue, MessageType.Warning);
             if (Panel.StructuralIssue != null) EditorGUILayout.HelpBox(Panel.StructuralIssue, MessageType.Error);
             GUILayout.EndScrollView();
             if (GUI.changed) SceneView.RepaintAll();

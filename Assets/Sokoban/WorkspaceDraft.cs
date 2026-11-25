@@ -70,13 +70,14 @@ namespace Sokoban
             editorOrigin = state["editorOrigin"] is JArray point ? RoomFile.Cell(point) : Vector2Int.zero;
             removedPlacements=state["removed"] is JObject removed?(JObject)removed.DeepClone():new JObject();var data=state["data"]; Catalog=(JObject)data["rooms"].DeepClone(); World=data["world"] as JObject;
             Room=(JObject)Catalog[(string)state["active"]]; RoomFile.Check(Room!=null,"草稿缺少选中房间");
+            if (BrushDefinition != null && Room["objectDefinitions"]?[BrushDefinition] == null) Tool = RoomTool.Select;
             if (BrushAsset!=null && Room["assets"]?[BrushAsset]==null) { BrushAsset=null; if(Tool==RoomTool.Decoration) Tool=RoomTool.Select; }
             Selected=(string)state["selected"]; SelectedCell=state["cell"] is JArray?RoomFile.Cell(state["cell"]):(Vector2Int?)null;
             Selection.Clear();
             if (state["selection"] is JArray selected) foreach (var selectedPoint in selected) Selection.Add(RoomFile.Cell(selectedPoint));
             else if (SelectedCell.HasValue && RoomFile.Terrain(Room, SelectedCell.Value) != RoomFile.Void) Selection.Add(SelectedCell.Value);
         }
-        public JObject Snapshot() => new JObject { ["version"]=1,["current"]=State(),["path"]=WorkPath,["saved"]=saved?.DeepClone(),["tool"]=(int)Tool,["brushAsset"]=BrushAsset,["typedBrush"]=BrushAsset != null,["undo"]=new JArray(undo.Reverse()),["redo"]=new JArray(redo.Reverse()) };
+        public JObject Snapshot() => new JObject { ["version"]=1,["current"]=State(),["path"]=WorkPath,["saved"]=saved?.DeepClone(),["tool"]=(int)Tool,["brushAsset"]=BrushAsset,["brushDefinition"]=BrushDefinition,["typedBrush"]=BrushAsset != null,["undo"]=new JArray(undo.Reverse()),["redo"]=new JArray(redo.Reverse()) };
         public void Recover(JObject snapshot) {
             RoomFile.Check((int?)snapshot["version"]==1,"草稿版本无效");
             foreach(var state in snapshot["undo"].Concat(snapshot["redo"]).Append(snapshot["current"])) {
@@ -85,7 +86,9 @@ namespace Sokoban
             }
             Apply((JObject)snapshot["current"]); saved=snapshot["saved"] as JObject; WorkPath=(string)snapshot["path"];Tool=(RoomTool)(int)snapshot["tool"];
             var model = (string)snapshot["brushAsset"];
-            if (model != null && (Tool == RoomTool.Decoration || (bool?)snapshot["typedBrush"] == true)) SelectAsset(model, Tool);
+            var definition = (string)snapshot["brushDefinition"];
+            if (!string.IsNullOrEmpty(definition)) SelectDefinition(definition);
+            else if (model != null && (Tool == RoomTool.Decoration || (bool?)snapshot["typedBrush"] == true)) SelectAsset(model, Tool);
             undo.Clear(); redo.Clear();foreach(JObject value in snapshot["undo"]) undo.Push(value);foreach(JObject value in snapshot["redo"]) redo.Push(value);Revision++;
         }
         public void BeginWorld()
@@ -200,7 +203,13 @@ namespace Sokoban
                 var cell = point - min;
                 if(!RoomFile.Inside(next,cell)) {issue="越界 "+cell;continue;}
                 var obj=RoomFile.Objects(next).FirstOrDefault(item=>RoomFile.At(item)==cell);
-                if(tool==RoomTool.Erase && obj!=null && (obj.Parent==next["boxes"] || obj.Parent==next["targets"] || obj.Parent==next["decorations"])) {obj.Remove();continue;}
+                if (tool == RoomTool.Erase && obj != null && (obj.Parent == next["boxes"] || obj.Parent == next["targets"] || obj.Parent == next["decorations"]))
+                {
+                    if (obj["definitionId"] != null)
+                        foreach (var graph in next["events"].Where(graph => (string)graph["ownerId"] == (string)obj["id"]).ToArray()) graph.Remove();
+                    obj.Remove();
+                    continue;
+                }
                 if((tool==RoomTool.Wall || tool==RoomTool.Erase) && NeedsFloor(next, cell)) {issue="对象或门内侧占用 "+cell;continue;}
                 int index = size.y - 1 - cell.y;
                 var row = ((string)next["terrainRowsNorthToSouth"][index]).ToCharArray();

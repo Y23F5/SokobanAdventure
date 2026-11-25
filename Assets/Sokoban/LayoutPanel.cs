@@ -2,7 +2,7 @@
  * @file LayoutPanel.cs
  * @brief 两种宿主共用的布局工具面板。LayoutPanel 载入内置房间；Run 捕获失败并保留草稿；Click 处理格子命令；
  * Tools 绘制放置与选择选项；Properties 显示当前实体资料；Files 绘制交换及历史操作；ChooseFile 打开文件面板；
- * Dialog 绘制目录、文件名和确认操作；Browse 加载目录内容；ConfirmFile 分派读写；Guard 保护未保存的变动。
+ * Dialog 绘制目录、文件名和确认操作；Browse 加载目录内容；ConfirmFile 分派读写；ImportModel 通过尺寸检查后才登记模型；Guard 保护未保存的变动。
  */
 using System;
 using System.IO;
@@ -19,6 +19,7 @@ namespace Sokoban
         public string Status = "选择工具后点击格子";
         public bool Modal => operation != null || pending != null;
         string operation, filename, directory;
+        int fileDialogVersion;
         string[] entries = Array.Empty<string>();
         Action pending, afterSave;
         bool overwrite;
@@ -41,7 +42,7 @@ namespace Sokoban
             catch (UnauthorizedAccessException) { Status="此位置没有读写权限，请选择其他目录。"; }
             catch (Exception ex) { Status=ex.Message; }
         }
-        public void CancelDialog() { pending=null; operation=null; afterSave=null; exitAction=null; }
+        public void CancelDialog() { fileDialogVersion++; pending=null; operation=null; afterSave=null; exitAction=null; }
         public void ContinueAfterSave()
         {
             var next=pending;
@@ -111,6 +112,7 @@ namespace Sokoban
                 return;
             }
             if(op=="保存" && Draft.WorkPath!=null) { Run(()=>Draft.Save(Draft.WorkPath,false),"已保存工作文件"); return; }
+            fileDialogVersion++;
             operation=op; overwrite=false;
             filename=op=="导出单房" ? Draft.ActiveId+".room.json" : op=="保存" || op=="导出" || op=="发布" ? (Draft.World==null?"Room.json":"main.world.json") : "";
             Run(()=>Browse(directory ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)),"可输入完整文件路径");
@@ -121,6 +123,7 @@ namespace Sokoban
             var files=Directory.GetFiles(path).Where(p=>FileMatchesOperation(p)).OrderBy(p=>p);
             entries=dirs.Concat(files).ToArray();
             if (directory != path && Path.IsPathRooted(filename)) filename = Path.GetFileName(filename);
+            if (directory != path) fileDialogVersion++;
             directory=path; scroll=Vector2.zero; overwrite=false;
         }
         bool FileMatchesOperation(string path)
@@ -137,6 +140,7 @@ namespace Sokoban
             string path=Path.GetFullPath(Path.Combine(directory ?? "",filename));
             if(Directory.Exists(path)) { Browse(path); filename=""; return; }
             string assetKind=op=="导入模型"?"model":op=="导入动作"?"animation":op=="导入贴图"?"texture":op=="导入界面图"?"uiImage":null;
+            if (assetKind == "model") { ImportModel(path); return; }
             if(assetKind!=null) { Draft.ImportAsset(path,assetKind); operation=null; Status="已导入素材 "+Path.GetFileName(path); return; }
             if(op=="加入房间") {Draft.Attach(path); operation=null;Status="已加入房间目录"; return;}
             if(op=="打开" || op=="导入")
@@ -152,6 +156,32 @@ namespace Sokoban
                 operation=null; Status="已"+op+"  "+Path.GetFileName(path);
                 var next=afterSave; afterSave=null; next?.Invoke();
             }
+        }
+
+        bool checkingModel;
+        async void ImportModel(string path)
+        {
+            if (checkingModel) { Status = "正在检查模型尺寸"; return; }
+            checkingModel = true;
+            var room = Draft.Room;
+            var kind = Draft.Tool;
+            var input = filename;
+            int version = fileDialogVersion;
+            Status = "正在检查模型尺寸";
+            try
+            {
+                var asset = RoomAssets.Import(path, "model");
+                await ImportedAppearance.InspectModel(asset);
+                if (version != fileDialogVersion || input != filename || room != Draft.Room || kind != Draft.Tool) return;
+                Draft.RegisterAsset(asset);
+                operation = null;
+                Status = "已导入素材 " + Path.GetFileName(path);
+            }
+            catch (Exception error)
+            {
+                if (version == fileDialogVersion && input == filename) Status = error.Message;
+            }
+            finally { checkingModel = false; }
         }
         public void Dialog(bool expandList = false)
         {

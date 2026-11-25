@@ -3,6 +3,7 @@
  * @brief ShowPlay、Pause、Settings、Help 和 Confirm 选择当前 Canvas 面板并记住返回页。
  * Back 和 Update 处理按钮及 Esc 的同帧输入。SetVolume、SetFullscreen 即时应用并持久化设置。
  * Accept 与 Leave 分派已确认的新局或退出动作；ShowError 在当前宿主上报告失败。
+ * FocusPage 为菜单和模态面板提供初始键盘焦点，游玩 HUD 不占用导航。
  */
 using UnityEngine;
 using UnityEngine.UI;
@@ -61,8 +62,21 @@ namespace Sokoban
                 group.interactable = !page;
                 group.blocksRaycasts = !page;
             }
-            if (EventSystem.current) EventSystem.current.SetSelectedGameObject(null);
+            FocusPage(page ? page : menu && menu.continueButton ? menu.continueButton.transform.parent.gameObject : null);
             changedFrame = Time.frameCount;
+        }
+
+        internal static void FocusPage(GameObject page)
+        {
+            if (!EventSystem.current) return;
+            EventSystem.current.SetSelectedGameObject(null);
+            if (!page) return;
+            foreach (var button in page.GetComponentsInChildren<Button>())
+                if (button.IsInteractable() && button.navigation.mode != Navigation.Mode.None)
+                {
+                    EventSystem.current.SetSelectedGameObject(button.gameObject);
+                    break;
+                }
         }
 
         public void ShowPlay(bool trial)
