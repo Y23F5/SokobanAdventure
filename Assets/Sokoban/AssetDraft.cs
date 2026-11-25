@@ -56,17 +56,24 @@ namespace Sokoban
             if(kind=="uiImage") next["uiImage"]=id;
             else
             {
-                RoomFile.Check(Find(Selected)!=null,"请先选择需要绑定素材的地图对象");
-                foreach(var item in RoomFile.Objects(next))
+                RoomFile.Check(SelectedCell.HasValue && RoomFile.Terrain(Room, SelectedCell.Value) != RoomFile.Void,
+                    "请先选择需要绑定素材的地图对象或地形格");
+                var point = SelectedCell.Value;
+                var item = PropertyObject(next, point);
+                if (item == null)
                 {
-                    if((string)item["id"]!=Selected) continue;
-                    if(item["visual"]==null) item["visual"]=new JObject();
-                    if (kind == "model") ((JObject)item).Remove("builtinModel");
-                    item["visual"][kind]=id;
-                    break;
+                    if (next["terrainObjects"] == null) next["terrainObjects"] = new JArray();
+                    item = new JObject { ["id"] = "tile-" + Guid.NewGuid().ToString("N"), ["cell"] = RoomFile.Point(point) };
+                    ((JArray)next["terrainObjects"]).Add(item);
                 }
+                if (item["visual"] == null) item["visual"] = new JObject();
+                if (kind == "model") ((JObject)item).Remove("builtinModel");
+                item["visual"][kind] = id;
             }
-            if(!JToken.DeepEquals(Room,next)) Commit(next,Selected);
+            if (JToken.DeepEquals(Room, next)) return;
+            var selectedCell = SelectedCell;
+            Commit(next, Selected);
+            if (selectedCell.HasValue) Select(selectedCell.Value);
         }
         public void SelectAsset(string id)
         {

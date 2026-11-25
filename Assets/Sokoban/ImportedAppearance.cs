@@ -66,7 +66,8 @@ namespace Sokoban
                 if (footprintRoot)
                 {
                     footprint = new GridFootprint(footprintRoot);
-                    var original = FitPose();
+                    var original = footprint.Measure();
+                    FitPose(original);
                     SizeReport = GridFootprint.Matches(original) ? "1 × 1 格" : "原始 " + GridFootprint.Describe(original) + " → 居中 1 × 1 格";
                 }
                 string motionId = (string)visual["animation"];
@@ -111,20 +112,17 @@ namespace Sokoban
             finally { loading = false; if (lifetime.IsCancellationRequested) Release(); }
         }
 
-        Bounds FitPose()
+        void FitPose(Bounds bounds)
         {
-            footprintRoot.localScale = Vector3.one;
-            footprintRoot.localPosition = Vector3.zero;
-            var bounds = footprint.Measure();
             var scale = new Vector3(1 / bounds.size.x, 1, 1 / bounds.size.z);
             footprintRoot.localScale = scale;
             footprintRoot.localPosition = new Vector3(-bounds.center.x * scale.x, 0, -bounds.center.z * scale.z);
-            return bounds;
         }
 
         void LateUpdate()
         {
-            if (footprint != null && playback && playback.isPlaying) FitPose();
+            if (footprint != null && playback && playback.isPlaying && footprint.TryMeasure(out var bounds))
+                FitPose(bounds);
         }
 
         public static Texture2D ReadImage(JToken asset)

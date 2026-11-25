@@ -81,7 +81,7 @@ namespace Sokoban
                 CheckDescriptor(entry.Value);
                 RoomFile.Check(entry.Name==(string)entry.Value["id"],"素材表键与 ID 不一致");
             }
-            foreach (var item in RoomFile.Objects(room))
+            foreach (var item in RoomFile.Objects(room).Concat(room["terrainObjects"] as JArray ?? new JArray()))
             {
                 if (item["builtinModel"] != null) RoomFile.Check(item.Parent == room["boxes"] && Array.IndexOf(RoomDraft.BuiltinBoxes,(string)item["builtinModel"]) >= 0 && item["visual"]?["model"] == null,"箱体模型绑定无效");
                 if (item.Parent == room["decorations"]) RoomFile.Check(item["visual"] is JObject decoration && decoration["model"]!=null,"装饰缺少模型绑定");

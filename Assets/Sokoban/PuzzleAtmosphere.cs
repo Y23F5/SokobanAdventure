@@ -116,7 +116,8 @@ namespace Sokoban
                 bool occludes = points.Any(point => bounds.IntersectRay(new Ray(point,-lens.transform.forward)));
                 foreach (var r in wall.GetComponentsInChildren<Renderer>())
                 {
-                    var mat = originals[r];
+                    if (!originals.TryGetValue(r, out var mat)) originals[r] = mat = r.sharedMaterial;
+                    if (!mat) continue;
                     r.sharedMaterial = occludes ? translucent : mat;
                     surface.Clear();
                     if (occludes) { var color = mat.GetColor("_BaseColor"); color.a=.23f; surface.SetColor("_BaseColor",color); }

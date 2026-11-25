@@ -1,7 +1,7 @@
 /**
  * @file GridFootprint.cs
  * @brief Measure projects visible mesh vertices into the cell coordinate system. Skinned meshes use their deformed pose.
- * Matches checks both dimensions and the grid anchor. Describe reports the measured footprint in grid units.
+ * TryMeasure handles hidden or degenerate animation frames. Matches checks both dimensions and the grid anchor. Describe reports the measured footprint in grid units.
  */
 using System;
 using System.Collections.Generic;
@@ -27,7 +27,14 @@ namespace Sokoban
 
         public Bounds Measure()
         {
-            var bounds = new Bounds();
+            if (!TryMeasure(out var bounds))
+                throw new InvalidOperationException("素材缺少可测量的水平宽度或深度");
+            return bounds;
+        }
+
+        public bool TryMeasure(out Bounds bounds)
+        {
+            bounds = new Bounds();
             bool started = false;
             foreach (var filter in solids)
                 if (filter.sharedMesh && filter.TryGetComponent<MeshRenderer>(out var renderer) && renderer.enabled)
@@ -39,9 +46,7 @@ namespace Sokoban
                 skin.BakeMesh(baked, true);
                 Include(baked, skin.transform, ref bounds, ref started);
             }
-            if (!started || !(bounds.size.x > .000001f && bounds.size.z > .000001f))
-                throw new InvalidOperationException("素材缺少可测量的水平宽度或深度");
-            return bounds;
+            return started && bounds.size.x > .000001f && bounds.size.z > .000001f;
         }
 
         void Include(Mesh mesh, Transform part, ref Bounds bounds, ref bool started)

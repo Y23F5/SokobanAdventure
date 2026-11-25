@@ -140,6 +140,8 @@ namespace Sokoban
                 baseModel.GetComponentInChildren<Renderer>().sharedMaterial = Resources.Load<Material>("LayoutModels/" + (factory ? "Stone" : forest ? "Moss" : "Kraft"));
                 Retrack(baseModel);
             }
+            var terrainVisuals = (room["terrainObjects"] as JArray ?? new JArray())
+                .Where(record => record["visual"] is JObject).ToDictionary(RoomFile.At, record => record["visual"]);
             for (int y = 0; y < size.y; y++)
                 for (int x = 0; x < size.x; x++)
                 {
@@ -160,8 +162,17 @@ namespace Sokoban
                         int variant = (x * 17 + y * 29 + x * y) % 3;
                         model = "Diorama/" + theme + "Tile" + variant;
                     }
-                    var tile = Model(model, kind + " " + cell, cell, group, Quaternion.identity);
-                    if (kind == "Wall") { tile.localScale = new Vector3(1,2.6f,1); Retrack(tile); }
+                    terrainVisuals.TryGetValue(cell, out var tileVisual);
+                    string tileName = kind + " " + cell;
+                    Transform tile;
+                    if (tileVisual?["model"] != null)
+                        tile = CreateRoot(tileName, group, new Vector3(x, 0, y)).transform;
+                    else
+                    {
+                        tile = Model(model, tileName, cell, group, Quaternion.identity);
+                        if (kind == "Wall") { tile.localScale = new Vector3(1,2.6f,1); Retrack(tile); }
+                    }
+                    if (tileVisual != null) tile.gameObject.AddComponent<ImportedAppearance>().Apply(room, tileVisual);
                 }
             bool northRail = RoomFile.RecoveryPreset(room) == "warehouse" && room["doors"].Any(d => RoomFile.Inward(d) == Vector2Int.left);
             foreach (var item in RoomFile.Objects(room))
