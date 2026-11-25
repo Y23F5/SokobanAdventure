@@ -30,3 +30,7 @@ MonoBehaviour:
   buttonSprite: {fileID: 21300000, guid: 97002037216822f905c97806bc67d20c, type: 3}
   panelSprite: {fileID: 21300000, guid: 4d9f3b9ef284722974dd89031e7d90d4, type: 3}
   inputSprite: {fileID: 21300000, guid: 2a6e90757db50d197c9d40b6edbc5227, type: 3}
+  sliderTrackSprite: {fileID: 21300000, guid: a201a19cf206fbbee8ad6e2071f0be9b, type: 3}
+  sliderKnobSprite: {fileID: 21300000, guid: 3158aa956a8f7352e2f6d9408cd5a133, type: 3}
+  checkOffSprite: {fileID: 21300000, guid: cedcfb76ddd03943a1a05d3380b8f819, type: 3}
+  checkOnSprite: {fileID: 21300000, guid: 724625def39c4b5aa83553f4c9a90e67, type: 3}

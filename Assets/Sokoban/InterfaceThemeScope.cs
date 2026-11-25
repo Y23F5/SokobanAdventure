@@ -23,6 +23,7 @@ namespace Sokoban
         }
         [Serializable] struct Spacing { public HorizontalOrVerticalLayoutGroup group; public float value; }
         const int TitleFontSize = 24;
+        const string PanelShadowName = "面板阴影";
         public InterfaceTheme theme;
         public Image[] panels = Array.Empty<Image>();
         [SerializeField] List<Label> labels = new List<Label>();
@@ -82,10 +83,28 @@ namespace Sokoban
             foreach (var entry in layout)
                 if (entry.group) entry.group.spacing = entry.value + theme.spacingAdjustment;
             foreach (var image in panels)
-                if (image) ApplySurface(image, theme.panel, theme.panelSprite);
+            {
+                if (!image) continue;
+                ApplySurface(image, theme.panel, theme.panelSprite);
+                if (theme.panelSprite && image.transform.parent && image.transform.parent.name == PanelShadowName)
+                {
+                    var shadow = image.transform.parent.GetComponent<Image>();
+                    if (shadow && !shadow.sprite) shadow.enabled = false;
+                }
+            }
             foreach (var control in GetComponentsInChildren<Selectable>(true))
             {
                 if (control.transition == Selectable.Transition.ColorTint) control.colors = theme.Controls;
+                if (control is Slider slider)
+                {
+                    ApplySlider(slider);
+                    continue;
+                }
+                if (control is Toggle toggle)
+                {
+                    ApplyToggle(toggle);
+                    continue;
+                }
                 var image = control.targetGraphic as Image;
                 if (!image) continue;
                 if (control is Button || control is Dropdown) ApplySurface(image, theme.parchment, theme.buttonSprite);
@@ -97,6 +116,28 @@ namespace Sokoban
                     field.caretColor = theme.ink;
                     field.selectionColor = theme.active;
                 }
+            }
+        }
+
+        void ApplySlider(Slider slider)
+        {
+            var knob = slider.targetGraphic as Image;
+            if (knob && theme.sliderKnobSprite) ApplySurface(knob, Color.white, theme.sliderKnobSprite);
+            var track = slider.transform.Find("Background");
+            var trackImage = track ? track.GetComponent<Image>() : null;
+            if (trackImage && theme.sliderTrackSprite) ApplySurface(trackImage, Color.white, theme.sliderTrackSprite);
+        }
+
+        void ApplyToggle(Toggle toggle)
+        {
+            var box = toggle.targetGraphic as Image;
+            if (box && theme.checkOffSprite) ApplySurface(box, Color.white, theme.checkOffSprite);
+            var mark = toggle.graphic as Image;
+            if (mark && theme.checkOnSprite)
+            {
+                mark.sprite = theme.checkOnSprite;
+                mark.type = Image.Type.Sliced;
+                mark.color = Color.white;
             }
         }
 

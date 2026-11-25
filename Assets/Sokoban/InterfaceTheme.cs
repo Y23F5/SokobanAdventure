@@ -30,6 +30,10 @@ namespace Sokoban
         public Sprite buttonSprite;
         public Sprite panelSprite;
         public Sprite inputSprite;
+        public Sprite sliderTrackSprite;
+        public Sprite sliderKnobSprite;
+        public Sprite checkOffSprite;
+        public Sprite checkOnSprite;
         internal int Revision { get; private set; }
 
         public ColorBlock Controls => new ColorBlock
