@@ -1,0 +1,37 @@
+local function phase(t, a, b)
+  local x = math.max(0, math.min(1, (t - a) / (b - a)))
+  return x * x * (3 - 2 * x)
+end
+
+function pose(t, ctx)
+  local n = #ctx.route
+  local from = ctx.route[1]
+  local home = ctx.route[n]
+  local dx = home.x - from.x
+  local dz = home.y - from.y
+  local dist = math.sqrt(dx * dx + dz * dz)
+  local length = dist + 0.72
+  local travel = phase(t, 0.30, 0.78)
+  local lift = phase(t, 0.17, 0.30) * (1 - phase(t, 0.79, 0.91))
+  local extension = phase(t, 0.04, 0.24) * (1 - phase(t, 0.84, 0.99))
+  local grabScale = phase(t, 0, 0.1) * (1 - phase(t, 0.91, 1))
+  local cx = from.x + dx * travel
+  local cz = from.y + dz * travel
+  local yaw = 0
+  if dist > 0 then yaw = math.atan2(dx, dz) * 180 / math.pi end
+  local gaps = math.ceil(length / 0.18)
+  local parts = {
+    { id = 'belt', resource = 'Diorama/Conveyor', x = from.x + dx / 2, y = 0, z = from.y + dz / 2, yaw = yaw,
+      sx = 1, sy = math.max(0.001, extension), sz = math.max(0.001, extension) * length },
+    { id = 'grabber', resource = 'Diorama/Conveyor', child = 'arm', x = cx, y = 0.65 + 0.46 * (1 - lift) + 0.34 * math.sin(travel * math.pi), z = cz,
+      scale = math.max(0.001, grabScale) },
+    { id = ctx.boxId, resource = 'Diorama/Machinery', x = cx, y = lift * 0.26, z = cz }
+  }
+  for i = 0, gaps do
+    local f = i / gaps
+    parts[#parts + 1] = { id = 'roller-' .. i, resource = 'Diorama/Conveyor', child = 'roller',
+      x = from.x + dx * f, y = 0.14, z = from.y + dz * f, yaw = yaw, roll = 90 - travel * (length - 0.72) * 180 / math.pi / 0.06,
+      visible = extension > 0.01 }
+  end
+  return parts
+end

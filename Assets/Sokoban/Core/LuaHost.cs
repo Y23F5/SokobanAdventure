@@ -49,6 +49,10 @@ namespace Sokoban.Core
             math.Set("sqrt", DynValue.NewCallback((c, a) => DynValue.NewNumber(Math.Sqrt(a[0].CastToNumber().Value))));
             math.Set("min", DynValue.NewCallback((c, a) => DynValue.NewNumber(Math.Min(a[0].CastToNumber().Value, a[1].CastToNumber().Value))));
             math.Set("max", DynValue.NewCallback((c, a) => DynValue.NewNumber(Math.Max(a[0].CastToNumber().Value, a[1].CastToNumber().Value))));
+            math.Set("atan", DynValue.NewCallback((c, a) => DynValue.NewNumber(Math.Atan(a[0].CastToNumber().Value))));
+            math.Set("atan2", DynValue.NewCallback((c, a) => DynValue.NewNumber(Math.Atan2(a[0].CastToNumber().Value, a[1].CastToNumber().Value))));
+            math.Set("tan", DynValue.NewCallback((c, a) => DynValue.NewNumber(Math.Tan(a[0].CastToNumber().Value))));
+            math.Set("pow", DynValue.NewCallback((c, a) => DynValue.NewNumber(Math.Pow(a[0].CastToNumber().Value, a[1].CastToNumber().Value))));
             math.Set("pi", DynValue.NewNumber(Math.PI));
             return math;
         }

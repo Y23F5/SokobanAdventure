@@ -130,6 +130,17 @@ end";
         }
 
         [Fact]
+        public void StandardMathProvidesDeterministicTrigFunctions()
+        {
+            var method = new LuaRecoveryMethod(MakeHost(),
+                "function pose(t, ctx) return { { id = 'm', x = math.atan2(1, 1) * 180 / math.pi, y = math.pow(2, 3), z = math.tan(0) } } end");
+            var part = method.Pose(0f, Ctx()).Single();
+            Assert.Equal(45f, part.X, 3);
+            Assert.Equal(8f, part.Y, 3);
+            Assert.Equal(0f, part.Z, 3);
+        }
+
+        [Fact]
         public void MissingOptionalFieldsUseDefaults()
         {
             var method = new LuaRecoveryMethod(MakeHost(), "function pose(t, ctx) return { { id = 'd' } } end");
