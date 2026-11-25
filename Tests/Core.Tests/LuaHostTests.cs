@@ -141,6 +141,26 @@ end";
         }
 
         [Fact]
+        public void ParamsAreExposedOnContext()
+        {
+            var ctx = new RecoveryContext("r", "box-1", RecoveryRules.Route(new Cell(4, 1), new Cell(2, 1)), 3.7f,
+                new System.Collections.Generic.Dictionary<string, float> { { "gateX", 4f }, { "gateZ", 2f } });
+            var method = new LuaRecoveryMethod(MakeHost(),
+                "function pose(t, ctx) return { { id = 'g', x = ctx.params.gateX, z = ctx.params.gateZ } } end");
+            var part = method.Pose(0f, ctx).Single();
+            Assert.Equal(4f, part.X, 3);
+            Assert.Equal(2f, part.Z, 3);
+        }
+
+        [Fact]
+        public void MissingParamsIsAnEmptyTable()
+        {
+            var method = new LuaRecoveryMethod(MakeHost(),
+                "function pose(t, ctx) return { { id = 'g', x = ctx.params.gateX == nil and 7 or 0 } } end");
+            Assert.Equal(7f, method.Pose(0f, Ctx()).Single().X, 3);
+        }
+
+        [Fact]
         public void MissingOptionalFieldsUseDefaults()
         {
             var method = new LuaRecoveryMethod(MakeHost(), "function pose(t, ctx) return { { id = 'd' } } end");

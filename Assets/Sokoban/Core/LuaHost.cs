@@ -6,7 +6,7 @@
  * LuaHost.Load(entryName, source)：用该入口的环境表加载脚本并按入口名与源码缓存编译结果，源码超过 8192 字符抛 InvalidOperationException。
  * LuaHost.Call(entryName, source, function, buildArgs)：在缓存的脚本里调用全局函数，参数由缓存脚本自己构造以满足 MoonSharp 的归属检查；指令数超过预算或脚本出错统一抛 InvalidOperationException，未知入口抛 UnknownIdException。
  * LuaHost.StandardMath(script)：构造只含纯数学函数的 math 表，不提供时间与随机函数。
- * LuaRecoveryMethod：把脚本里的 pose(t, ctx) 包装成 IRecoveryMethod，ctx 每次调用重新构造为只读表，返回的零件转为 RecoveryPart。
+ * LuaRecoveryMethod：把脚本里的 pose(t, ctx) 包装成 IRecoveryMethod，ctx 每次调用重新构造为只读表（含 params 数值参数表），返回的零件转为 RecoveryPart。
  */
 using System;
 using System.Collections.Generic;
@@ -134,6 +134,9 @@ namespace Sokoban.Core
                     route.Set(i + 1, DynValue.NewTable(cell));
                 }
                 table.Set("route", DynValue.NewTable(route));
+                var parameters = new Table(script);
+                foreach (var pair in ctx.Params) parameters.Set(pair.Key, DynValue.NewNumber(pair.Value));
+                table.Set("params", DynValue.NewTable(parameters));
                 return new[] { DynValue.NewNumber(t), DynValue.NewTable(table) };
             });
             if (result.Type != DataType.Table) throw new InvalidOperationException("pose 必须返回零件表");
