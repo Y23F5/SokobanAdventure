@@ -2,6 +2,7 @@
  * @file RuntimeLayoutUI.cs
  * @brief Act 把场景按钮的操作交给布局会话；Tool 选择素材或移动工具，ApplyPoint 执行手动输入的世界格命令。
  * LateUpdate 刷新布局、文件及确认面板；RefreshEntries 按目录或房间清单生成可滚动按钮；
+ * CanBindSelection 检查当前格能否绑定外观，BindingTarget 显示绑定对象和格子。
  * ChooseEntry 分派文件和房间选取，RefreshTools 同步书签、选中高亮及属性说明。
  */
 using System.IO;
@@ -102,8 +103,22 @@ namespace Sokoban
                 }
             }
             bindAsset.gameObject.SetActive(custom && pickedAsset!=null);
+            if (custom && pickedAsset != null)
+                bindAsset.interactable = (string)assets[pickedAsset]["kind"] == "uiImage" || CanBindSelection(draft);
             foreach(var c in cards) c.Value.image.color=c.Key==pickedAsset?new Color32(255,195,104,255):new Color32(255,228,182,255);
         }
+        static bool CanBindSelection(RoomDraft draft) => draft.SelectedCell is Vector2Int cell
+            && RoomFile.Terrain(draft.Room, cell) != RoomFile.Void;
+
+        string BindingTarget(RoomDraft draft, JToken asset)
+        {
+            if ((string)asset["kind"] == "uiImage") return "绑定位置：当前房间界面";
+            if (!CanBindSelection(draft)) return "选择地图上的物件或地形格后，可为它绑定素材";
+            var cell = draft.SelectedCell.Value;
+            var target = draft.Selected ?? (RoomFile.Terrain(draft.Room, cell) == '#' ? "墙壁" : "地板");
+            return "绑定位置：" + target + " " + cell;
+        }
+
         public void Act(string action)
         {
             var d=Panel.Draft;
@@ -123,7 +138,9 @@ namespace Sokoban
                 case "选物件": custom=false;terrain=false;break;
                 case "选地形": custom=false;terrain=true;break;
                 case "选素材": custom=true;break;
-                case "绑定素材": Panel.Run(()=>d.BindAsset(pickedAsset),"已更新绑定");break;
+                case "绑定素材":
+                    Panel.Run(() => { d.BindAsset(pickedAsset); Panel.CancelTool(); }, "已更新绑定");
+                    break;
                 case "切换房间视图": host.ToggleRoomView();workspaceOpen=false;break;
                 case "选择": Tool(RoomTool.Select);break;
                 case "纸箱": Tool(RoomTool.Box);break;
@@ -240,7 +257,12 @@ namespace Sokoban
             for(int i=0;i<toolButtons.Length;i++)
                 if(toolButtons[i])toolButtons[i].image.color=(int)draft.Tool==i?selected:normal;
             var obj=draft.Find(draft.Selected);
-            if(custom && pickedAsset!=null) { properties.text=(string)draft.Room["assets"][pickedAsset]["name"]+"  "+thumbnails.SizeReport(pickedAsset)+"\n"+(draft.Selected==null?"可绑定到当前房间或选中对象":"选中："+draft.Selected);return; }
+            if (custom && pickedAsset != null)
+            {
+                var asset = draft.Room["assets"][pickedAsset];
+                properties.text = (string)asset["name"] + "  " + thumbnails.SizeReport(pickedAsset) + "\n" + BindingTarget(draft, asset);
+                return;
+            }
             properties.text=draft.Tool==RoomTool.Box?"纸箱\n在空地上放置一个箱子。"
                 :draft.Tool==RoomTool.Target?"目标点\n标记箱子需要到达的格子。"
                 :obj!=null?draft.Selected+"\n当前格 "+RoomFile.At(obj)+(obj["recoveryCell"]!=null?"\n恢复格 "+RoomFile.Cell(obj["recoveryCell"]):"")
