@@ -137,7 +137,7 @@ namespace Sokoban
             RequireValid(source,catalog);
             var world=(JObject)source.DeepClone(); var root=Path.GetDirectoryName(Path.GetFullPath(path));
             foreach(var row in world["rooms"]) {
-                var room=catalog[(string)row["levelId"]]; var text=room.ToString();
+                var room=RoomFile.ForExport((JObject)catalog[(string)row["levelId"]]); var text=room.ToString();
                 string relative=(string)row["file"];
                 if(!string.IsNullOrEmpty(relative) && !Path.IsPathRooted(relative) && !relative.Split('/','\\').Contains("..")) {
                     var original=Path.Combine(root,relative);

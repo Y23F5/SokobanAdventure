@@ -1,6 +1,6 @@
 /**
  * @file RoomFile.cs
- * @brief 独立房间格式与原子文件读写。Parse 读取及校验版本，Upgrade 按端点转换旧地形；
+ * @brief 独立房间格式与原子文件读写。ForExport 按分类外观目录和独立功能定义选择导出版本，Parse 读取及校验版本，Upgrade 按端点转换旧地形；
  * Check 验证必需条件，Cell 解出整数格，Point 编码格，Objects 枚举有位置的实体，
  * Size/At 分别读取尺寸及实体格，Inside/Floor 按北到南行序检查格子，Inward 计算门内侧位置，
  * Validate 检查字段、地形与身份；StructureIssues 定位边界缺口、门及入口预留错误。
@@ -22,10 +22,23 @@ namespace Sokoban
         {
             var room = JObject.Parse(json, new JsonLoadSettings { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error });
             if ((int?)room["formatVersion"] == 1 && ((string)room["kind"] ?? "room") == "room") Upgrade(room);
-            Check((string)room["kind"] == "room" && (int?)room["formatVersion"] == 2, "需要 room v2 或可升级的 v1 房间");
+            int? version = (int?)room["formatVersion"];
+            Check((string)room["kind"] == "room" && (version == 2 || version == 3), "需要有效的房间文件");
             Validate(room);
             RoomAssets.Validate(room);
             if (!draft) RequireStructure(room);
+            return room;
+        }
+
+        public static JObject ForExport(JObject source)
+        {
+            var room = (JObject)source.DeepClone();
+            foreach (string key in new[] { "appearanceCatalog", "objectDefinitions" })
+            {
+                if (room[key] == null) continue;
+                Check(room[key] is JObject, key + " 必须是目录对象");
+                if (room[key].HasValues) room["formatVersion"] = 3;
+            }
             return room;
         }
 

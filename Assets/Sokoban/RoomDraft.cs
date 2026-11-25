@@ -43,7 +43,7 @@ namespace Sokoban
         {
             RoomFile.RequireStructure(Room);
             RoomAssets.Publish(Room,path);
-            RoomFile.Write(path,Room.ToString());
+            RoomFile.Write(path,RoomFile.ForExport(Room).ToString());
         }
         public void Save(string path,bool export)
         {
