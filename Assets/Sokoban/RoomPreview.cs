@@ -154,9 +154,14 @@ namespace Sokoban
                         Retrack(foundation);
                     }
                     string kind = RoomFile.Floor(room, cell) ? "Floor" : "Wall";
-                    var tile = Model(kind, kind + " " + cell, cell, group, Quaternion.identity);
+                    string model = kind;
+                    if (kind == "Floor" && (theme == "warehouse" || factory || forest))
+                    {
+                        int variant = (x * 17 + y * 29 + x * y) % 3;
+                        model = "Diorama/" + theme + "Tile" + variant;
+                    }
+                    var tile = Model(model, kind + " " + cell, cell, group, Quaternion.identity);
                     if (kind == "Wall") { tile.localScale = new Vector3(1,2.6f,1); Retrack(tile); }
-                    else if (factory || forest) tile.GetComponentInChildren<Renderer>().sharedMaterial = Resources.Load<Material>("LayoutModels/" + (factory ? "Stone" : "Sage"));
                 }
             foreach (var item in RoomFile.Objects(room))
             {
