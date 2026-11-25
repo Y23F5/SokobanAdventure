@@ -123,9 +123,24 @@ namespace Sokoban
         {
             var knob = slider.targetGraphic as Image;
             if (knob && theme.sliderKnobSprite) ApplySurface(knob, Color.white, theme.sliderKnobSprite);
+            if (!theme.sliderTrackSprite) return;
             var track = slider.transform.Find("Background");
             var trackImage = track ? track.GetComponent<Image>() : null;
-            if (trackImage && theme.sliderTrackSprite) ApplySurface(trackImage, Color.white, theme.sliderTrackSprite);
+            if (trackImage)
+            {
+                ApplySurface(trackImage, Color.white, theme.sliderTrackSprite);
+                var rect = trackImage.rectTransform;
+                rect.anchorMin = new Vector2(rect.anchorMin.x, 0);
+                rect.anchorMax = new Vector2(rect.anchorMax.x, 1);
+            }
+            var fillArea = slider.transform.Find("Fill Area") as RectTransform;
+            if (fillArea)
+            {
+                fillArea.anchorMin = new Vector2(fillArea.anchorMin.x, 0);
+                fillArea.anchorMax = new Vector2(fillArea.anchorMax.x, 1);
+            }
+            var fill = slider.fillRect ? slider.fillRect.GetComponent<Image>() : null;
+            if (fill) ApplySurface(fill, Color.white, theme.sliderTrackSprite);
         }
 
         void ApplyToggle(Toggle toggle)
