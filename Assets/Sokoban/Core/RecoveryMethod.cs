@@ -1,7 +1,7 @@
 /**
  * @file RecoveryMethod.cs
  * @brief 恢复方法的宿主接口：Pose(t, ctx) 是纯函数，返回此刻全部零件的完整描述，表现层只做零件池加姿态应用。
- * RecoveryPart：一个零件（零件 ID、资源引用、位置、朝向角、缩放、颜色、可见度、可选的动画采样时刻）。
+ * RecoveryPart：一个零件（零件 ID、资源引用、位置、偏航、俯仰、翻滚、统一缩放与分轴缩放、颜色、可见度、可选的动画剪辑名与采样时刻、可选的预制件子节点名）。
  * RecoveryContext：只读上下文（房间 ID、箱子 ID、路线格、时长、确定性种子）。
  * IRecoveryMethod.Pose(t, ctx)：t 取 0 到 1，只由进度与上下文决定姿态，不依赖前一帧。
  * RecoveryContext.SeedOf(roomId, objectId)：由房间 ID 加对象 ID 算出稳定种子（FNV-1a），读档重放结果一致。
@@ -26,9 +26,18 @@ namespace Sokoban.Core
         public string Color { get; }
         public bool Visible { get; }
         public float? ClipTime { get; }
+        public float Pitch { get; }
+        public float Roll { get; }
+        public float ScaleX { get; }
+        public float ScaleY { get; }
+        public float ScaleZ { get; }
+        public string Clip { get; }
+        public string Child { get; }
 
         public RecoveryPart(string partId, string resource, float x, float y, float z,
-            float yaw = 0, float scale = 1, string color = null, bool visible = true, float? clipTime = null)
+            float yaw = 0, float scale = 1, string color = null, bool visible = true, float? clipTime = null,
+            float pitch = 0, float roll = 0, float scaleX = 1, float scaleY = 1, float scaleZ = 1,
+            string clip = null, string child = null)
         {
             PartId = partId;
             Resource = resource;
@@ -38,6 +47,13 @@ namespace Sokoban.Core
             Color = color;
             Visible = visible;
             ClipTime = clipTime;
+            Pitch = pitch;
+            Roll = roll;
+            ScaleX = scaleX;
+            ScaleY = scaleY;
+            ScaleZ = scaleZ;
+            Clip = clip;
+            Child = child;
         }
     }
 

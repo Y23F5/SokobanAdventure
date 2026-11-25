@@ -145,7 +145,9 @@ namespace Sokoban.Core
                 var clip = p.Get("clip");
                 parts.Add(new RecoveryPart(id, p.Get("resource").CastToString(), Num("x", 0), Num("y", 0), Num("z", 0),
                     Num("yaw", 0), Num("scale", 1), p.Get("color").CastToString(),
-                    visible.IsNil() || visible.CastToBool(), clip.IsNil() ? (float?)null : (float)clip.CastToNumber().Value));
+                    visible.IsNil() || visible.CastToBool(), clip.IsNil() ? (float?)null : (float)clip.CastToNumber().Value,
+                    Num("pitch", 0), Num("roll", 0), Num("sx", 1), Num("sy", 1), Num("sz", 1),
+                    p.Get("clipName").CastToString(), p.Get("child").CastToString()));
             }
             return parts;
         }

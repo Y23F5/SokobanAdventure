@@ -115,6 +115,35 @@ end";
         }
 
         [Fact]
+        public void RotationAxisScaleClipNameAndChildMapToPartFields()
+        {
+            var method = new LuaRecoveryMethod(MakeHost(),
+                "function pose(t, ctx) return { { id = 'q', resource = 'lift', pitch = 30, roll = 15, sx = 2, sy = 3, sz = 4, clipName = 'ForestDecay', child = 'arm' } } end");
+            var part = method.Pose(0f, Ctx()).Single();
+            Assert.Equal(30f, part.Pitch);
+            Assert.Equal(15f, part.Roll);
+            Assert.Equal(2f, part.ScaleX);
+            Assert.Equal(3f, part.ScaleY);
+            Assert.Equal(4f, part.ScaleZ);
+            Assert.Equal("ForestDecay", part.Clip);
+            Assert.Equal("arm", part.Child);
+        }
+
+        [Fact]
+        public void MissingOptionalFieldsUseDefaults()
+        {
+            var method = new LuaRecoveryMethod(MakeHost(), "function pose(t, ctx) return { { id = 'd' } } end");
+            var part = method.Pose(0f, Ctx()).Single();
+            Assert.Equal(0f, part.Pitch);
+            Assert.Equal(0f, part.Roll);
+            Assert.Equal(1f, part.ScaleX);
+            Assert.Equal(1f, part.ScaleY);
+            Assert.Equal(1f, part.ScaleZ);
+            Assert.Null(part.Clip);
+            Assert.Null(part.Child);
+        }
+
+        [Fact]
         public void ExtraFieldsMapToPartFields()
         {
             var method = new LuaRecoveryMethod(MakeHost(),
