@@ -1,7 +1,8 @@
 /**
  * @file InterfaceInteractionVerification.cs
  * @brief Run starts Play Mode from the production menu. Step drives native uGUI events on all eight template types and checks production navigation.
- * VerifyBookmarkRendering renders each scene instance at the same coordinates and compares the complete button artwork in both states.
+ * VerifyButtonArtwork renders actual scene buttons at the same coordinates and compares their backgrounds in both states.
+ * CheckMenuButtons verifies that the editor entry shares a row with the other main actions and receives the same focus styling.
  * Update advances the test once per frame and exits the batch process with the observed result.
  */
 using System;
@@ -12,7 +13,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Object = UnityEngine.Object;
 
@@ -66,13 +66,14 @@ namespace Sokoban.Editor
             Require(Vector4.Distance(graphic.canvasRenderer.GetColor(), expected) < .02f, label);
         }
 
-        static void VerifyBookmarkRendering(Button[] tabs, InterfaceTheme theme)
+        static void VerifyButtonArtwork(Button[] buttons, Color baseColor, Color activeColor, string group,
+            Transform menuBoard = null)
         {
-            var stage = new GameObject("书签对照", typeof(RectTransform), typeof(Canvas));
+            var stage = new GameObject("界面对照", typeof(RectTransform), typeof(Canvas));
             stage.layer = 30;
             var viewpoint = new GameObject("书签相机", typeof(Camera));
             var camera = viewpoint.GetComponent<Camera>();
-            var target = new RenderTexture(260, 92, 24);
+            var target = menuBoard ? new RenderTexture(560, 510, 24) : new RenderTexture(260, 92, 24);
             var pixels = new Texture2D(target.width, target.height, TextureFormat.RGBA32, false);
             var previous = RenderTexture.active;
             try
@@ -89,7 +90,7 @@ namespace Sokoban.Editor
                 canvas.renderMode = RenderMode.WorldSpace;
                 canvas.worldCamera = camera;
                 ((RectTransform)stage.transform).sizeDelta = new Vector2(target.width, target.height);
-                var copies = tabs.Select(button => Object.Instantiate(button, stage.transform, false)).ToArray();
+                var copies = buttons.Select(button => Object.Instantiate(button, stage.transform, false)).ToArray();
                 foreach (var copy in copies)
                 {
                     foreach (Transform part in copy.GetComponentsInChildren<Transform>(true)) part.gameObject.layer = 30;
@@ -97,6 +98,7 @@ namespace Sokoban.Editor
                     rect.anchorMin = rect.anchorMax = new Vector2(.5f, .5f);
                     rect.anchoredPosition = Vector2.zero;
                     copy.GetComponentInChildren<Text>().enabled = false;
+                    copy.interactable = true;
                     copy.gameObject.SetActive(false);
                 }
 
@@ -110,7 +112,7 @@ namespace Sokoban.Editor
                 }
 
                 Color32[] normal = null;
-                foreach (var state in new[] { (name: "未选中", tint: theme.parchment), (name: "选中", tint: theme.active) })
+                foreach (var state in new[] { (name: "未选中", tint: baseColor), (name: "选中", tint: activeColor) })
                 {
                     Color32[] reference = null;
                     foreach (var copy in copies)
@@ -120,11 +122,11 @@ namespace Sokoban.Editor
                         Render();
                         var frame = pixels.GetPixels32();
                         if (reference == null) reference = frame;
-                        else Require(frame.SequenceEqual(reference), copy.name + " " + state.name + "与物件书签边框逐像素一致");
+                        else Require(frame.SequenceEqual(reference), group + " · " + copy.name + " " + state.name + "时与同组首项边框及底色逐像素一致");
                         copy.gameObject.SetActive(false);
                     }
                     Require(!reference[target.width * (target.height / 2) + target.width / 2].Equals(reference[0]) &&
-                        reference.Distinct().Count() > 3, state.name + "书签渲染得到边框和底色");
+                        reference.Distinct().Count() > 3, group + " · " + state.name + "时渲染得到边框和底色");
                     if (normal == null) normal = reference;
                     else Require(!normal.SequenceEqual(reference), "两个状态的渲染颜色可区分");
                 }
@@ -132,6 +134,17 @@ namespace Sokoban.Editor
                 string output = Environment.GetEnvironmentVariable("SOKOBAN_BOOKMARK_EVIDENCE");
                 if (string.IsNullOrWhiteSpace(output)) return;
                 Directory.CreateDirectory(output);
+                if (menuBoard)
+                {
+                    var view = (RectTransform)Object.Instantiate(menuBoard, stage.transform, false);
+                    foreach (Transform part in view.GetComponentsInChildren<Transform>(true)) part.gameObject.layer = 30;
+                    view.anchorMin = view.anchorMax = new Vector2(.5f, .5f);
+                    view.anchoredPosition = Vector2.zero;
+                    Render();
+                    File.WriteAllBytes(Path.Combine(output, "主菜单-默认态.png"), pixels.EncodeToPNG());
+                    return;
+                }
+                if (group != "分页标签") return;
                 for (int i = 0; i < copies.Length; i++)
                 {
                     var copy = copies[i];
@@ -141,7 +154,7 @@ namespace Sokoban.Editor
                 }
                 for (int selected = 0; selected < copies.Length; selected++)
                 {
-                    for (int i = 0; i < copies.Length; i++) copies[i].image.color = i == selected ? theme.active : theme.parchment;
+                    for (int i = 0; i < copies.Length; i++) copies[i].image.color = i == selected ? activeColor : baseColor;
                     Render();
                     File.WriteAllBytes(Path.Combine(output, $"书签-{selected + 1}.png"), pixels.EncodeToPNG());
                 }
@@ -157,6 +170,36 @@ namespace Sokoban.Editor
             }
         }
 
+        static IEnumerator CheckMenuButtons(MainMenuNavigation menu, EventSystem events)
+        {
+            var board = menu.continueButton.transform.parent;
+            var buttons = board.GetComponentsInChildren<Button>(true);
+            string Action(Button button) => button.onClick.GetPersistentMethodName(0);
+            var primary = new[] { "StartGame", "ContinueGame", "OpenEditor", "Quit" }
+                .Select(action => buttons.Single(button => Action(button) == action)).ToArray();
+            var secondary = new[] { "Settings", "Help" }
+                .Select(action => buttons.Single(button => Action(button) == action)).ToArray();
+            Require(buttons.Length == 6 && buttons.All(button => button.transform.parent == board), "主菜单六个入口同级，无独立背景包裹");
+            Require(primary.Select(button => ((RectTransform)button.transform).rect.size).Distinct().Count() == 1 &&
+                secondary.Select(button => ((RectTransform)button.transform).rect.size).Distinct().Count() == 1 &&
+                buttons.Select(button => button.GetComponentInChildren<Text>().fontSize).Distinct().Count() == 1,
+                "四个主入口等宽等高，设置与操作说明等宽等高，六项字号相同");
+            Require(events.currentSelectedGameObject == primary[0].gameObject, "启动时键盘焦点在开始游戏");
+            var theme = board.GetComponentInParent<InterfaceThemeScope>().theme;
+            var editor = primary[2];
+            events.SetSelectedGameObject(null);
+            var normal = WaitForTint(editor.targetGraphic, Color.white, "关卡编辑器失去焦点时恢复默认底色");
+            while (normal.MoveNext()) yield return null;
+            VerifyButtonArtwork(primary, theme.parchment, theme.parchment * theme.focus, "主菜单主入口", board);
+            VerifyButtonArtwork(secondary, theme.parchment, theme.parchment * theme.focus, "主菜单并排入口");
+            events.SetSelectedGameObject(editor.gameObject);
+            var focus = WaitForTint(editor.targetGraphic, theme.focus, "关卡编辑器获得焦点时显示共享焦点色");
+            while (focus.MoveNext()) yield return null;
+            events.SetSelectedGameObject(primary[0].gameObject);
+            normal = WaitForTint(editor.targetGraphic, Color.white, "焦点移回开始游戏后关卡编辑器再次恢复默认底色");
+            while (normal.MoveNext()) yield return null;
+        }
+
         static IEnumerator Step()
         {
             yield return null;
@@ -165,6 +208,8 @@ namespace Sokoban.Editor
             var panels = menu.panels;
             var events = EventSystem.current;
             Require(events && events.currentSelectedGameObject && events.currentSelectedGameObject.GetComponent<Button>().interactable, "主菜单初始键盘焦点");
+            var menuChecks = CheckMenuButtons(menu, events);
+            while (menuChecks.MoveNext()) yield return null;
             panels.Settings();
             Require(panels.settings.activeInHierarchy && panels.Modal && events.currentSelectedGameObject.transform.IsChildOf(panels.settings.transform), "设置与焦点");
             panels.Back();
@@ -230,8 +275,11 @@ namespace Sokoban.Editor
             var tip = Spawn("Tooltip", canvas);
             Require(!tip.GetComponent<Image>().raycastTarget, "提示不截取地图鼠标");
 
-            SceneManager.LoadScene("RuntimeEditor");
-            yield return null;
+            menu.continueButton.transform.parent.GetComponentsInChildren<Button>().Single(entry =>
+                entry.onClick.GetPersistentMethodName(0) == "OpenEditor").onClick.Invoke();
+            float openingDeadline = Time.realtimeSinceStartup + 10;
+            while (!Object.FindObjectOfType<LayoutHost>() && Time.realtimeSinceStartup < openingDeadline) yield return null;
+            Require(Object.FindObjectOfType<LayoutHost>(), "主菜单关卡编辑器按钮进入真实编辑场景");
             yield return null;
             var layout = Object.FindObjectOfType<RuntimeLayoutUI>();
             var tabs = new[] { layout.objectTab, layout.terrainTab, layout.assetTab };
@@ -247,7 +295,7 @@ namespace Sokoban.Editor
                 Require(tabs.Select((tab, index) => tab.image.color == (index == activeTab ? themeForTabs.active : themeForTabs.parchment) &&
                     tab.transform.localRotation == Quaternion.identity).All(value => value), tabs[activeTab].name + "选中后只改变高亮");
             }
-            VerifyBookmarkRendering(tabs, themeForTabs);
+            VerifyButtonArtwork(tabs, themeForTabs.parchment, themeForTabs.active, "分页标签");
             var toolbar = Object.FindObjectOfType<InterfaceTooltip>();
             Require(toolbar && !toolbar.tooltip.gameObject.activeSelf, "真实编辑器的工具提示初始隐藏");
             toolbar.OnPointerEnter(new PointerEventData(EventSystem.current));
