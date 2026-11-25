@@ -82,16 +82,16 @@ namespace Sokoban
             foreach (var entry in layout)
                 if (entry.group) entry.group.spacing = entry.value + theme.spacingAdjustment;
             foreach (var image in panels)
-                if (image) ApplySurface(image, theme.panel);
+                if (image) ApplySurface(image, theme.panel, theme.panelSprite);
             foreach (var control in GetComponentsInChildren<Selectable>(true))
             {
                 if (control.transition == Selectable.Transition.ColorTint) control.colors = theme.Controls;
                 var image = control.targetGraphic as Image;
                 if (!image) continue;
-                if (control is Button || control is Dropdown) ApplySurface(image, theme.parchment);
+                if (control is Button || control is Dropdown) ApplySurface(image, theme.parchment, theme.buttonSprite);
                 else if (control is InputField)
                 {
-                    ApplySurface(image, theme.field);
+                    ApplySurface(image, theme.field, theme.inputSprite);
                     var field = (InputField)control;
                     field.customCaretColor = true;
                     field.caretColor = theme.ink;
@@ -100,8 +100,15 @@ namespace Sokoban
             }
         }
 
-        void ApplySurface(Image image, Color tint)
+        void ApplySurface(Image image, Color tint, Sprite sprite)
         {
+            if (sprite)
+            {
+                image.color = Color.white;
+                image.sprite = sprite;
+                image.type = Image.Type.Sliced;
+                return;
+            }
             image.color = tint;
             if (!theme.controlFrame) return;
             image.sprite = theme.controlFrame;

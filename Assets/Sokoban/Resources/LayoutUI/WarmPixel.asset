@@ -27,3 +27,6 @@ MonoBehaviour:
   spacingAdjustment: 0
   transitionSeconds: 0.12
   controlFrame: {fileID: 21300000, guid: 989c2a24d8c0d1246b77abfdaa57c401, type: 3}
+  buttonSprite: {fileID: 21300000, guid: 97002037216822f905c97806bc67d20c, type: 3}
+  panelSprite: {fileID: 21300000, guid: 4d9f3b9ef284722974dd89031e7d90d4, type: 3}
+  inputSprite: {fileID: 21300000, guid: 2a6e90757db50d197c9d40b6edbc5227, type: 3}

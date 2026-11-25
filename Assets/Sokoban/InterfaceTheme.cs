@@ -27,6 +27,9 @@ namespace Sokoban
         [Range(-4, 8)] public float spacingAdjustment;
         [Range(0, .4f)] public float transitionSeconds = .12f;
         public Sprite controlFrame;
+        public Sprite buttonSprite;
+        public Sprite panelSprite;
+        public Sprite inputSprite;
         internal int Revision { get; private set; }
 
         public ColorBlock Controls => new ColorBlock
