@@ -76,14 +76,16 @@ namespace Sokoban
             if (state["selection"] is JArray selected) foreach (var selectedPoint in selected) Selection.Add(RoomFile.Cell(selectedPoint));
             else if (SelectedCell.HasValue && RoomFile.Terrain(Room, SelectedCell.Value) != RoomFile.Void) Selection.Add(SelectedCell.Value);
         }
-        public JObject Snapshot() => new JObject { ["version"]=1,["current"]=State(),["path"]=WorkPath,["saved"]=saved?.DeepClone(),["tool"]=(int)Tool,["brushAsset"]=BrushAsset,["undo"]=new JArray(undo.Reverse()),["redo"]=new JArray(redo.Reverse()) };
+        public JObject Snapshot() => new JObject { ["version"]=1,["current"]=State(),["path"]=WorkPath,["saved"]=saved?.DeepClone(),["tool"]=(int)Tool,["brushAsset"]=BrushAsset,["typedBrush"]=BrushAsset != null,["undo"]=new JArray(undo.Reverse()),["redo"]=new JArray(redo.Reverse()) };
         public void Recover(JObject snapshot) {
             RoomFile.Check((int?)snapshot["version"]==1,"草稿版本无效");
             foreach(var state in snapshot["undo"].Concat(snapshot["redo"]).Append(snapshot["current"])) {
                 var rooms=(JObject)state["data"]["rooms"];foreach(var prop in rooms.Properties()) RoomFile.Parse(prop.Value.ToString(), draft: true);
                 RoomFile.Check(rooms[(string)state["active"]]!=null,"草稿房间引用缺失");
             }
-            Apply((JObject)snapshot["current"]); saved=snapshot["saved"] as JObject; WorkPath=(string)snapshot["path"];BrushAsset=(string)snapshot["brushAsset"];Tool=(RoomTool)(int)snapshot["tool"];
+            Apply((JObject)snapshot["current"]); saved=snapshot["saved"] as JObject; WorkPath=(string)snapshot["path"];Tool=(RoomTool)(int)snapshot["tool"];
+            var model = (string)snapshot["brushAsset"];
+            if (model != null && (Tool == RoomTool.Decoration || (bool?)snapshot["typedBrush"] == true)) SelectAsset(model, Tool);
             undo.Clear(); redo.Clear();foreach(JObject value in snapshot["undo"]) undo.Push(value);foreach(JObject value in snapshot["redo"]) redo.Push(value);Revision++;
         }
         public void BeginWorld()
@@ -203,11 +205,23 @@ namespace Sokoban
                 int index = size.y - 1 - cell.y;
                 var row = ((string)next["terrainRowsNorthToSouth"][index]).ToCharArray();
                 char tile = tool == RoomTool.Wall ? '#' : tool == RoomTool.Erase ? RoomFile.Void : '.';
-                if (row[cell.x] == tile) continue;
                 var identity = next["terrainObjects"]?.FirstOrDefault(item => RoomFile.At(item) == cell);
-                identity?.Remove();
-                row[cell.x] = tile;
-                next["terrainRowsNorthToSouth"][index] = new string(row);
+                if (row[cell.x] != tile)
+                {
+                    identity?.Remove();
+                    identity = null;
+                    row[cell.x] = tile;
+                    next["terrainRowsNorthToSouth"][index] = new string(row);
+                }
+                if (tool != Tool || BrushAsset == null || (tool != RoomTool.Floor && tool != RoomTool.Wall)) continue;
+                if (identity == null)
+                {
+                    if (next["terrainObjects"] == null) next["terrainObjects"] = new JArray();
+                    identity = new JObject { ["id"] = "tile-" + Guid.NewGuid().ToString("N"), ["cell"] = RoomFile.Point(cell) };
+                    ((JArray)next["terrainObjects"]).Add(identity);
+                }
+                if (identity["visual"] == null) identity["visual"] = new JObject();
+                identity["visual"]["model"] = BrushAsset;
             }
             if (!JToken.DeepEquals(Room, next))
             {

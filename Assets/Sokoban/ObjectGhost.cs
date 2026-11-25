@@ -38,7 +38,7 @@ namespace Sokoban
             }
             var obj = moving ? draft.Find(draft.Selected) : null;
             var visual = obj?["visual"] as JObject;
-            if (!moving && draft.Tool == RoomTool.Decoration && draft.BrushAsset != null)
+            if (!moving && draft.BrushAsset != null)
                 visual = new JObject { ["model"] = draft.BrushAsset };
             bool box = moving ? obj != null && obj.Parent == draft.Room["boxes"] : draft.Tool == RoomTool.Box;
             string prefab = box ? RoomPreview.BoxModel((string)draft.Room["themeId"],obj) : "LayoutModels/Target";
@@ -50,7 +50,7 @@ namespace Sokoban
                 Hide();
                 if (!tint) tint = new Material(Resources.Load<Material>("LayoutModels/GhostSurface")) { hideFlags = HideFlags.HideAndDontSave };
                 model = visual?["model"] != null ? new GameObject() : Object.Instantiate(Resources.Load<GameObject>(prefab));
-                if (prefab == "LayoutModels/Wall") model.transform.localScale = new Vector3(1, 2.6f, 1);
+                if (prefab == "LayoutModels/Wall" && visual?["model"] == null) model.transform.localScale = new Vector3(1, 2.6f, 1);
                 model.name = "对象放置预览";
                 foreach (var child in model.GetComponentsInChildren<Transform>(true)) child.gameObject.hideFlags = HideFlags.HideAndDontSave;
                 if (visual != null)

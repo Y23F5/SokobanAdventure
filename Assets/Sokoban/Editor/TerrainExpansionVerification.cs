@@ -7,7 +7,7 @@
  * BuildAndReopen 从空房铺设走廊与门、保存并逐笔核对历史；ProtectedPreview 和 Conflict 分别检查保护格与世界预检。
  * ExpandSolo 向西南扩一格；CheckSoloModels/SoloModels 核对模型世界坐标及历史；SoloAutoRecovery 通过 Tick 自动写槽后重开。
  * SoloExport 导出并检查临时原点；SoloTrial 验证单房试玩前的结构拒绝及修复。
- * Erase 检查对象、地形及受保护格。Require 报告断言，Paint 调用共享笔刷并检查返回值。
+ * Erase 检查对象、地形及受保护格。Require 报告断言，Paint 调用共享笔刷并检查返回值。VerifyModelBrushes 用输入 GLB 检查分类放置和交换文件。
  */
 using System;
 using System.Linq;
@@ -374,6 +374,37 @@ namespace Sokoban.Editor
             draft.NewBlankRoom();
             try { PuzzleRun.FromDraft(draft); throw new InvalidOperationException("试玩接受了无出生点空房"); }
             catch (InvalidDataException ex) when (ex.Message.Contains("出生点")) { }
+        }
+
+        public static void VerifyModelBrushes()
+        {
+            var draft = new RoomDraft(Resources.Load<TextAsset>("DefaultRoom").text);
+            var path = Environment.GetEnvironmentVariable("SOKOBAN_BRUSH_MODEL");
+            var output = Environment.GetEnvironmentVariable("SOKOBAN_BRUSH_OUTPUT");
+            foreach (var category in new[] { RoomTool.Wall, RoomTool.Floor, RoomTool.Box, RoomTool.Target })
+            {
+                draft.Tool = category;
+                var model = draft.ImportAsset(path, "model");
+                draft.SelectAsset(model, category);
+                draft.Recover(draft.Snapshot());
+                Require(draft.BrushAsset == model && draft.Tool == category, "草稿还原分类笔刷");
+                var before = draft.Room.DeepClone();
+                var cell = category == RoomTool.Target ? new Vector2Int(4,4) : new Vector2Int(2,4);
+                if (category == RoomTool.Wall || category == RoomTool.Floor)
+                    Require(draft.Brush(new[] { cell, cell + Vector2Int.up }, category) == null, "连续铺设");
+                else draft.Click(cell);
+                var placed = draft.Room.DeepClone();
+                string collection = category == RoomTool.Box ? "boxes" : category == RoomTool.Target ? "targets" : "terrainObjects";
+                var item = placed[collection].Single(entity => RoomFile.At(entity) == cell);
+                Require((string)item["visual"]["model"] == model, "放置类型与模型");
+                draft.Undo(); Require(JToken.DeepEquals(draft.Room,before), "整笔撤销");
+                draft.Redo(); Require(JToken.DeepEquals(draft.Room,placed), "整笔重做");
+                Debug.Log("LOOK BRUSH PASS " + category);
+            }
+            draft.Save(output, true);
+            var reopened = RoomAssets.ReadRoom(output);
+            Require((int)reopened["formatVersion"] == 3 && ((JObject)reopened["appearanceCatalog"]).Count == 4 && ((JObject)reopened["assets"]).Count == 1, "四类共用一份资源并重读");
+            Debug.Log("LOOK BRUSH PASS exchange");
         }
 
         [MenuItem("Sokoban/验证/WS-05A 共享地形与扩建")]

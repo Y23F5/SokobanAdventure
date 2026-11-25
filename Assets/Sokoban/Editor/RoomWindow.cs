@@ -127,6 +127,20 @@ namespace Sokoban.Editor
                 Panel.Properties();
                 if (Panel.Draft.SelectedCell is Vector2Int cell && RoomFile.Terrain(Panel.Draft.Room, cell) != RoomFile.Void && GUILayout.Button("编辑行为"))
                     OpenBehavior();
+                if (RoomDraft.IsAppearanceTool(Panel.Draft.Tool))
+                {
+                    var tool = Panel.Draft.Tool;
+                    GUILayout.Label("当前工具的模型", EditorStyles.boldLabel);
+                    if (GUILayout.Button("使用默认外观")) Panel.Draft.Tool = tool;
+                    var catalog = Panel.Draft.Room["appearanceCatalog"]?[tool.ToString().ToLowerInvariant()] as Newtonsoft.Json.Linq.JObject;
+                    if (catalog != null) foreach (var look in catalog.Properties())
+                    {
+                        string id = (string)look.Value["model"];
+                        if (GUILayout.Button((string)Panel.Draft.Room["assets"]?[id]?["name"] ?? id))
+                            Panel.Run(() => Panel.Draft.SelectAsset(id, tool), "已选模型，在场景中放置");
+                    }
+                    if (GUILayout.Button("向当前工具导入模型")) Panel.ChooseFile("导入模型");
+                }
                 GUILayout.Label("房间素材");
                 GUILayout.BeginHorizontal();
                 foreach(var label in new[]{"导入模型","导入动作","导入贴图","导入界面图"})

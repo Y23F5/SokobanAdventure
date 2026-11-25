@@ -20,13 +20,22 @@ namespace Sokoban
         {
             var asset=RoomAssets.Import(path,kind);
             string id=(string)asset["id"];
-            if(Room["assets"]?[id]!=null) return id;
             var next=(JObject)Room.DeepClone();
             if(next["assets"]==null) next["assets"]=new JObject();
-            next["assets"][id]=asset;
+            if (next["assets"][id] == null) next["assets"][id] = asset;
+            if (kind == "model" && IsAppearanceTool(Tool))
+            {
+                string category = Tool.ToString().ToLowerInvariant();
+                if (next["appearanceCatalog"] == null) next["appearanceCatalog"] = new JObject();
+                var catalog = next["appearanceCatalog"];
+                if (catalog[category] == null) catalog[category] = new JObject();
+                catalog[category][id] = new JObject { ["model"] = id };
+            }
+            if (JToken.DeepEquals(Room, next)) return id;
             Commit(next,Selected);
             return id;
         }
+        public static bool IsAppearanceTool(RoomTool tool) => tool == RoomTool.Box || tool == RoomTool.Target || tool == RoomTool.Wall || tool == RoomTool.Floor;
         JObject RequireAsset(string id)
         {
             var asset=id==null?null:Room["assets"]?[id] as JObject;
@@ -75,11 +84,14 @@ namespace Sokoban
             Commit(next, Selected);
             if (selectedCell.HasValue) Select(selectedCell.Value);
         }
-        public void SelectAsset(string id)
+        public void SelectAsset(string id) => SelectAsset(id, RoomTool.Decoration);
+
+        public void SelectAsset(string id, RoomTool category)
         {
             RoomFile.Check((string)RequireAsset(id)["kind"]=="model","放置工具需要模型素材");
-            BrushAsset=id;
-            Tool=RoomTool.Decoration;
+            RoomFile.Check(category == RoomTool.Box || category == RoomTool.Target || category == RoomTool.Wall || category == RoomTool.Floor || category == RoomTool.Decoration, "此工具不支持模型素材");
+            Tool = category;
+            BrushAsset = id;
         }
         public void PlaceAsset(Vector2Int cell)
         {

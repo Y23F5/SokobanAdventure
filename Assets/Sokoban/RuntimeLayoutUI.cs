@@ -32,6 +32,7 @@ namespace Sokoban
         readonly AssetThumbnail thumbnails = new AssetThumbnail();
         readonly Dictionary<string,Button> cards = new Dictionary<string,Button>();
         string pickedAsset, paletteKey;
+        RoomTool paletteCategory = RoomTool.Decoration;
         bool custom, workspaceOpen,terrain;
         string[] listedEntries;
         string[] roomIds;
@@ -68,7 +69,8 @@ namespace Sokoban
         {
             var draft=Panel.Draft;
             var assets=draft.Room["assets"] as JObject;
-            string key=draft.ActiveId+string.Join(",",assets?.Properties().Select(p=>p.Name)??Enumerable.Empty<string>());
+            var catalog = draft.Room["appearanceCatalog"]?[paletteCategory.ToString().ToLowerInvariant()] as JObject;
+            string key=draft.ActiveId+paletteCategory+catalog+string.Join(",",assets?.Properties().Select(p=>p.Name)??Enumerable.Empty<string>());
             if(paletteKey!=key)
             {
                 paletteKey=key;
@@ -80,6 +82,7 @@ namespace Sokoban
                 if(assets!=null) foreach(var entry in assets.Properties())
                 {
                     string id=entry.Name;
+                    if (paletteCategory != RoomTool.Decoration && catalog?[id] == null) continue;
                     var b=Instantiate(entryPrefab,assetEntries,false);
                     cards.Add(id,b);
                     string kind=(string)entry.Value["kind"];
@@ -95,7 +98,7 @@ namespace Sokoban
                         pickedAsset = id;
                         if (kind == "model")
                         {
-                            draft.SelectAsset(id);
+                            draft.SelectAsset(id, paletteCategory);
                             Panel.Status = "左键放置，短按右键取消";
                         }
                     });
@@ -137,7 +140,9 @@ namespace Sokoban
                 case "返回": workspaceOpen=false;break;
                 case "选物件": custom=false;terrain=false;break;
                 case "选地形": custom=false;terrain=true;break;
-                case "选素材": custom=true;break;
+                case "选素材":
+                    paletteCategory = !custom && RoomDraft.IsAppearanceTool(d.Tool) ? d.Tool : RoomTool.Decoration;
+                    custom=true; pickedAsset=null;break;
                 case "绑定素材":
                     Panel.Run(() => { d.BindAsset(pickedAsset); Panel.CancelTool(); }, "已更新绑定");
                     break;

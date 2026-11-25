@@ -21,7 +21,12 @@ namespace Sokoban
         public string WorkPath { get; private set; }
         public Vector2Int? SelectedCell { get; private set; }
         public readonly HashSet<Vector2Int> Selection = new HashSet<Vector2Int>();
-        public RoomTool Tool;
+        RoomTool tool;
+        public RoomTool Tool
+        {
+            get => tool;
+            set { tool = value; BrushAsset = null; }
+        }
         public int Revision { get; private set; }
         JObject saved;
         readonly Stack<JObject> undo = new Stack<JObject>();
@@ -149,6 +154,8 @@ namespace Sokoban
             var next = (JObject)Room.DeepClone();
             var obj = new JObject { ["id"] = id, ["cell"] = RoomFile.Point(cell) };
             if (box) obj["recoveryCell"] = RoomFile.Point(cell);
+            if (BrushAsset != null && Tool == (box ? RoomTool.Box : RoomTool.Target))
+                obj["visual"] = new JObject { ["model"] = BrushAsset };
             ((JArray)next[box ? "boxes" : "targets"]).Add(obj);
             Commit(next, id);
             NotifyPlacement(id);
