@@ -13,6 +13,7 @@ namespace Sokoban
     public sealed class InterfaceTheme : ScriptableObject
     {
         public Font font;
+        public Font titleFont;
         public Color ink = new Color32(84, 55, 43, 255);
         public Color parchment = new Color32(255, 228, 182, 255);
         public Color active = new Color32(255, 204, 115, 255);

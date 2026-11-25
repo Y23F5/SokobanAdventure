@@ -19,8 +19,10 @@ namespace Sokoban
             public int size, min, max;
             public Vector2 insetMin, insetMax;
             public bool stretched;
+            public bool isTitle;
         }
         [Serializable] struct Spacing { public HorizontalOrVerticalLayoutGroup group; public float value; }
+        const int TitleFontSize = 24;
         public InterfaceTheme theme;
         public Image[] panels = Array.Empty<Image>();
         [SerializeField] List<Label> labels = new List<Label>();
@@ -51,7 +53,8 @@ namespace Sokoban
             {
                 text = text, size = text.fontSize, min = text.resizeTextMinSize, max = text.resizeTextMaxSize,
                 insetMin = rect.offsetMin, insetMax = rect.offsetMax,
-                stretched = rect.anchorMax.x > rect.anchorMin.x && (!rect.parent || !rect.parent.GetComponent<LayoutGroup>())
+                stretched = rect.anchorMax.x > rect.anchorMin.x && (!rect.parent || !rect.parent.GetComponent<LayoutGroup>()),
+                isTitle = text.fontSize >= TitleFontSize
             });
         }
 
@@ -63,7 +66,8 @@ namespace Sokoban
             foreach (var entry in labels)
             {
                 if (!entry.text) continue;
-                if (theme.font) entry.text.font = theme.font;
+                var face = entry.isTitle && theme.titleFont ? theme.titleFont : theme.font;
+                if (face) entry.text.font = face;
                 entry.text.color = theme.ink;
                 entry.text.fontSize = Mathf.Max(1, entry.size + theme.fontSizeAdjustment);
                 entry.text.resizeTextMinSize = Mathf.Max(1, entry.min + theme.fontSizeAdjustment);
