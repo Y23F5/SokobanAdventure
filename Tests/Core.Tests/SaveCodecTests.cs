@@ -52,7 +52,7 @@ namespace Sokoban.Core.Tests
             var room = MakeRoom();
             var data = MakeData(room);
             data.Boxes["r1"]["box-1"] = new[] { 1 };
-            var text = System.Text.Json.JsonSerializer.Serialize(data);
+            var text = SaveCodec.ToJson(data);
             Assert.Equal(SaveStatus.Corrupt, SaveCodec.Decode(text, "w", Hashes(room)).Status);
         }
 
@@ -80,7 +80,7 @@ namespace Sokoban.Core.Tests
             var room = MakeRoom();
             var data = MakeData(room);
             data.FormatVersion = 99;
-            var text = System.Text.Json.JsonSerializer.Serialize(data);
+            var text = SaveCodec.ToJson(data);
             Assert.Equal(SaveStatus.Incompatible, SaveCodec.Decode(text, "w", Hashes(room)).Status);
         }
 
