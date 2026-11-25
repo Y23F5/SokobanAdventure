@@ -4,7 +4,7 @@
  * Check 验证必需条件，Cell 解出整数格，Point 编码格，Objects 枚举有位置的实体，
  * Size/At 分别读取尺寸及实体格，Inside/Floor 按北到南行序检查格子，Inward 计算门内侧位置，
  * Validate 检查字段、地形与身份；StructureIssues 定位边界缺口、门及入口预留错误。
- * RequireStructure 在正式文件入口拒绝这些错误；Write 先写同目录临时文件再替换目标。
+ * RequireStructure 在正式文件入口拒绝这些错误；Write 转调 Core 的 AtomicFile.Write，先写同目录临时文件再替换目标。
  */
 using System;
 using System.IO;
@@ -180,23 +180,7 @@ namespace Sokoban
             string issue = StructureIssues(room).FirstOrDefault();
             Check(issue == null, issue);
         }
-        public static void Write(string path, string contents, Action<string> validateTemporary = null)
-        {
-            path = Path.GetFullPath(path);
-            string temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            try
-            {
-                File.WriteAllText(temp, contents);
-                validateTemporary?.Invoke(temp);
-                if (!File.Exists(path)) {File.Move(temp,path);return;}
-                for(int attempt=0;;attempt++)
-                {
-                    try { File.Replace(temp,path,null); break; }
-                    catch(IOException error) when (attempt<5 && ((error.HResult&65535)==1175 || (error.HResult&65535)==32))
-                    { System.Threading.Thread.Sleep(30*(attempt+1)); }
-                }
-            }
-            finally { if (File.Exists(temp)) File.Delete(temp); }
-        }
+        public static void Write(string path, string contents, Action<string> validateTemporary = null) =>
+            Sokoban.Core.AtomicFile.Write(path, contents, validateTemporary);
     }
 }
