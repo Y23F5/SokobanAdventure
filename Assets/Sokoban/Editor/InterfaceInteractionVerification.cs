@@ -1,10 +1,12 @@
 /**
  * @file InterfaceInteractionVerification.cs
  * @brief Run starts Play Mode from the production menu. Step drives native uGUI events on all eight template types and checks production navigation.
+ * VerifyBookmarkRendering renders each scene instance at the same coordinates and compares the complete button artwork in both states.
  * Update advances the test once per frame and exits the batch process with the observed result.
  */
 using System;
 using System.Collections;
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -62,6 +64,97 @@ namespace Sokoban.Editor
             while (Vector4.Distance(graphic.canvasRenderer.GetColor(), expected) >= .02f && Time.realtimeSinceStartup < end)
                 yield return null;
             Require(Vector4.Distance(graphic.canvasRenderer.GetColor(), expected) < .02f, label);
+        }
+
+        static void VerifyBookmarkRendering(Button[] tabs, InterfaceTheme theme)
+        {
+            var stage = new GameObject("书签对照", typeof(RectTransform), typeof(Canvas));
+            stage.layer = 30;
+            var viewpoint = new GameObject("书签相机", typeof(Camera));
+            var camera = viewpoint.GetComponent<Camera>();
+            var target = new RenderTexture(260, 92, 24);
+            var pixels = new Texture2D(target.width, target.height, TextureFormat.RGBA32, false);
+            var previous = RenderTexture.active;
+            try
+            {
+                camera.enabled = false;
+                camera.clearFlags = CameraClearFlags.SolidColor;
+                camera.backgroundColor = new Color32(249, 224, 170, 255);
+                camera.cullingMask = 1 << 30;
+                camera.targetTexture = target;
+                camera.orthographic = true;
+                camera.orthographicSize = target.height * .5f;
+                camera.transform.position = Vector3.back * 10;
+                var canvas = stage.GetComponent<Canvas>();
+                canvas.renderMode = RenderMode.WorldSpace;
+                canvas.worldCamera = camera;
+                ((RectTransform)stage.transform).sizeDelta = new Vector2(target.width, target.height);
+                var copies = tabs.Select(button => Object.Instantiate(button, stage.transform, false)).ToArray();
+                foreach (var copy in copies)
+                {
+                    foreach (Transform part in copy.GetComponentsInChildren<Transform>(true)) part.gameObject.layer = 30;
+                    var rect = (RectTransform)copy.transform;
+                    rect.anchorMin = rect.anchorMax = new Vector2(.5f, .5f);
+                    rect.anchoredPosition = Vector2.zero;
+                    copy.GetComponentInChildren<Text>().enabled = false;
+                    copy.gameObject.SetActive(false);
+                }
+
+                void Render()
+                {
+                    Canvas.ForceUpdateCanvases();
+                    camera.Render();
+                    RenderTexture.active = target;
+                    pixels.ReadPixels(new Rect(0, 0, target.width, target.height), 0, 0);
+                    pixels.Apply();
+                }
+
+                Color32[] normal = null;
+                foreach (var state in new[] { (name: "未选中", tint: theme.parchment), (name: "选中", tint: theme.active) })
+                {
+                    Color32[] reference = null;
+                    foreach (var copy in copies)
+                    {
+                        copy.gameObject.SetActive(true);
+                        copy.image.color = state.tint;
+                        Render();
+                        var frame = pixels.GetPixels32();
+                        if (reference == null) reference = frame;
+                        else Require(frame.SequenceEqual(reference), copy.name + " " + state.name + "与物件书签边框逐像素一致");
+                        copy.gameObject.SetActive(false);
+                    }
+                    Require(!reference[target.width * (target.height / 2) + target.width / 2].Equals(reference[0]) &&
+                        reference.Distinct().Count() > 3, state.name + "书签渲染得到边框和底色");
+                    if (normal == null) normal = reference;
+                    else Require(!normal.SequenceEqual(reference), "两个状态的渲染颜色可区分");
+                }
+
+                string output = Environment.GetEnvironmentVariable("SOKOBAN_BOOKMARK_EVIDENCE");
+                if (string.IsNullOrWhiteSpace(output)) return;
+                Directory.CreateDirectory(output);
+                for (int i = 0; i < copies.Length; i++)
+                {
+                    var copy = copies[i];
+                    copy.gameObject.SetActive(true);
+                    ((RectTransform)copy.transform).anchoredPosition = new Vector2((i - 1) * 72, 0);
+                    copy.GetComponentInChildren<Text>().enabled = true;
+                }
+                for (int selected = 0; selected < copies.Length; selected++)
+                {
+                    for (int i = 0; i < copies.Length; i++) copies[i].image.color = i == selected ? theme.active : theme.parchment;
+                    Render();
+                    File.WriteAllBytes(Path.Combine(output, $"书签-{selected + 1}.png"), pixels.EncodeToPNG());
+                }
+            }
+            finally
+            {
+                camera.targetTexture = null;
+                RenderTexture.active = previous;
+                Object.Destroy(pixels);
+                Object.Destroy(target);
+                Object.Destroy(stage);
+                Object.Destroy(viewpoint);
+            }
         }
 
         static IEnumerator Step()
@@ -146,10 +239,15 @@ namespace Sokoban.Editor
             Require(sizes.Count() == 1 && tabs.Select(tab => tab.image.sprite).Distinct().Count() == 1 &&
                 tabs.Select(tab => tab.colors).Distinct().Count() == 1 && tabs.Select(tab => tab.GetComponentInChildren<Text>().fontSize).Distinct().Count() == 1,
                 "物件、地形、自定义书签共用尺寸、边框、状态颜色和字号");
-            layout.Act("选素材");
-            yield return null;
-            Require(layout.assetTab.image.color == layout.interfaceStyle.theme.active && tabs.All(tab => tab.transform.localRotation == Quaternion.identity),
-                "切换自定义书签只高亮，不改变布局姿态");
+            var themeForTabs = layout.interfaceStyle.theme;
+            for (int activeTab = 0; activeTab < tabs.Length; activeTab++)
+            {
+                tabs[activeTab].onClick.Invoke();
+                yield return null;
+                Require(tabs.Select((tab, index) => tab.image.color == (index == activeTab ? themeForTabs.active : themeForTabs.parchment) &&
+                    tab.transform.localRotation == Quaternion.identity).All(value => value), tabs[activeTab].name + "选中后只改变高亮");
+            }
+            VerifyBookmarkRendering(tabs, themeForTabs);
             var toolbar = Object.FindObjectOfType<InterfaceTooltip>();
             Require(toolbar && !toolbar.tooltip.gameObject.activeSelf, "真实编辑器的工具提示初始隐藏");
             toolbar.OnPointerEnter(new PointerEventData(EventSystem.current));

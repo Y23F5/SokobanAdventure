@@ -2,6 +2,7 @@
  * @file InterfaceThemeAuthoring.cs
  * @brief Install creates the shared theme and eight uGUI prefab templates, then links the production pages to the theme.
  * CreateTemplate uses native controls and retains the existing material card and list entry as editable layout sources.
+ * RefreshPaletteTabs replaces the scene's mixed button sources with instances of Bookmark.prefab.
  * Verify checks page and prefab references, live theme propagation, control states and unchanged authored baselines.
  */
 using System;
@@ -18,6 +19,7 @@ namespace Sokoban.Editor
     {
         const string Root = "Assets/Sokoban/Resources/LayoutUI/";
         const string ThemePath = Root + "WarmPixel.asset";
+        const string BookmarkPath = Root + "Bookmark.prefab";
         const string PuzzlePath = "Assets/Sokoban/Resources/PuzzleSession.prefab";
         const string MenuPath = "Assets/Scenes/MainMenu.unity";
         const string EditorPath = "Assets/Scenes/RuntimeEditor.unity";
@@ -54,32 +56,60 @@ namespace Sokoban.Editor
             Verify();
         }
 
+        public static void RefreshPaletteTabs()
+        {
+            var theme = AssetDatabase.LoadAssetAtPath<InterfaceTheme>(ThemePath);
+            CreateTemplate("Bookmark", theme);
+            var scene = EditorSceneManager.OpenScene(EditorPath);
+            var layout = scene.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<RuntimeLayoutUI>(true)).Single();
+            MatchPaletteTabs(layout);
+            layout.interfaceStyle.Capture();
+            layout.interfaceStyle.Apply();
+            EditorSceneManager.SaveScene(scene);
+        }
+
         static void MatchPaletteTabs(RuntimeLayoutUI layout)
         {
-            var tabs = new[] { layout.objectTab, layout.terrainTab, layout.assetTab };
-            var example = tabs[0].GetComponentInChildren<Text>();
-            var shadow = tabs[0].GetComponent<Shadow>();
-            for (int i = 0; i < tabs.Length; i++)
-            {
-                var tab = tabs[i];
-                var rect = (RectTransform)tab.transform;
-                rect.sizeDelta = new Vector2(68, 38);
-                rect.anchoredPosition = new Vector2(39 + 72 * i, -27);
-                var label = tab.GetComponentInChildren<Text>();
-                label.alignment = TextAnchor.MiddleCenter;
-                label.fontSize = example.fontSize;
-                label.fontStyle = example.fontStyle;
-                label.resizeTextForBestFit = false;
-                label.rectTransform.anchorMin = Vector2.zero;
-                label.rectTransform.anchorMax = Vector2.one;
-                label.rectTransform.offsetMin = new Vector2(2, 0);
-                label.rectTransform.offsetMax = new Vector2(-2, 0);
-                if (!shadow) continue;
-                var effect = tab.GetComponent<Shadow>() ?? tab.gameObject.AddComponent<Shadow>();
-                effect.effectColor = shadow.effectColor;
-                effect.effectDistance = shadow.effectDistance;
-                effect.useGraphicAlpha = shadow.useGraphicAlpha;
-            }
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(BookmarkPath);
+            layout.objectTab = MakeTab(layout.objectTab, prefab, layout, "物件", "选物件");
+            layout.terrainTab = MakeTab(layout.terrainTab, prefab, layout, "地形", "选地形");
+            layout.assetTab = MakeTab(layout.assetTab, prefab, layout, "自定义", "选素材");
+        }
+
+        static Button MakeTab(Button previous, GameObject prefab, RuntimeLayoutUI layout, string title, string action)
+        {
+            if (PrefabUtility.GetCorrespondingObjectFromSource(previous.gameObject) == prefab) return previous;
+            var previousRect = (RectTransform)previous.transform;
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, previousRect.parent);
+            instance.name = title;
+            var rect = (RectTransform)instance.transform;
+            rect.SetSiblingIndex(previousRect.GetSiblingIndex());
+            rect.anchorMin = previousRect.anchorMin;
+            rect.anchorMax = previousRect.anchorMax;
+            rect.anchoredPosition = previousRect.anchoredPosition;
+            var label = instance.GetComponentInChildren<Text>();
+            label.text = title;
+            var button = instance.GetComponent<Button>();
+            UnityEditor.Events.UnityEventTools.AddStringPersistentListener(button.onClick, layout.Act, action);
+            foreach (var item in new UnityEngine.Object[] { instance, rect, label, button })
+                PrefabUtility.RecordPrefabInstancePropertyModifications(item);
+            UnityEngine.Object.DestroyImmediate(previous.gameObject);
+            return button;
+        }
+
+        static void ConfigureBookmark(GameObject root)
+        {
+            ((RectTransform)root.transform).sizeDelta = new Vector2(68, 38);
+            var outline = root.GetComponent<Outline>() ?? root.AddComponent<Outline>();
+            outline.effectColor = new Color32(146, 107, 80, 255);
+            outline.effectDistance = new Vector2(2, -2);
+            var label = root.GetComponentInChildren<Text>();
+            label.fontSize = 18;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.rectTransform.anchorMin = Vector2.zero;
+            label.rectTransform.anchorMax = Vector2.one;
+            label.rectTransform.offsetMin = new Vector2(2, 0);
+            label.rectTransform.offsetMax = new Vector2(-2, 0);
         }
 
         static Sprite CreateFrame()
@@ -148,6 +178,7 @@ namespace Sokoban.Editor
                 EditPrefab(path, root =>
                 {
                     if (name == "Dialog") ConnectDialog(root);
+                    if (name == "Bookmark") ConfigureBookmark(root);
                     ApplyTemplateTheme(root, theme);
                 });
                 return;
@@ -169,13 +200,8 @@ namespace Sokoban.Editor
                 default: root = DefaultControls.CreateButton(resources); break;
             }
             root.name = name;
-            if (name == "Bookmark")
-            {
-                var image = root.GetComponent<Image>();
-                image.color = theme.active;
-                ((RectTransform)root.transform).sizeDelta = new Vector2(82, 38);
-            }
             UseChineseLabels(root);
+            if (name == "Bookmark") ConfigureBookmark(root);
             var style = Link(root, theme);
             if (name == "Dialog" || name == "Tooltip" || name == "ScrollList") style.panels = new[] { root.GetComponent<Image>() };
             style.Apply();
