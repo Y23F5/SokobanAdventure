@@ -103,6 +103,16 @@ namespace Sokoban.Core
             return issues;
         }
 
+        public static List<Issue> ValidateDraft(RoomDraft draft, ValidationStage stage)
+        {
+            var door = draft.Doors.FirstOrDefault(d => d.Id == draft.PrimaryEntranceId && d.Role == "entry");
+            Cell? entry = door == null ? (Cell?)null : door.Cell - door.Outward;
+            var issues = Validate(draft.Room, stage, entry);
+            if (draft.RecoveryItems.Count == 0)
+                issues.Add(new Issue("recovery.none", stage == ValidationStage.Draft ? Severity.Hint : Severity.Error, draft.Room.Id, "本房没有恢复道具"));
+            return issues;
+        }
+
         public static bool HasErrors(IEnumerable<Issue> issues) => issues.Any(i => i.Severity == Severity.Error);
     }
 }
