@@ -103,7 +103,7 @@ namespace Sokoban.Core
             return issues;
         }
 
-        public static List<Issue> ValidateDraft(RoomDraft draft, ValidationStage stage)
+        public static List<Issue> ValidateDraft(RoomDraftModel draft, ValidationStage stage)
         {
             var door = draft.Doors.FirstOrDefault(d => d.Id == draft.PrimaryEntranceId && d.Role == "entry");
             Cell? entry = door == null ? (Cell?)null : door.Cell - door.Outward;

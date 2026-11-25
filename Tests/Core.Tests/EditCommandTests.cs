@@ -7,13 +7,13 @@ namespace Sokoban.Core.Tests
 {
     public class EditCommandTests
     {
-        static RoomDraft Blank()
+        static RoomDraftModel Blank()
         {
             var room = new Room("blank", 5, 5);
             for (int x = 0; x < 5; x++)
                 for (int y = 0; y < 5; y++)
                     room.SetTerrain(new Cell(x, y), x == 0 || y == 0 || x == 4 || y == 4 ? TerrainCategories.Wall : TerrainCategories.Floor);
-            return new RoomDraft(room);
+            return new RoomDraftModel(room);
         }
 
         [Fact]

@@ -1,7 +1,7 @@
 /**
  * @file EditCommands.cs
  * @brief 房间草稿模型与放置类编辑命令：草稿持有 Room、门、主入口与恢复道具，命令先预检再提交，非法则抛 InvalidOperationException、不压栈。
- * RoomDraft：编辑中的房间，允许缺出生点、缺主入口、没有恢复道具等中间态；恢复道具 ID 与房内对象共用 Room 的 ID 空间。
+ * RoomDraftModel：编辑中的房间，允许缺出生点、缺主入口、没有恢复道具等中间态；恢复道具 ID 与房内对象共用 Room 的 ID 空间。
  * PlaceObjectCommand(draft, id, categoryId, cell)：在地板空格放置一个对象，ID 不得重复；Revert 移除并释放 ID。
  * SetSpawnCommand(draft, cell)：把唯一的出生点移到指定地板空格，没有则新建；Revert 还原旧出生点或移除。
  * AddRecoveryItemCommand(draft, item)：添加恢复道具，时长必须大于 0、ID 不得重复；Revert 移除并释放 ID。
@@ -13,7 +13,7 @@ using System.Linq;
 
 namespace Sokoban.Core
 {
-    public sealed class RoomDraft
+    public sealed class RoomDraftModel
     {
         readonly List<RecoveryItem> items = new List<RecoveryItem>();
         readonly List<DoorInfo> doors = new List<DoorInfo>();
@@ -23,7 +23,7 @@ namespace Sokoban.Core
         public IReadOnlyList<RecoveryItem> RecoveryItems => items;
         public IReadOnlyList<DoorInfo> Doors => doors;
 
-        public RoomDraft(Room room, IEnumerable<DoorInfo> doors = null, string primaryEntranceId = null)
+        public RoomDraftModel(Room room, IEnumerable<DoorInfo> doors = null, string primaryEntranceId = null)
         {
             Room = room;
             if (doors != null) this.doors.AddRange(doors);
@@ -35,11 +35,11 @@ namespace Sokoban.Core
 
     public sealed class PlaceObjectCommand : ICommand
     {
-        readonly RoomDraft draft;
+        readonly RoomDraftModel draft;
         readonly string id, categoryId;
         readonly Cell cell;
 
-        public PlaceObjectCommand(RoomDraft draft, string id, string categoryId, Cell cell)
+        public PlaceObjectCommand(RoomDraftModel draft, string id, string categoryId, Cell cell)
         {
             this.draft = draft;
             this.id = id;
@@ -63,11 +63,11 @@ namespace Sokoban.Core
     public sealed class SetSpawnCommand : ICommand
     {
         const string SpawnId = "spawn";
-        readonly RoomDraft draft;
+        readonly RoomDraftModel draft;
         readonly Cell cell;
         Cell? previous;
 
-        public SetSpawnCommand(RoomDraft draft, Cell cell)
+        public SetSpawnCommand(RoomDraftModel draft, Cell cell)
         {
             this.draft = draft;
             this.cell = cell;
@@ -95,10 +95,10 @@ namespace Sokoban.Core
 
     public sealed class AddRecoveryItemCommand : ICommand
     {
-        readonly RoomDraft draft;
+        readonly RoomDraftModel draft;
         readonly RecoveryItem item;
 
-        public AddRecoveryItemCommand(RoomDraft draft, RecoveryItem item)
+        public AddRecoveryItemCommand(RoomDraftModel draft, RecoveryItem item)
         {
             this.draft = draft;
             this.item = item;
@@ -122,13 +122,13 @@ namespace Sokoban.Core
 
     public sealed class SetRecoveryDurationCommand : ICommand
     {
-        readonly RoomDraft draft;
+        readonly RoomDraftModel draft;
         readonly string itemId;
         readonly float duration;
         RecoveryItem before;
         RecoveryItem after;
 
-        public SetRecoveryDurationCommand(RoomDraft draft, string itemId, float duration)
+        public SetRecoveryDurationCommand(RoomDraftModel draft, string itemId, float duration)
         {
             this.draft = draft;
             this.itemId = itemId;

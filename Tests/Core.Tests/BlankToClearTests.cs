@@ -7,7 +7,7 @@ namespace Sokoban.Core.Tests
 {
     public class BlankToClearTests
     {
-        static RoomDraft BlankRoom()
+        static RoomDraftModel BlankRoom()
         {
             var room = new Room("mine", 7, 5);
             for (int x = 0; x < 7; x++)
@@ -20,10 +20,10 @@ namespace Sokoban.Core.Tests
                 new DoorInfo("entry", new Cell(0, 2), Cell.Left, "entry"),
                 new DoorInfo("exit", new Cell(6, 2), Cell.Right, "exit"),
             };
-            return new RoomDraft(room, doors, "entry");
+            return new RoomDraftModel(room, doors, "entry");
         }
 
-        static RoomDraft Build(CommandHistory history)
+        static RoomDraftModel Build(CommandHistory history)
         {
             var draft = BlankRoom();
             history.Execute(new SetSpawnCommand(draft, new Cell(2, 1)));
