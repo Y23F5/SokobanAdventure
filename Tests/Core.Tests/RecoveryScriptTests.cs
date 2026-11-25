@@ -20,6 +20,43 @@ namespace Sokoban.Core.Tests
         static RecoveryContext Ctx() =>
             new RecoveryContext("forest", "box-1", RecoveryRules.Route(new Cell(7, 2), new Cell(6, 2)), 3.7f);
 
+        static RecoveryContext VineCtx() =>
+            new RecoveryContext("forest", "box-1", RecoveryRules.Route(new Cell(7, 2), new Cell(6, 2)), 3.7f,
+                new System.Collections.Generic.Dictionary<string, float> { { "gateX", 4f }, { "gateZ", 2f }, { "yaw", 90f } });
+
+        [Fact]
+        public void ForestVineIsPlacedAtTheGateCell()
+        {
+            var vine = Method("forest-vine").Pose(0f, VineCtx()).Single();
+            Assert.Equal("forest-vine", vine.PartId);
+            Assert.Equal("Diorama/ForestVine", vine.Resource);
+            Assert.Equal(4f, vine.X, 3);
+            Assert.Equal(2f, vine.Z, 3);
+            Assert.Equal(90f, vine.Yaw, 3);
+            Assert.True(vine.Visible);
+        }
+
+        [Fact]
+        public void ForestVineSamplesRecoveryClipByProgress()
+        {
+            var method = Method("forest-vine");
+            var start = method.Pose(0f, VineCtx()).Single();
+            var mid = method.Pose(0.5f, VineCtx()).Single();
+            var end = method.Pose(1f, VineCtx()).Single();
+            Assert.Equal("VineRecovery", mid.Clip);
+            Assert.Equal(0f, start.ClipTime ?? -1f, 3);
+            Assert.Equal(0.5f, mid.ClipTime ?? -1f, 3);
+            Assert.Equal(1f, end.ClipTime ?? -1f, 3);
+        }
+
+        [Fact]
+        public void ForestVineWithoutParamsStillPosesAtOrigin()
+        {
+            var vine = Method("forest-vine").Pose(0.5f, Ctx()).Single();
+            Assert.Equal(0f, vine.X, 3);
+            Assert.Equal(0f, vine.Z, 3);
+        }
+
         [Fact]
         public void ForestDecayStartsWithIntactLogsAndNoTree()
         {
