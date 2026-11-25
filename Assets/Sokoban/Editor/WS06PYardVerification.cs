@@ -1,6 +1,6 @@
 /**
  * @file WS06PYardVerification.cs
- * @brief Run 加载正式世界，逐房生成地绘，验证 Unity 纹理、网格、邻接裁边和原型标牌尺寸。
+ * @brief Run 加载正式世界，逐房生成地绘，验证 Unity 纹理、网格、邻接裁边和原型标牌尺寸。VerifyFloorTiles 逐格检查主题地砖位置和模型尺寸。
  */
 using System.IO;
 using System.Linq;
@@ -11,6 +11,30 @@ namespace Sokoban.Editor
 {
     public static class WS06PYardVerification
     {
+        static void VerifyFloorTiles(JObject room, Transform group)
+        {
+            var size = RoomFile.Size(room);
+            var variants = new System.Collections.Generic.HashSet<Mesh>();
+            int count = 0;
+            for (int y = 0; y < size.y; y++)
+                for (int x = 0; x < size.x; x++)
+                {
+                    var cell = new Vector2Int(x, y);
+                    if (!RoomFile.Floor(room, cell)) continue;
+                    var tile = group.Find("Floor " + cell);
+                    RoomFile.Check(tile && tile.localPosition == new Vector3(x, 0, y), "主题地砖与格坐标不一致 " + cell);
+                    var mesh = tile.GetComponent<MeshFilter>().sharedMesh;
+                    var height = mesh.bounds.max.y;
+                    RoomFile.Check(mesh.name.StartsWith((string)room["themeId"] + "Tile") &&
+                        Mathf.Abs(mesh.bounds.size.x - .986f) < .001f && Mathf.Abs(mesh.bounds.size.z - .986f) < .001f &&
+                        height > 0 && height < .05f, "主题地砖网格尺寸或表面高度异常 " + cell);
+                    variants.Add(mesh);
+                    count++;
+                }
+            RoomFile.Check(variants.Count == 3, "正式房间地面缺少三种变化");
+            Debug.Log($"FLOOR PASS {room["levelId"]} cells={count} variants={variants.Count}");
+        }
+
         public static void Run()
         {
             var catalog = new JObject();
@@ -29,6 +53,7 @@ namespace Sokoban.Editor
                     var texture = yard.GetComponent<Renderer>().sharedMaterial.GetTexture("_BaseMap");
                     RoomFile.Check(yard.GetComponent<MeshFilter>().sharedMesh && texture && bounds.size.x > 1 && bounds.min.x >= previousEdge-.001f,"地绘缺失或交叠 " + id);
                     previousEdge = bounds.max.x;
+                    VerifyFloorTiles((JObject)catalog[id], group);
                     var scenery = id == "warehouse" ? new[] { "RackRow" } : id == "factory"
                         ? new[] { "TankRow", "SidePipes" } : new[] { "PineBank", "StoneBank" };
                     foreach (var name in scenery)
