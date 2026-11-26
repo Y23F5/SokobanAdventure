@@ -181,7 +181,8 @@ namespace Sokoban
         {
             var size = Size(room);
             Sokoban.Core.LegacyEntity Entity(JToken token) =>
-                token == null ? null : new Sokoban.Core.LegacyEntity((string)token["id"], ToCore(At(token)));
+                token == null ? null : new Sokoban.Core.LegacyEntity((string)token["id"], ToCore(At(token)),
+                    token["recoveryCell"] == null ? (Sokoban.Core.Cell?)null : ToCore(Cell(token["recoveryCell"])));
             return new Sokoban.Core.LegacyRoomData
             {
                 LevelId = (string)room["levelId"],

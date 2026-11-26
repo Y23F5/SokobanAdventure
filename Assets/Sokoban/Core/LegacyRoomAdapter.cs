@@ -1,7 +1,7 @@
 /**
  * @file LegacyRoomAdapter.cs
  * @brief 旧房间数据到 Core 草稿模型的转换：输入是 Unity 侧从旧 JObject 房间抽出的普通数据，Core 不引用 Newtonsoft。
- * LegacyEntity：旧房间里带 ID 与格子的实体（箱子、目标、出生点）。
+ * LegacyEntity：旧房间里带 ID 与格子的实体（箱子、目标、出生点），箱子可带可选的恢复格 RecoveryCell。
  * LegacyDoor：旧房间里的门（ID、格子、方向字母 N/E/S/W、角色）。
  * LegacyRoomData：旧房间拆出的数据（房间 ID、尺寸、由北向南的地形行、门、主入口、箱、目标、出生点）。
  * LegacyRoomAdapter.ToDraft(data)：行序转为原点在左下角，# 为墙，. 为地板，_ 为空格；门格改写为 door 地形并以门 ID 作实体 ID；
@@ -17,11 +17,13 @@ namespace Sokoban.Core
     {
         public string Id { get; }
         public Cell Cell { get; }
+        public Cell? RecoveryCell { get; }
 
-        public LegacyEntity(string id, Cell cell)
+        public LegacyEntity(string id, Cell cell, Cell? recoveryCell = null)
         {
             Id = id;
             Cell = cell;
+            RecoveryCell = recoveryCell;
         }
     }
 
@@ -86,7 +88,7 @@ namespace Sokoban.Core
                 doors.Add(new DoorInfo(door.Id, door.Cell, Outward(door.Direction), door.Role));
             }
 
-            foreach (var box in data.Boxes) room.AddObject(box.Id, ObjectCategories.Box, box.Cell);
+            foreach (var box in data.Boxes) room.AddObject(box.Id, ObjectCategories.Box, box.Cell, box.RecoveryCell);
             foreach (var target in data.Targets) room.AddObject(target.Id, ObjectCategories.Target, target.Cell);
             if (data.Spawn != null) room.AddObject(data.Spawn.Id, ObjectCategories.Spawn, data.Spawn.Cell);
             return new RoomDraftModel(room, doors, data.PrimaryEntranceId);

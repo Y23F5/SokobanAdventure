@@ -39,6 +39,8 @@ namespace Sokoban.Editor
                     var core = Gaps(issues);
                     foreach (var cell in legacy.Except(core)) failures.Add(name + " 旧实现有缺口而 Core 没有：" + cell);
                     foreach (var cell in core.Except(legacy)) failures.Add(name + " Core 有缺口而旧实现没有：" + cell);
+                    foreach (var issue in issues.Where(i => i.RuleId.StartsWith("box.recovery")))
+                        failures.Add(name + " Core 恢复格报错：" + issue.Location + " " + issue.Message);
                     foreach (var issue in issues.Where(i => i.RuleId == "door.geometry"))
                         failures.Add(name + " Core 门几何报错：" + issue.Location + " " + issue.Message);
                     Debug.Log("PARITY " + name + " legacyGaps=" + legacy.Count + " coreGaps=" + core.Count);
