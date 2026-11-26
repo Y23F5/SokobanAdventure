@@ -209,6 +209,27 @@ namespace Sokoban
                 () => { World = before; removedPlacements.Remove(id); }));
         }
 
+        public void AddConnection(WorldEndpoint from, WorldEndpoint to, string mode, bool allowReturn)
+        {
+            RoomFile.Check(World != null && from != null && to != null, "请选择世界中的两个门端点");
+            RoomFile.Check(from.LevelId != to.LevelId, "请选择不同房间的门");
+            var link = new WorldConnection(Guid.NewGuid().ToString("N"), mode, from, to, allowReturn);
+            var before = World;
+            var after = WorldLayout.WithConnections(before, before.Connections.Append(link).ToArray());
+            string issue = WorldLayout.ConnectionIssues(after, Catalog)
+                .FirstOrDefault(message => message.StartsWith(link.Id, StringComparison.Ordinal));
+            RoomFile.Check(issue == null, issue);
+            Execute(new DelegateCommand(() => World = after, () => World = before));
+        }
+
+        public void RemoveConnection(string id)
+        {
+            RoomFile.Check(World != null && World.Connections.Any(link => link.Id == id), "未找到连接 " + id);
+            var before = World;
+            var after = WorldLayout.WithConnections(before, before.Connections.Where(link => link.Id != id).ToArray());
+            Execute(new DelegateCommand(() => World = after, () => World = before));
+        }
+
         public void SetConnectionMode(string id, string mode)
         {
             RoomFile.Check(mode == WorldCodec.Teleport || mode == WorldCodec.Direct, "未知连接方式");

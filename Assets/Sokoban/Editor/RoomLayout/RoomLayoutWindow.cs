@@ -279,7 +279,12 @@ namespace Sokoban.Editor
                 AddButton(area, (draft.ActiveId == id ? "● " : "") + room.Value.Meta.Name + " · " + id, () => draft.UseRoom(id));
             }
             foreach (var connection in draft.World.Connections)
+            {
                 AddButton(area, Panel.ConnectionAction(connection), () => Panel.ToggleConnection(connection));
+                AddButton(area, "解除 " + connection.From.LevelId + " → " + connection.To.LevelId,
+                    () => Panel.Run(() => draft.RemoveConnection(connection.Id), "已解除门连接"));
+            }
+            DrawConnectionForm(area, draft);
             AddButton(area, "从文件加入房间", () => Panel.ChooseFile("加入房间"));
             Line(area, draft.Placement == null ? "尚未放置" : "房间原点 " + draft.Origin);
             AddButton(area, draft.Placement == null ? "在地图放置整房" : "在地图移动整房", Panel.StartRoomPlacement);
@@ -292,6 +297,29 @@ namespace Sokoban.Editor
                 var issues = WorldLayout.Issues(draft.World, draft.Catalog).ToArray();
                 Panel.Status = issues.Length == 0 ? "放置与直连检查通过" : string.Join("；", issues);
             });
+        }
+
+        void DrawConnectionForm(VisualElement area, RoomDraft draft)
+        {
+            var endpoints = draft.World.Rooms.SelectMany(room => draft.Catalog[room.LevelId].Doors.Select(door =>
+                new WorldEndpoint(room.LevelId, door.Id))).ToList();
+            if (endpoints.Select(endpoint => endpoint.LevelId).Distinct().Count() < 2) return;
+            Heading(area, "添加门连接");
+            var indexes = Enumerable.Range(0, endpoints.Count).ToList();
+            string Label(int index) => endpoints[index].LevelId + " / " + endpoints[index].DoorId;
+            int firstOtherRoom = endpoints.FindIndex(endpoint => endpoint.LevelId != endpoints[0].LevelId);
+            var from = new PopupField<int>("起点", indexes, 0, Label, Label);
+            var to = new PopupField<int>("终点", indexes, firstOtherRoom, Label, Label);
+            var modes = new List<string> { WorldCodec.Direct, WorldCodec.Teleport };
+            string ModeLabel(string value) => value == WorldCodec.Direct ? "直连" : "传送";
+            var mode = new PopupField<string>("方式", modes, 0, ModeLabel, ModeLabel);
+            var allowReturn = new Toggle("允许回退") { value = true };
+            area.Add(from);
+            area.Add(to);
+            area.Add(mode);
+            area.Add(allowReturn);
+            AddButton(area, "添加连接", () => Panel.Run(
+                () => draft.AddConnection(endpoints[from.value], endpoints[to.value], mode.value, allowReturn.value), "已添加门连接"));
         }
 
         void DrawInspector(RoomDraft draft)
