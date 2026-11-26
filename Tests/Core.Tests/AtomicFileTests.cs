@@ -8,7 +8,7 @@ namespace Sokoban.Core.Tests
 {
     public class AtomicFileTests : IDisposable
     {
-        readonly string dir = Path.Combine(Path.GetTempPath(), "sokoban-atomic-" + Guid.NewGuid().ToString("N"));
+        readonly string dir = Path.Combine(AppContext.BaseDirectory, "scratch", "sokoban-atomic-" + Guid.NewGuid().ToString("N"));
 
         public AtomicFileTests() { Directory.CreateDirectory(dir); }
 

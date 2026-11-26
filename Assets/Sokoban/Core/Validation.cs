@@ -8,6 +8,7 @@
  * RoomValidator.Validate(room, stage, entry)：运行全部规则并按档位映射严重级别，返回结果列表。
  * RoomValidator.HasErrors(issues)：判断结果中是否存在错误，发布级存在错误时阻止试玩、保存与导出。
  * entry 为主入口内侧的入口缓冲格，缺主入口时传 null。
+ * RoomValidator.ValidateDraft(draft, stage)：在 Validate 之上，为草稿模型追加 recovery.none（没有恢复道具）与 boundary.open（非门格的地板紧邻空格或房间边缘，草稿提示、发布错误）两条规则。
  */
 using System;
 using System.Collections.Generic;
@@ -110,6 +111,16 @@ namespace Sokoban.Core
             var issues = Validate(draft.Room, stage, entry);
             if (draft.RecoveryItems.Count == 0)
                 issues.Add(new Issue("recovery.none", stage == ValidationStage.Draft ? Severity.Hint : Severity.Error, draft.Room.Id, "本房没有恢复道具"));
+            var openings = new HashSet<Cell>(draft.Doors.Select(d => d.Cell));
+            var room = draft.Room;
+            for (int y = 0; y < room.Height; y++)
+                for (int x = 0; x < room.Width; x++)
+                {
+                    var cell = new Cell(x, y);
+                    if (room.TerrainAt(cell).CategoryId != TerrainCategories.Floor || openings.Contains(cell)) continue;
+                    if (Cell.SearchOrder.Any(d => room.TerrainAt(cell + d).CategoryId == TerrainCategories.Void))
+                        issues.Add(new Issue("boundary.open", stage == ValidationStage.Draft ? Severity.Hint : Severity.Error, cell.ToString(), "边界缺墙，请补墙或设置朝外的门"));
+                }
             return issues;
         }
 
