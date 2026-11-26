@@ -71,13 +71,13 @@ namespace Sokoban.Core
             if (error != null) throw new InvalidOperationException("格子 " + cell + " 不能放置：" + error);
             before = old;
             room.RemoveObject(id);
-            room.AddObject(id, old.CategoryId, cell, old.Appearance, old.Rotation);
+            room.AddObject(id, old.CategoryId, cell, old.Appearance, old.Rotation, old.HintText);
         }
 
         public void Revert()
         {
             draft.Room.RemoveObject(id);
-            draft.Room.AddObject(before.Id, before.CategoryId, before.Cell, before.Appearance, before.Rotation);
+            draft.Room.AddObject(before.Id, before.CategoryId, before.Cell, before.Appearance, before.Rotation, before.HintText);
         }
     }
 

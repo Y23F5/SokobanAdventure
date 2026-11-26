@@ -47,13 +47,16 @@ namespace Sokoban.Core
 
         public int Rotation { get; }
 
-        public PlacedObject(string id, string categoryId, Cell cell, AppearanceRef appearance = null, int rotation = 0)
+        public string HintText { get; }
+
+        public PlacedObject(string id, string categoryId, Cell cell, AppearanceRef appearance = null, int rotation = 0, string hintText = null)
         {
             Rotation = RotationSteps.Validate(rotation);
             Id = id;
             CategoryId = categoryId;
             Cell = cell;
             Appearance = appearance;
+            HintText = hintText ?? "";
         }
     }
 
@@ -107,9 +110,9 @@ namespace Sokoban.Core
             grid[cell.X, cell.Y] = replacement;
         }
 
-        public PlacedObject AddObject(string id, string categoryId, Cell cell, AppearanceRef appearance = null, int rotation = 0)
+        public PlacedObject AddObject(string id, string categoryId, Cell cell, AppearanceRef appearance = null, int rotation = 0, string hintText = null)
         {
-            var placed = new PlacedObject(id, categoryId, cell, appearance, rotation);
+            var placed = new PlacedObject(id, categoryId, cell, appearance, rotation, hintText);
             Ids.Add(id, categoryId);
             objects.Add(placed);
             return placed;
@@ -120,7 +123,7 @@ namespace Sokoban.Core
             int index = objects.FindIndex(o => o.Id == id);
             if (index < 0) return false;
             var old = objects[index];
-            objects[index] = new PlacedObject(old.Id, old.CategoryId, old.Cell, appearance, old.Rotation);
+            objects[index] = new PlacedObject(old.Id, old.CategoryId, old.Cell, appearance, old.Rotation, old.HintText);
             return true;
         }
 
@@ -129,8 +132,16 @@ namespace Sokoban.Core
             int index = objects.FindIndex(o => o.Id == id);
             if (index < 0) return false;
             var old = objects[index];
-            objects[index] = new PlacedObject(old.Id, old.CategoryId, old.Cell, old.Appearance, RotationSteps.Turn(old.Rotation, quarterTurns));
+            objects[index] = new PlacedObject(old.Id, old.CategoryId, old.Cell, old.Appearance, RotationSteps.Turn(old.Rotation, quarterTurns), old.HintText);
             return true;
+        }
+
+        public void SetHintText(string id, string text)
+        {
+            int index = objects.FindIndex(item => item.Id == id && item.CategoryId == ObjectCategories.Hint);
+            if (index < 0) throw new InvalidOperationException("找不到提示物件 " + id);
+            var item = objects[index];
+            objects[index] = new PlacedObject(item.Id, item.CategoryId, item.Cell, item.Appearance, item.Rotation, text);
         }
 
         public bool RemoveObject(string id)

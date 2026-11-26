@@ -42,7 +42,7 @@ namespace Sokoban.Core
             {
                 var to = new Cell(o.Cell.X + shiftX, o.Cell.Y + shiftY);
                 if (!next.Inside(to)) continue;
-                next.AddObject(o.Id, o.CategoryId, to, o.Appearance, o.Rotation);
+                next.AddObject(o.Id, o.CategoryId, to, o.Appearance, o.Rotation, o.HintText);
             }
             return next;
         }

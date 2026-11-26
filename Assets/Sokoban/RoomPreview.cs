@@ -222,6 +222,12 @@ namespace Sokoban
                     string fallback = AppearanceLibrary.Prefab(look) ?? AppearanceLibrary.Prefab(AppearanceLibrary.Default(ObjectCategories.Box, theme));
                     anchor.AddComponent<ObjectStateView>().Configure(table, new Vector3(origin.X + cell.X, 0, origin.Y + cell.Y), look, fallback, model.Assets);
                 }
+                else if (category == ObjectCategories.Hint)
+                {
+                    var marker = Model("Target", item.Id, cell, group, CellRotation(item.Rotation));
+                    marker.localScale = new Vector3(.5f, 1f, .5f);
+                    Retrack(marker);
+                }
                 else Place(look, item.Id, cell, CellRotation(item.Rotation));
                 if (selected == item.Id) Marker(group, cell);
             }

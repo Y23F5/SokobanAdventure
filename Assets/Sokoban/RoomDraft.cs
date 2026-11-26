@@ -20,7 +20,7 @@ using Sokoban.Core;
 
 namespace Sokoban
 {
-    public enum RoomTool { Select, Box, Target, Move, Floor, Wall, Erase, Decoration, Spawn, Entry, Exit }
+    public enum RoomTool { Select, Box, Target, Move, Floor, Wall, Erase, Decoration, Spawn, Entry, Exit, Hint }
 
     public sealed partial class RoomDraft
     {
@@ -118,6 +118,10 @@ namespace Sokoban
                 case RoomTool.Target: Place(false, cell); break;
                 case RoomTool.Move: Move(cell); break;
                 case RoomTool.Decoration: PlaceAsset(cell); break;
+                case RoomTool.Hint:
+                    string id = "hint-" + Guid.NewGuid().ToString("N");
+                    Commit(new PlaceObjectCommand(holders[ActiveId], id, ObjectCategories.Hint, cell, null, BrushRotation), id);
+                    break;
                 case RoomTool.Spawn:
                 case RoomTool.Entry:
                 case RoomTool.Exit:
@@ -396,7 +400,7 @@ namespace Sokoban
 
             public void Revert()
             {
-                if (placed != null) draft.Room.AddObject(placed.Id, placed.CategoryId, placed.Cell, placed.Appearance, placed.Rotation);
+                if (placed != null) draft.Room.AddObject(placed.Id, placed.CategoryId, placed.Cell, placed.Appearance, placed.Rotation, placed.HintText);
                 else draft.Decorations.Insert(decorationIndex, decoration);
                 draft.Graphs.AddRange(graphs);
             }
@@ -440,6 +444,15 @@ namespace Sokoban
             string oldId = model.PrimaryEntranceId;
             Commit(new DelegateCommand(() => model.PrimaryEntranceId = id, () => model.PrimaryEntranceId = oldId));
             Select(door.Cell);
+        }
+
+        public void SetHintText(string id, string text)
+        {
+            var model = Model;
+            var item = Find(id);
+            RoomFile.Check(item != null && item.CategoryId == ObjectCategories.Hint, "请选择提示物件");
+            Commit(new DelegateCommand(() => model.Room.SetHintText(id, text),
+                () => model.Room.SetHintText(id, item.HintText)), id);
         }
 
         public void SetRoomText(string description, string entryHint, string playHint)

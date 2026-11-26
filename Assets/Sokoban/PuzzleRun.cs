@@ -128,6 +128,13 @@ namespace Sokoban
                 && World.FinishRequiresSolved.All(id => states[id].Solved);
         }
 
+        internal string HintAtPlayer(bool inFront = false)
+        {
+            var cell = inFront ? local + Cell.SearchOrder[Facing] : local;
+            var item = Current.Validated.Room.ObjectAt(cell);
+            return item?.CategoryId == ObjectCategories.Hint ? item.HintText : null;
+        }
+
         internal IReadOnlyList<BehaviorGraph> Interact(out bool transitioned)
         {
             transitioned = false;

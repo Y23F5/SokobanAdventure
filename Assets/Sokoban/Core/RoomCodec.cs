@@ -114,6 +114,7 @@ namespace Sokoban.Core
             {
                 var rec = new Dictionary<string, object> { ["id"] = o.Id, ["category"] = o.CategoryId, ["x"] = (long)o.Cell.X, ["y"] = (long)o.Cell.Y };
                 if (o.Rotation != 0) rec["rotation"] = o.Rotation;
+                if (o.CategoryId == ObjectCategories.Hint && o.HintText.Length > 0) rec["hintText"] = o.HintText;
                 PutAppearance(rec, o.Appearance);
                 return (object)rec;
             }).ToList();
@@ -280,7 +281,8 @@ namespace Sokoban.Core
                 string id = Str(rec, "id");
                 Cell cell = CellOf(room, rec, "对象");
                 if (!occupied.Add(cell)) throw new FormatException(id + " 所在的 " + cell + " 有多个对象");
-                room.AddObject(id, category, cell, AppearanceOf(rec), OptionalInt(rec, "rotation"));
+                room.AddObject(id, category, cell, AppearanceOf(rec), OptionalInt(rec, "rotation"),
+                    category == ObjectCategories.Hint ? OptStr(rec, "hintText") : null);
             }
 
             var doors = new List<DoorInfo>();

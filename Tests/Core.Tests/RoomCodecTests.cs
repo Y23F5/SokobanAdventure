@@ -50,6 +50,18 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
+        public void HintObjectKeepsTextAndRotationOnReopen()
+        {
+            var draft = Sample();
+            draft.Room.AddObject("hint-1", ObjectCategories.Hint, new Cell(1, 1), rotation: 2);
+            draft.Room.SetHintText("hint-1", "先看右边。\n再推箱子。");
+            var reopened = RoomCodec.Decode(RoomCodec.Encode(draft)).Room.ObjectsOf(ObjectCategories.Hint).Single();
+            Assert.Equal(new Cell(1, 1), reopened.Cell);
+            Assert.Equal(2, reopened.Rotation);
+            Assert.Equal("先看右边。\n再推箱子。", reopened.HintText);
+        }
+
+        [Fact]
         public void RoomTextSurvivesRoundTripAndThemeChange()
         {
             var draft = Sample();

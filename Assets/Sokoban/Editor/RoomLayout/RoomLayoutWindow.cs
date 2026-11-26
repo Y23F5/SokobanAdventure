@@ -354,6 +354,12 @@ namespace Sokoban.Editor
             var decoration = draft.FindDecoration(draft.Selected);
             var door = draft.Model.Doors.FirstOrDefault(entry => entry.Cell == cell);
             bool multiple = draft.Selection.Count > 1;
+            if (!multiple && item?.CategoryId == ObjectCategories.Hint)
+            {
+                var text = new TextField("提示文字") { value = item.HintText, multiline = true, isDelayed = true };
+                text.RegisterValueChangedCallback(evt => Panel.Run(() => draft.SetHintText(item.Id, evt.newValue), "已更新提示文字"));
+                area.Add(text);
+            }
             Heading(area, multiple ? "多选 · " + draft.Selection.Count + " 格" :
                 door != null ? "门" : item != null || decoration != null ? "对象" : "地形格");
 
@@ -471,6 +477,7 @@ namespace Sokoban.Editor
 
             if (tab == PaletteTabs.Other)
             {
+                AddButton(area, "放置提示物件", () => UseTool(RoomTool.Hint));
                 AddButton(area, "放置入口", () => UseTool(RoomTool.Entry));
                 AddButton(area, "放置出口", () => UseTool(RoomTool.Exit));
                 var spawn = AddButton(area, ToolLabel(RoomTool.Spawn), () => UseTool(RoomTool.Spawn));
@@ -804,6 +811,7 @@ namespace Sokoban.Editor
             RoomTool.Target => "放目标",
             RoomTool.Move => "移动",
             RoomTool.Decoration => "放装饰",
+            RoomTool.Hint => "放置提示物件",
             RoomTool.Entry => "放入口",
             RoomTool.Exit => "放出口",
             RoomTool.Spawn => "设出生点（主入口内侧）",

@@ -51,9 +51,8 @@ namespace Sokoban
                 try { effects.AddRange(ObjectBehavior.Effects(graph, TriggerIds.OnInteract).Select(node => (graph.OwnerId, node)).ToArray()); }
                 catch (Exception error) { Debug.LogException(error); }
             }
-            if (!transitioned && effects.Count == 0) return false;
-
-            string message = null;
+            string message = Run.HintAtPlayer(true);
+            if (!transitioned && effects.Count == 0 && string.IsNullOrWhiteSpace(message)) return false;
             foreach (var effect in effects)
             {
                 var node = effect.node;

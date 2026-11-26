@@ -255,12 +255,18 @@ namespace Sokoban
                 Run.Heading = (Mathf.RoundToInt(endAngle / 90) % 4 + 4) % 4;
                 angle = Run.Heading * 90;
             }
+            bool walked = !turning;
             turning = false;
             movingBox = null;
             duration = 0;
             Run.Motion = null;
             Persist();
             RefreshFeedback();
+            if (walked && !panels.Modal && !Run.Recovering)
+            {
+                var hint = Run.HintAtPlayer();
+                if (!string.IsNullOrWhiteSpace(hint)) panels.ShowInformation(Run.Room.Meta.Name, hint);
+            }
         }
 
         void SetCamera()

@@ -51,6 +51,7 @@ namespace Sokoban
         {
             ObjectCategories.Box => "箱子", ObjectCategories.Target => "目标点", ObjectCategories.Spawn => "出生点", ObjectCategories.Custom => "自定义物件",
             TerrainCategories.Floor => "地板", TerrainCategories.Wall => "墙壁", TerrainCategories.Door => "门", TerrainCategories.Openable => "藤门",
+            ObjectCategories.Hint => "提示物件",
             Decoration => "装饰", Remnant => "残留物", _ => "其他"
         };
 
