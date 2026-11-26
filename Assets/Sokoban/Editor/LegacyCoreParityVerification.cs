@@ -81,6 +81,23 @@ namespace Sokoban.Editor
                             }
                         }
                     Debug.Log("PARITY MARKER-PROBE " + name + " 差异格数=" + markerDiffs);
+                    foreach (var moving in RoomFile.Objects(legacyDraft.Room).Where(o => legacyDraft.Room["boxes"].Contains(o) || legacyDraft.Room["targets"].Contains(o)).ToList())
+                    {
+                        string movingId = (string)moving["id"];
+                        bool movingBox = legacyDraft.Room["boxes"].Contains(moving);
+                        for (int vy = 0; vy < original.Height; vy++)
+                            for (int vx = 0; vx < original.Width; vx++)
+                            {
+                                var vcell = new Vector2Int(vx, vy);
+                                if (legacyDraft.PlacementError(movingBox, vcell, movingId) != null) continue;
+                                var moveDraft = LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(legacyDraft.Room));
+                                new MoveObjectCommand(moveDraft, movingId, new Sokoban.Core.Cell(vx, vy), true).Apply();
+                                var moved = moveDraft.Room.Objects.First(o => o.Id == movingId);
+                                var viaCore = moved.Cell.ToString() + moved.RecoveryCell;
+                                var expected = new Sokoban.Core.Cell(vx, vy).ToString() + (movingBox ? (Sokoban.Core.Cell?)new Sokoban.Core.Cell(vx, vy) : null);
+                                if (viaCore != expected) failures.Add(name + " 移动命令结果与旧 Move 不一致 " + movingId + " -> " + vcell + "：Core=" + viaCore + " 旧=" + expected);
+                            }
+                    }
                     var freeCell = Enumerable.Range(0, original.Width * original.Height).Select(i => new Vector2Int(i % original.Width, i / original.Width)).First(p => legacyDraft.PlacementError(true, p) == null);
                     legacyDraft.Place(true, freeCell, "parity-cache-probe");
                     string afterPlace = legacyDraft.PlacementError(true, freeCell);
