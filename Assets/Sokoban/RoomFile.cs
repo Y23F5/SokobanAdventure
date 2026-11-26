@@ -151,7 +151,7 @@ namespace Sokoban
                     continue;
                 }
                 if ((string)door["id"] == (string)room["primaryEntranceId"] &&
-                    (Objects(room).Any(obj => At(obj) == cell + Inward(door)) || recovery.Contains(cell + Inward(door))))
+                    (Objects(room).Any(obj => !ReferenceEquals(obj, room["spawn"]) && At(obj) == cell + Inward(door)) || recovery.Contains(cell + Inward(door))))
                     yield return $"{level} {cell + Inward(door)} 主入口内侧需要留空";
             }
             if (!doors.Any(d => (string)d["id"] == (string)room["primaryEntranceId"] && (string)d["role"] == "entry"))
