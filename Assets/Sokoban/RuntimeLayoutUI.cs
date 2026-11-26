@@ -87,6 +87,7 @@ namespace Sokoban
 
         int tab = 1;
         Button[] tabs;
+        public Button[] Bookmarks => tabs;
         static readonly string[] TabNames = { "地形", "物件", "装饰", "其他", "自定义" };
 
         void BuildTabs()

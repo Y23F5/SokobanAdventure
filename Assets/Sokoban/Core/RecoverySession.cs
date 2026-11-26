@@ -3,6 +3,7 @@
  * @brief RecoverySession 是单房恢复过程的规则状态：开始时算占用区并移位玩家，期间禁推、可开合地形开放，完成时箱子一次性归位并封闭。
  * RecoverySession(room, boxes, player, entryBuffer)：用房间、各箱当前格、玩家格与入口缓冲格建立会话，箱子以 ID 为键。
  * Start(duration)：时长必须大于 0；计算占用区，玩家在占用区内先被安全移位，可开合地形开放，进入恢复中。
+ * Place(cell)：把会话记录的玩家位置同步为调用方实际走到的格子，PushRules 只返回新位置，不改会话，恢复完成时的移位以此为准。
  * Advance(seconds)：推进剩余时间，归零时自动完成，返回本次是否完成。
  * Complete()：箱子一次性回到初始格，可开合地形封闭，玩家按完成时刻的禁入集（各箱初始格、封闭地形格）再移位；重复调用不重复提交。
  * CanPush()：恢复期间一律为 false。CanEnter(cell)：占用区内不可进入。
@@ -38,6 +39,8 @@ namespace Sokoban.Core
             Boxes = new Dictionary<string, Cell>(boxes);
             foreach (var box in room.ObjectsOf(ObjectCategories.Box)) initial[box.Id] = box.Cell;
         }
+
+        public void Place(Cell cell) => Player = cell;
 
         public bool CanPush() => !Recovering;
 

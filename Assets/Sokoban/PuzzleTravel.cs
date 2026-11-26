@@ -120,10 +120,26 @@ namespace Sokoban
         public bool AdvanceRecovery(float seconds)
         {
             var session = Current.Session;
-            if (!session.Recovering || !session.Advance(seconds)) return false;
+            if (!session.Recovering) return false;
+            session.Place(local);
+            if (!session.Advance(seconds)) return false;
             local = session.Player;
             Current.RecordSolved();
+            Fire(ActiveId, TriggerIds.RecoveryEnd);
             return true;
+        }
+
+        void Fire(string roomId, string trigger, string only = null)
+        {
+            var progress = states[roomId];
+            foreach (var pair in Models[roomId].ObjectStates)
+            {
+                if (only != null && pair.Key != only) continue;
+                string from = progress.ObjectStates.TryGetValue(pair.Key, out var now) ? now : pair.Value.Initial;
+                var move = pair.Value.Find(from, trigger);
+                if (move == null) continue;
+                SetObjectState(roomId, pair.Key, move.To == pair.Value.Initial ? null : move.To);
+            }
         }
 
         public bool PlayerOnClosingCell

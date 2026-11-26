@@ -58,6 +58,15 @@ namespace Sokoban.Editor
             Debug.Log("UIV-002 PASS " + label);
         }
 
+        static IEnumerator WaitForSprite(Graphic graphic, Sprite expected, string label)
+        {
+            var image = (Image)graphic;
+            float end = Time.realtimeSinceStartup + 2;
+            while (image.overrideSprite != expected && Time.realtimeSinceStartup < end)
+                yield return null;
+            Require(expected && image.overrideSprite == expected, label);
+        }
+
         static IEnumerator WaitForTint(Graphic graphic, Color expected, string label)
         {
             float end = Time.realtimeSinceStartup + 2;
@@ -193,7 +202,7 @@ namespace Sokoban.Editor
             VerifyButtonArtwork(primary, theme.parchment, theme.parchment * theme.focus, "主菜单主入口", board);
             VerifyButtonArtwork(secondary, theme.parchment, theme.parchment * theme.focus, "主菜单并排入口");
             events.SetSelectedGameObject(editor.gameObject);
-            var focus = WaitForTint(editor.targetGraphic, theme.focus, "关卡编辑器获得焦点时显示共享焦点色");
+            var focus = WaitForSprite(editor.targetGraphic, theme.buttonHoverSprite, "关卡编辑器获得焦点时显示选中精灵");
             while (focus.MoveNext()) yield return null;
             events.SetSelectedGameObject(primary[0].gameObject);
             normal = WaitForTint(editor.targetGraphic, Color.white, "焦点移回开始游戏后关卡编辑器再次恢复默认底色");
@@ -224,19 +233,19 @@ namespace Sokoban.Editor
             var states = WaitForTint(button.targetGraphic, Color.white, "按钮默认");
             while (states.MoveNext()) yield return null;
             button.OnPointerEnter(pointer);
-            states = WaitForTint(button.targetGraphic, theme.hover, "按钮悬停");
+            states = WaitForSprite(button.targetGraphic, theme.buttonHoverSprite, "按钮悬停");
             while (states.MoveNext()) yield return null;
             button.OnPointerDown(pointer);
-            states = WaitForTint(button.targetGraphic, theme.pressed, "按钮按下");
+            states = WaitForSprite(button.targetGraphic, theme.buttonPressedSprite, "按钮按下");
             while (states.MoveNext()) yield return null;
             button.OnPointerUp(pointer);
             button.OnPointerClick(pointer);
             button.OnPointerExit(pointer);
-            states = WaitForTint(button.targetGraphic, theme.focus, "按钮焦点和选中");
+            states = WaitForSprite(button.targetGraphic, theme.buttonHoverSprite, "按钮焦点和选中");
             while (states.MoveNext()) yield return null;
             button.interactable = false;
             button.OnPointerClick(pointer);
-            states = WaitForTint(button.targetGraphic, theme.disabled, "按钮禁用视觉");
+            states = WaitForSprite(button.targetGraphic, theme.buttonDisabledSprite, "按钮禁用视觉");
             while (states.MoveNext()) yield return null;
             Require(clicks == 1, "禁用后不响应点击");
 
@@ -290,9 +299,10 @@ namespace Sokoban.Editor
             var themeForTabs = layout.interfaceStyle.theme;
             for (int activeTab = 0; activeTab < tabs.Length; activeTab++)
             {
-                tabs[activeTab].onClick.Invoke();
+                var marks = layout.Bookmarks;
+                marks[activeTab].onClick.Invoke();
                 yield return null;
-                Require(tabs.Select((tab, index) => tab.image.color == (index == activeTab ? themeForTabs.active : themeForTabs.parchment) &&
+                Require(marks.Select((tab, index) => tab.image.sprite == (index == activeTab ? themeForTabs.bookmarkSelectedSprite : themeForTabs.bookmarkSprite) &&
                     tab.transform.localRotation == Quaternion.identity).All(value => value), tabs[activeTab].name + "选中后只改变高亮");
             }
             VerifyButtonArtwork(tabs, themeForTabs.parchment, themeForTabs.active, "分页标签");
@@ -306,6 +316,9 @@ namespace Sokoban.Editor
             Require(!toolbar.tooltip.gameObject.activeSelf, "离开编辑工具时关闭提示");
             var editor = Object.FindObjectOfType<LayoutHost>();
             editor.Panel.Draft.NewDefaultRoom();
+            editor.Panel.Draft.Place(true, new Sokoban.Core.Cell(3, 2));
+            editor.Panel.Draft.Place(false, new Sokoban.Core.Cell(4, 2));
+            VerificationFixtures.EnsureRecovery(editor.Panel.Draft);
             editor.StartTrial();
             yield return null;
             yield return null;

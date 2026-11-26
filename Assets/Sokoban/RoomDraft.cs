@@ -217,13 +217,15 @@ namespace Sokoban
             readonly DoorInfo door;
             RoomDraftModel before;
 
+            RoomDraftModel after;
+
             public AddDoorCommand(DraftHolder holder, DoorInfo door) { this.holder = holder; this.door = door; }
 
             public void Apply()
             {
                 before = holder.Draft;
                 string primary = before.PrimaryEntranceId ?? (door.Role == "entry" ? door.Id : null);
-                holder.Draft = CloneWith(before, before.Doors.Append(door), primary);
+                holder.Draft = after ??= CloneWith(before, before.Doors.Append(door), primary);
             }
 
             public void Revert() => holder.Draft = before;
@@ -328,6 +330,8 @@ namespace Sokoban
         {
             var errors = RoomFile.Issues(Model, ValidationStage.Publish).Where(i => i.Severity == Severity.Error).ToList();
             RoomFile.Check(errors.Count == 0, errors.Count == 0 ? null : errors[0].Location + " " + errors[0].Message);
+            var dangling = ObjectBehavior.TargetIssues(Model, id => Catalog.TryGetValue(id, out var found) ? found : null).ToList();
+            RoomFile.Check(dangling.Count == 0, dangling.Count == 0 ? null : dangling[0]);
             RoomFile.Save(path, Model);
         }
 
@@ -336,6 +340,8 @@ namespace Sokoban
             if (World == null) ExportRoom(path);
             else
             {
+                var dangling = Catalog.SelectMany(p => ObjectBehavior.TargetIssues(p.Value, id => Catalog.TryGetValue(id, out var found) ? found : null)).ToList();
+                RoomFile.Check(dangling.Count == 0, dangling.Count == 0 ? null : dangling[0]);
                 var written = WorldLayout.Write(path, World, Catalog);
                 if (!export) World = written;
             }

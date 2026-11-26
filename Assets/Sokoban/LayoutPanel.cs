@@ -199,6 +199,7 @@ namespace Sokoban
                 if (version != fileDialogVersion || input != filename || room != Draft.Room || kind != Draft.Tool) return;
                 string id = Draft.RegisterAsset(asset);
                 if (kind == RoomTool.Decoration) Draft.SelectAsset(id, AppearanceLibrary.Decoration);
+                else if (kind == RoomTool.Box || kind == RoomTool.Target) Draft.ChooseAppearance(id, kind == RoomTool.Box ? Sokoban.Core.ObjectCategories.Box : Sokoban.Core.ObjectCategories.Target);
                 operation = null;
                 Status = "已导入素材 " + Path.GetFileName(path);
             }

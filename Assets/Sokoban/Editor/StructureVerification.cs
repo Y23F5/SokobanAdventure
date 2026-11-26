@@ -45,7 +45,17 @@ namespace Sokoban.Editor
 
         static RoomDraftModel WithDoors(RoomDraftModel src, IEnumerable<DoorInfo> doors)
         {
-            var next = new RoomDraftModel(src.Room, doors, src.PrimaryEntranceId, src.Extras, src.RecoveryItems);
+            var source = src.Room;
+            var room = RoomResize.Resized(source, 0, 0, source.Width, source.Height);
+            for (int x = 0; x < source.Width; x++)
+                for (int y = 0; y < source.Height; y++)
+                {
+                    var look = source.AppearanceAt(new Cell(x, y));
+                    if (look != null) room.SetAppearance(new Cell(x, y), look);
+                }
+            foreach (var placed in source.Objects)
+                if (placed.Appearance != null) room.SetObjectAppearance(placed.Id, placed.Appearance);
+            var next = new RoomDraftModel(room, doors, src.PrimaryEntranceId, src.Extras, src.RecoveryItems);
             next.Meta = src.Meta;
             next.Decorations.AddRange(src.Decorations);
             next.Assets.AddRange(src.Assets);
@@ -82,6 +92,15 @@ namespace Sokoban.Editor
             }
         }
 
+        static string Differ(string a, string b)
+        {
+            int length = Math.Min(a.Length, b.Length), at = 0;
+            while (at < length && a[at] == b[at]) at++;
+            if (at == length && a.Length == b.Length) return "相同";
+            int from = Math.Max(0, at - 40);
+            return "位置 " + at + " 前 " + a.Substring(from, Math.Min(100, a.Length - from)) + " 后 " + b.Substring(from, Math.Min(100, b.Length - from));
+        }
+
         static void Reject(RoomDraft draft, string path, string expected)
         {
             string original = File.ReadAllText(path);
@@ -97,10 +116,22 @@ namespace Sokoban.Editor
             foreach (string action in actions)
             {
                 Submit(panel, action, path);
-                Require(panel.Status.Contains(expected) && File.ReadAllText(path) == original && restored == panel.Draft.Snapshot(),
-                    action + "拒绝并保留原文件与草稿：" + panel.Status);
+                Require(panel.Status.Contains(expected), action + "拒绝提示包含原因：" + panel.Status);
+                Require(File.ReadAllText(path) == original, action + "拒绝后原文件内容不变");
+                string after = panel.Draft.Snapshot();
+                Require(restored == after, action + "拒绝后草稿快照不变：" + Differ(restored, after));
+                Require(true, action + "拒绝并保留原文件与草稿：" + panel.Status);
                 panel.CancelDialog();
             }
+        }
+
+        static string Ready(string text)
+        {
+            var draft = new RoomDraft(RoomCodec.Decode(text));
+            draft.Place(true, new Cell(3, 4));
+            draft.Place(false, new Cell(4, 4));
+            VerificationFixtures.EnsureRecovery(draft);
+            return RoomCodec.Encode(draft.Model);
         }
 
         [MenuItem("Tools/Sokoban/验证/编辑体验结构检查")]
@@ -110,7 +141,7 @@ namespace Sokoban.Editor
             Directory.CreateDirectory(evidence);
             using (log = new StreamWriter(Path.Combine(evidence, "结构检查.txt")) { AutoFlush = true })
             {
-                source = Resources.Load<TextAsset>("DefaultRoom").text;
+                source = Ready(Resources.Load<TextAsset>("DefaultRoom").text);
                 var draft = new RoomDraft(RoomCodec.Decode(source));
                 string path = Path.Combine(evidence, "sample.room.json");
                 draft.Save(path, false);

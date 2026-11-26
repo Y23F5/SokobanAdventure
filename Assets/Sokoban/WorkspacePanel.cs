@@ -45,7 +45,15 @@ namespace Sokoban
                 return issues;
             }
         }
-        public string StructuralIssue => Issues.FirstOrDefault(i => i.Severity == Sokoban.Core.Severity.Error)?.Message;
+        public string StructuralIssue
+        {
+            get
+            {
+                var first = Issues.FirstOrDefault(i => i.Severity == Sokoban.Core.Severity.Error);
+                if (first == null) return null;
+                return Draft.World != null && first.RuleId != "world.layout" ? Draft.ActiveId + "：" + first.Message : first.Message;
+            }
+        }
         public bool RuleOk(string ruleId) => !Issues.Any(i => i.RuleId == ruleId);
         public string RuleHint(string ruleId) => Issues.FirstOrDefault(i => i.RuleId == ruleId)?.Message;
         public void LocateIssue(Sokoban.Core.Issue issue) {
@@ -184,7 +192,8 @@ namespace Sokoban
             SolutionText = world == null ? "正在检查房间解法" : "正在检查世界路线";
             try
             {
-                var result = await System.Threading.Tasks.Task.Run(() => world == null ? RoomSolution.CheckEntries(model, null) : WorldSolution.Describe(WorldSolution.Check(world, rooms)));
+                bool unsimulatable = Sokoban.Core.BehaviorNodeKinds.HasUnsimulatable(ObjectBehavior.AllGraphs(model));
+                var result = await System.Threading.Tasks.Task.Run(() => world == null ? RoomSolution.CheckEntries(model, null, 100000, unsimulatable) : WorldSolution.Describe(WorldSolution.Check(world, rooms)));
                 if (request != solutionRequest) return;
                 SolutionText = revision == Draft.Revision ? result : "布局已变更，请重新检查";
             }

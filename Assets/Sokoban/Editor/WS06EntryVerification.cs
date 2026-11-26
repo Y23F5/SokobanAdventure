@@ -32,6 +32,7 @@ namespace Sokoban.Editor
         {
             string prefix = RoomSolution.Label(SolveVerdict.Confirmed) + " ";
             if (!row.StartsWith(prefix, StringComparison.Ordinal)) throw new InvalidOperationException(row);
+            VerificationFixtures.EnsureRecovery(draft);
             var run = PuzzleRun.FromDraft(draft);
             var state = run.Snapshot();
             state.PlayerX = start.X;

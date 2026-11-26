@@ -268,9 +268,9 @@ namespace Sokoban.Editor
             ui.Act("纸箱");
             yield return null;
             var labels = ui.assetEntries.GetComponentsInChildren<Text>().Select(text => text.text).ToArray();
-            Check(labels.Contains("仓库木箱") && labels.Contains("工厂货箱") && labels.Contains("森林原木") && labels.Contains("导入箱子模型"),
+            Check(labels.Contains("仓库木箱") && labels.Contains("工厂货箱") && labels.Contains("森林原木") && labels.Contains("＋ 新增箱子模型"),
                 "正式游戏内编辑器的箱子分类列出三种主题素材及导入入口");
-            var import = ui.assetEntries.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<Text>().text == "导入箱子模型");
+            var import = ui.assetEntries.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<Text>().text == "＋ 新增箱子模型");
             import.onClick.Invoke();
             editor.Panel.Filename = Environment.GetEnvironmentVariable("SOKOBAN_APPEARANCE_GLB");
             editor.Panel.SubmitFile();
@@ -312,7 +312,18 @@ namespace Sokoban.Editor
             {
                 int index = Array.IndexOf(new[] { Cell.Up, Cell.Right, Cell.Down, Cell.Left }, step);
                 if (index < 0) continue;
-                Check(host.Move(input[index]), "走向首个可推动树木 " + RoomSolution.Letters(new[] { step }) + "；玩家 " + host.Run.Player + "，视角 " + host.Run.Heading);
+                bool accepted = host.Move(input[index]);
+                if (!accepted && host.Run.Room.Room.TerrainAt(host.Run.PlayerLocal + step).CategoryId == TerrainCategories.Openable)
+                {
+                    Check(host.UseItem(), "藤门挡路，使用恢复装置开门");
+                    accepted = host.Move(input[index]);
+                }
+                else if (!accepted && host.Run.Recovering && !host.Run.PlayerOnClosingCell)
+                {
+                    while (host.Run.Recovering) yield return null;
+                    accepted = host.Move(input[index]);
+                }
+                Check(accepted, "走向首个可推动树木 " + RoomSolution.Letters(new[] { step }) + "；玩家 " + host.Run.Player + "，视角 " + host.Run.Heading);
                 while (host.Busy) yield return null;
                 moved = initial.Keys.FirstOrDefault(id => StateOf(host.Run, roomId, id) == "logs");
                 if (moved != null) break;

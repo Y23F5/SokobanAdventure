@@ -49,6 +49,7 @@ namespace Sokoban
         public HashSet<Vector2Int> Targets => new HashSet<Vector2Int>(Current.Validated.Room.ObjectsOf(ObjectCategories.Target).Select(t => ToVector(Current.Origin + t.Cell)));
         public bool Solved => Current.Solved;
         public bool EverSolved => Current.EverSolved;
+        public bool SolvedIn(string roomId) => states[roomId].Solved;
         public int Heading;
         public PuzzleMotion Motion { get; set; }
 
@@ -101,11 +102,11 @@ namespace Sokoban
             var models = new Dictionary<string, RoomDraftModel>();
             foreach (var entry in world.Rooms)
             {
-                var doc = RoomCodec.Decode(File.ReadAllText(Path.Combine(folder, entry.File)));
-                var model = new RoomDraftModel(doc.Room, doc.Doors, doc.PrimaryEntranceId, doc.Extras, doc.RecoveryItems);
-                doc.Extras.TryGetValue("name", out var name);
-                doc.Extras.TryGetValue("themeId", out var theme);
-                model.Meta = new RoomMeta(name ?? entry.LevelId, theme);
+                var model = RoomCodec.Decode(File.ReadAllText(Path.Combine(folder, entry.File)));
+                model.Extras.TryGetValue("name", out var name);
+                model.Extras.TryGetValue("themeId", out var theme);
+                if (string.IsNullOrEmpty(model.Meta.Name) || model.Meta.ThemeId == null)
+                    model.Meta = new RoomMeta(string.IsNullOrEmpty(model.Meta.Name) ? name ?? entry.LevelId : model.Meta.Name, model.Meta.ThemeId ?? theme);
                 models.Add(entry.LevelId, model);
             }
             return Assemble(world, models, world.Start.LevelId);
@@ -132,11 +133,14 @@ namespace Sokoban
             if (Current.Validated.Room.TerrainAt(next).CategoryId == TerrainCategories.Void) return CrossDoor(direction);
             var door = Current.Validated.Doors.FirstOrDefault(d => d.Cell == next);
             if (door != null && door.Role == "exit" && !CanApproach(door)) return false;
+            bool wasSolved = Current.Solved;
             var result = PushRules.TryPush(Current.Session, local, direction);
             if (!result.Moved) return false;
             local = result.Player;
             pushed = result.PushedBoxId;
             Current.RecordSolved();
+            if (pushed != null) Fire(ActiveId, TriggerIds.FirstPush, pushed);
+            if (!wasSolved && Current.Solved) Fire(ActiveId, TriggerIds.RoomSolved);
             return true;
         }
     }

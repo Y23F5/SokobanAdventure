@@ -108,7 +108,7 @@ namespace Sokoban.Core
                     PutAppearance(rec, room.AppearanceAt(cell));
                     terrain.Add(rec);
                 }
-            var objects = room.Objects.Select(o =>
+            var objects = room.Objects.OrderBy(o => o.Id, StringComparer.Ordinal).Select(o =>
             {
                 var rec = new Dictionary<string, object> { ["id"] = o.Id, ["category"] = o.CategoryId, ["x"] = (long)o.Cell.X, ["y"] = (long)o.Cell.Y };
                 PutAppearance(rec, o.Appearance);
@@ -379,7 +379,7 @@ namespace Sokoban.Core
             {
                 var rec = Obj(item, "模板实例记录");
                 string id = Str(rec, "id");
-                room.Ids.Add(id, "instance");
+                if (!room.Ids.Contains(id)) room.Ids.Add(id, "instance");
                 draft.Instances.Add(new TemplateInstance(id, Str(rec, "templateId"), StringsIn(rec, "overrides")));
             }
             if (!root.TryGetValue("objectStates", out var rawTables) || !(rawTables is Dictionary<string, object> tables)) throw new FormatException("缺少对象 objectStates");

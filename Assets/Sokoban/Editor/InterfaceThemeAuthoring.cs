@@ -428,7 +428,7 @@ namespace Sokoban.Editor
                 var role = button.GetComponent<ThemeRole>() ?? button.gameObject.AddComponent<ThemeRole>();
                 string title = button.name;
                 bool inPage = panels && (Under(button, panels.pause) || Under(button, panels.settings) || Under(button, panels.help) || Under(button, panels.discovery) || Under(button, panels.error));
-                role.kind = title == "退出游戏" ? ThemeRoleKind.Danger : inPage || title == "覆盖并开始" ? ThemeRoleKind.Primary : ThemeRoleKind.Body;
+                role.kind = inPage || title == "覆盖并开始" ? ThemeRoleKind.Primary : ThemeRoleKind.Body;
             }
             foreach (var text in root.GetComponentsInChildren<Text>(true))
                 if (text.name == "标题" || text.name == "暂停" || text.name == "设置" && text.rectTransform.sizeDelta.y > 40 || text.name == "主菜单")

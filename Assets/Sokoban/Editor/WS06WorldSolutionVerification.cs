@@ -19,7 +19,7 @@ namespace Sokoban.Editor
 {
     public static class WS06WorldSolutionVerification
     {
-        static readonly string[] Plain = { "#########", "<.P.B.T.>", "#########" };
+        static readonly string[] Plain = { "#########", "#.......#", "<.P.B.T.>", "#########" };
 
         static void Require(bool value, string detail)
         {

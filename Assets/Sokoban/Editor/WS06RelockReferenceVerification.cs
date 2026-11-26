@@ -73,9 +73,23 @@ namespace Sokoban.Editor
         static void Clear(PuzzleRun run)
         {
             var result = RoomSolution.Check(run.Room.Room, run.PlayerLocal);
-            if (result.Verdict != SolveVerdict.Confirmed) throw new InvalidOperationException(run.ActiveId + " 未确认有解：" + RoomSolution.Label(result.Verdict));
+            bool hasVine = Enumerable.Range(0, run.Room.Room.Width).SelectMany(x => Enumerable.Range(0, run.Room.Room.Height).Select(y => new Cell(x, y))).Any(c => run.Room.Room.TerrainAt(c).CategoryId == TerrainCategories.Openable);
+            var expected = hasVine ? SolveVerdict.Optimistic : SolveVerdict.Confirmed;
+            if (result.Verdict != expected) throw new InvalidOperationException(run.ActiveId + " 求解结论应为 " + RoomSolution.Label(expected) + "，实际 " + RoomSolution.Label(result.Verdict));
             for (int i = 0; i < result.Moves.Count; i++)
-                if (!run.Step(new Vector2Int(result.Moves[i].X, result.Moves[i].Y), out _)) throw new InvalidOperationException(run.ActiveId + " 第 " + (i + 1) + " 步被拒绝");
+            {
+                var delta = new Vector2Int(result.Moves[i].X, result.Moves[i].Y);
+                if (run.Step(delta, out _)) continue;
+                if (!hasVine) throw new InvalidOperationException(run.ActiveId + " 第 " + (i + 1) + " 步被拒绝");
+                if (run.Recovering)
+                {
+                    if (run.PlayerOnClosingCell) throw new InvalidOperationException(run.ActiveId + " 第 " + (i + 1) + " 步被拒绝，玩家仍在将要闭合的格子上");
+                    run.AdvanceRecovery(60f);
+                }
+                else if (!run.BeginRecovery()) throw new InvalidOperationException(run.ActiveId + " 第 " + (i + 1) + " 步被拒绝且无法开始恢复");
+                if (!run.Step(delta, out _)) throw new InvalidOperationException(run.ActiveId + " 第 " + (i + 1) + " 步在恢复处理后仍被拒绝 player=" + run.PlayerLocal + " delta=" + delta + " recovering=" + run.Recovering + " boxes=" + string.Join(";", run.Boxes.Select(b => b.Key + "@" + b.Value)) + " route=" + string.Join(" ", result.Moves));
+            }
+            if (run.Recovering) run.AdvanceRecovery(60f);
             if (!run.Solved) throw new InvalidOperationException(run.ActiveId + " 回放后未解开");
         }
 
@@ -90,7 +104,7 @@ namespace Sokoban.Editor
         {
             var draft = Campaign();
             var result = WorldSolution.Check(draft.World, draft.Catalog);
-            Check(result.Verdict == SolveVerdict.Confirmed, "world solver expanded=" + result.Expanded + " route=" + result.Detail);
+            Check(result.Verdict == SolveVerdict.Optimistic, "world solver (forest has a vine gate, so the verdict is optimistic) expanded=" + result.Expanded + " route=" + result.Detail);
             var run = PuzzleRun.FromDraft(draft);
             Clear(run); Leave(run);
             Check(run.ActiveId == "factory", "solved warehouse crosses into factory");
@@ -146,6 +160,13 @@ namespace Sokoban.Editor
             Func<string, RoomDraftModel> lookup = id => draft.Catalog.TryGetValue(id, out var found) ? found : null;
             var issues = ObjectBehavior.TargetIssues(warehouse, lookup).ToList();
             Check(issues.Count == 1 && issues[0].Contains("factory/box-1") && issues[0].Contains(nodeId), "dangling target reported: " + string.Join(";", issues));
+            string refused = Path.Combine(Folder, "refused.world.json");
+            if (File.Exists(refused)) File.Delete(refused);
+            bool rejected = false;
+            string refusal = null;
+            try { draft.Save(refused, true); }
+            catch (Exception ex) { rejected = true; refusal = ex.Message; }
+            Check(rejected && !File.Exists(refused) && refusal != null && refusal.Contains("factory/box-1"), "export with a dangling cross-room target is refused, names the target and writes nothing: " + refusal);
             draft.Undo();
             var back = draft.Find("box-1");
             Check(back != null && back.Cell == target.Cell && back.CategoryId == target.CategoryId && Encoded(draft.Model) == factoryBefore && !ObjectBehavior.TargetIssues(warehouse, lookup).Any(), "single undo restores target identity, properties and clears the dangling report");
