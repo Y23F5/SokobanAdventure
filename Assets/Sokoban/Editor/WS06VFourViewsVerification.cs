@@ -1,15 +1,16 @@
 /**
  * @file WS06VFourViewsVerification.cs
  * @brief Run opens the warehouse. Observe rotates the editor, trial and campaign. Sample measures mesh bounds and projected grid spacing before saving each view. Shot renders the live camera. Tick records failures and exits batch mode.
+ * 房间一致性改为比较 ContentHash.Of 与 PuzzleRun.Hashes；预览节点名用 Cell.ToString 的无空格写法，已删除的主题模型节点不再取样。
  */
 using System;
 using System.IO;
 using System.Linq;
 using System.Collections;
-using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using Sokoban.Core;
 using Object = UnityEngine.Object;
 
 namespace Sokoban.Editor
@@ -19,6 +20,7 @@ namespace Sokoban.Editor
         const string Key="WS06V.Views.Path";
         static IEnumerator routine;
         static int frame=-1;
+        static readonly string[] Parts={"spawn","box-1","target-1","Wall (0,0)","Floor (4,2)"};
         static void Require(bool value,string label) { if(!value) throw new InvalidOperationException(label); }
         public static void Run()
         {
@@ -56,9 +58,9 @@ namespace Sokoban.Editor
             Vector2 Pixel(Vector3 p) { var uv=c.WorldToViewportPoint(p); return new Vector2(uv.x*960,uv.y*720); }
             var origin=room.position;
             Debug.Log($"VIEWSQA SAMPLE {stage} yaw={yaw:F1} ortho={c.orthographicSize:F4} aspect={c.aspect:F4} pixelsEast={Vector2.Distance(Pixel(origin),Pixel(origin+Vector3.right)):F2} pixelsNorth={Vector2.Distance(Pixel(origin),Pixel(origin+Vector3.forward)):F2}");
-            foreach(var partName in new[]{"spawn","box-1","target-1","Wall (0, 0)","Floor (4, 2)","主题模型"})
+            foreach(var partName in Parts)
             {
-                var part=room.Find(partName); var meshes=part.GetComponentsInChildren<MeshFilter>(true);
+                var part=room.Find(partName); Require(part,"missing part "+partName); var meshes=part.GetComponentsInChildren<MeshFilter>(true);
                 var points=meshes.SelectMany(m=>Enumerable.Range(0,8).Select(k=>{
                     var b=m.sharedMesh.bounds; return m.transform.TransformPoint(b.center+Vector3.Scale(b.extents,new Vector3((k&1)==0?-1:1,(k&2)==0?-1:1,(k&4)==0?-1:1)));})).ToArray();
                 var world=new Bounds(points[0],Vector3.zero); foreach(var p in points) world.Encapsulate(p);
@@ -78,7 +80,7 @@ namespace Sokoban.Editor
                     if(Mathf.Min(left,right,top,bottom)<0) mismatches++;
                 }
                 Frame("walls",walls); Frame("floor",floor);
-                foreach(var id in new[]{"spawn","box-1","target-1","entry","exit","主题模型"}) Frame(id,new[]{room.Find(id)});
+                foreach(var id in new[]{"spawn","box-1","target-1","entry","exit"}) Frame(id,new[]{room.Find(id)});
             }
             Shot(folder,stage+"-"+i);
         }
@@ -86,24 +88,24 @@ namespace Sokoban.Editor
         {
             yield return null; yield return null; Time.captureFramerate=60;
             var editor=Object.FindObjectOfType<LayoutHost>(); editor.Panel.Draft.Open(path,true); yield return null; yield return null;
-            var expected=editor.Panel.Draft.Room.DeepClone();
+            string roomId=editor.Panel.Draft.ActiveId;
+            string expected=ContentHash.Of(editor.Panel.Draft.Model);
             var flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
             for(int i=0;i<4;i++)
             {
                 if(i>0){var gesture=typeof(LayoutHost).GetField("gesture",flags);gesture.SetValue(editor,1);typeof(LayoutHost).GetMethod("DragCamera",flags).Invoke(editor,new object[]{new Vector3(250,0,0)});gesture.SetValue(editor,-1);}
-                yield return null; Sample("edit",i,GameObject.Find("Room • warehouse").transform.Find("warehouse"));
+                yield return null; Sample("edit",i,GameObject.Find("Room • "+roomId).transform.Find(roomId));
             }
             editor.StartTrial(); yield return null; yield return null;
             for(int mode=0;mode<2;mode++)
             {
                 if(mode==1){PuzzleHost.MenuRequest=PuzzleRun.Campaign(); UnityEngine.SceneManagement.SceneManager.LoadScene("Game");yield return null; yield return null; yield return null;}
-                var host=Object.FindObjectOfType<PuzzleHost>(); Require(host.IsTrial==(mode==0) && JToken.DeepEquals(host.Run.Room,expected),"room or mode mismatch");
+                var host=Object.FindObjectOfType<PuzzleHost>(); Require(host.IsTrial==(mode==0) && host.Run.Hashes[roomId]==expected,"room or mode mismatch");
                 if(host.Run.PendingItem!=null) host.panels.Back(); yield return null; yield return null;
-                for(int i=0;i<4;i++) { if(i>0){host.Turn(1);while(host.Busy) yield return null;} yield return null; Sample(mode==0?"trial":"campaign",i,host.transform.Find("warehouse")); }
+                for(int i=0;i<4;i++) { if(i>0){host.Turn(1);while(host.Busy) yield return null;} yield return null; Sample(mode==0?"trial":"campaign",i,host.transform.Find(roomId)); }
                 if(mode==0){host.Leave();yield return null;yield return null;}
             }
             Debug.Log("VIEWSQA geometry mismatches="+mismatches); Require(mismatches==0,"geometry differs");
         }
     }
 }
-

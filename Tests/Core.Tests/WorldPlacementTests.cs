@@ -7,7 +7,7 @@ namespace Sokoban.Core.Tests
     public class WorldPlacementTests
     {
         static WorldDocument World(params WorldRoomRef[] rooms) =>
-            new WorldDocument("w", 1, new Cell(0, 0), new Cell(19, 9), rooms, new WorldConnection[0],
+            new WorldDocument("w", new Cell(0, 0), new Cell(19, 9), rooms, new WorldConnection[0],
                 new WorldEndpoint("a", "spawn"), new WorldEndpoint("a", "exit"), new[] { "a" });
 
         static WorldRoomRef Ref(string id, int x, int y) => new WorldRoomRef(id, id + ".json", new Cell(x, y), new string[0]);

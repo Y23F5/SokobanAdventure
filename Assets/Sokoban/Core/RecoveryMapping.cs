@@ -14,7 +14,7 @@ namespace Sokoban.Core
 {
     public static class RecoveryMapping
     {
-        const float DefaultDuration = 3.7f;
+        const float DefaultDuration = RecoveryItem.DefaultDuration;
         const float VineOffset = 0.70f;
 
         public static IReadOnlyList<RecoveryItem> FromPresentation(string preset, RoomDraftModel draft)

@@ -3,6 +3,7 @@
  * @brief ShowPlay、Pause、Settings、Help 和 Confirm 选择当前 Canvas 面板并记住返回页。
  * Back 和 Update 处理按钮及 Esc 的同帧输入。SetVolume、SetFullscreen 即时应用并持久化设置。
  * Accept 与 Leave 分派已确认的新局或退出动作；ShowError 在当前宿主上报告失败。
+ * ShowDiscovery 接收标题与说明两段文字，标题写入 discoveryTitle，说明写入 discoveryText 后显示获得道具页；只传说明的重载使用默认标题。
  * FocusPage 为菜单和模态面板提供初始键盘焦点，游玩 HUD 不占用导航。
  */
 using UnityEngine;
@@ -17,17 +18,16 @@ namespace Sokoban
         public GameObject discovery;
         public RawImage roomArtwork;
         Texture2D roomTexture;
-        public void ShowRoomArtwork(Newtonsoft.Json.Linq.JObject room)
+        public void ShowRoomArtwork(Sokoban.Core.AssetDescriptor asset)
         {
             if(!roomArtwork) return;
-            string id=(string)room["uiImage"];
-            if(roomTexture) Destroy(roomTexture);
-            roomTexture=id==null ? null : ImportedAppearance.ReadImage(room["assets"][id]);
+                        if(roomTexture) Destroy(roomTexture);
+            roomTexture=asset==null ? null : ImportedAppearance.ReadImage(asset);
             roomArtwork.texture=roomTexture;
             roomArtwork.gameObject.SetActive(roomTexture);
         }
         void OnDestroy() { if(roomTexture) Destroy(roomTexture); }
-        public Text itemLabel, discoveryText;
+        public Text itemLabel, discoveryText, discoveryTitle;
         public Text exitLabel, errorText, volumeLabel;
         public Slider volume;
         public Toggle fullscreen;
@@ -108,7 +108,13 @@ namespace Sokoban
             PlayerPrefs.Save();
         }
         public void ShowError(string message) { errorText.text = message; Show(error); }
-        public void ShowDiscovery(string message) { discoveryText.text = message; Show(discovery); }
+        public void ShowDiscovery(string message) => ShowDiscovery("获得道具", message);
+        public void ShowDiscovery(string title, string message)
+        {
+            if (discoveryTitle) discoveryTitle.text = title;
+            discoveryText.text = message;
+            Show(discovery);
+        }
         public void Back()
         {
             if (discovery && current == discovery) { host.AcceptDiscovery(); Show(null); }

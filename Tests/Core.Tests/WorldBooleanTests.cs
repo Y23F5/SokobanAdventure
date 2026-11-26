@@ -8,7 +8,7 @@ namespace Sokoban.Core.Tests
     public class WorldBooleanTests
     {
         static WorldDocument Doc(bool allowReturn) =>
-            new WorldDocument("w", 1, new Cell(0, 0), new Cell(19, 9),
+            new WorldDocument("w", new Cell(0, 0), new Cell(19, 9),
                 new[]
                 {
                     new WorldRoomRef("a", "a.json", new Cell(0, 0), new string[0]),

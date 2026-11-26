@@ -1,120 +1,148 @@
 /**
  * @file WS06WorldSolutionVerification.cs
- * @brief Run exercises the published three rooms and a required-return control. Small builds and reopens a validated two-room fixture. Verify checks the budget and outcome. Replay executes all ordinary moves and independently checks the final outward step and live prerequisites.
+ * @brief 世界求解的编辑器回归：用正式三房与 Blueprint 构造的双房夹具核对 WorldSolution 的四种结论、预算计数与输入不被修改，并用真实 PuzzleRun 步进回放确认有解的两房路线。
+ * Run：菜单与批处理入口，逐例执行并汇总失败。
+ * Room、World、Pair：由字符画图纸构造带恢复道具的房间、世界文档（A 的出口直连 B 的入口，终点为 B 的出口）与房间表。
+ * Verify：调用 WorldSolution.Check，核对结论与路线文字，并确认世界文档与各房间编码前后一致。
+ * Replay：夹具写成世界文件后经 RoomDraft 重开，逐房求解、真实步进、走到出口跨房，最后核对 CanLeaveWorld。
+ * SolveInRoom、WalkTo：内部辅助，对活动房间求解并步进，以及沿可通行格走到指定格，GridPlayVerification 复用。
  */
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
+using Sokoban.Core;
+
 namespace Sokoban.Editor
 {
     public static class WS06WorldSolutionVerification
     {
-        static readonly Vector2Int[] Moves = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
-        static void Require(bool value,string detail) { if(!value) throw new InvalidOperationException(detail); }
-        static RoomDraft Small(string folder)
+        static readonly string[] Plain = { "#########", "<.P.B.T.>", "#########" };
+
+        static void Require(bool value, string detail)
         {
-            var draft = new LayoutPanel().Draft;
-            var catalog = new JObject();
-            var world = WorldLayout.Empty("A");
-            foreach (var id in new[]{"A","B"})
+            if (!value) throw new InvalidOperationException(detail);
+        }
+
+        static RoomDraftModel Room(string id, string[] rows)
+        {
+            var parsed = Blueprint.Parse(id, rows);
+            return new RoomDraftModel(parsed.Room, parsed.Doors, "entry", null, new[] { new RecoveryItem("recovery-1", "warehouse-lift", 3.7f) });
+        }
+
+        static WorldDocument World(bool connected) => new WorldDocument("qa-world", new Cell(0, 0), new Cell(63, 31),
+            new[] { new WorldRoomRef("A", "", new Cell(0, 0), new string[0]), new WorldRoomRef("B", "", new Cell(9, 0), new[] { "A" }) },
+            connected ? new[] { new WorldConnection("AB", WorldCodec.Direct, new WorldEndpoint("A", "exit"), new WorldEndpoint("B", "entry"), true) } : new WorldConnection[0],
+            new WorldEndpoint("A", "spawn"), new WorldEndpoint("B", "exit"), new[] { "A", "B" });
+
+        static Dictionary<string, RoomDraftModel> Pair(string[] second) =>
+            new Dictionary<string, RoomDraftModel>(StringComparer.Ordinal) { ["A"] = Room("A", Plain), ["B"] = Room("B", second) };
+
+        static RoomSolution.Result Verify(string label, WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> models, int budget, SolveVerdict expected, string detail = null)
+        {
+            string worldBefore = WorldCodec.Encode(world);
+            var roomsBefore = models.ToDictionary(p => p.Key, p => RoomCodec.Encode(p.Value));
+            var result = WorldSolution.Check(world, models, budget);
+            Debug.Log($"WORLDQA OBS {label} budget={budget} verdict={result.Verdict} expanded={result.Expanded} detail={result.Detail}");
+            Require(result.Verdict == expected, label + " expected " + expected + " observed " + result.Verdict);
+            Require(detail == null || result.Detail == detail, label + " detail " + result.Detail);
+            Require(worldBefore == WorldCodec.Encode(world) && models.All(p => roomsBefore[p.Key] == RoomCodec.Encode(p.Value)), label + " input mutated");
+            return result;
+        }
+
+        internal static void SolveInRoom(PuzzleRun run)
+        {
+            var result = RoomSolution.Check(run.Models[run.ActiveId], run.PlayerLocal, 100000);
+            Require(result.Verdict == SolveVerdict.Confirmed, "房间 " + run.ActiveId + " 未确认有解：" + result.Verdict);
+            foreach (var move in result.Moves)
+                Require(run.Step(new Vector2Int(move.X, move.Y), out _), "回放被拒绝 " + run.ActiveId + " " + move);
+            Require(run.Solved, "回放结束仍未解开 " + run.ActiveId);
+        }
+
+        internal static void WalkTo(PuzzleRun run, Cell target)
+        {
+            var room = run.Room.Room;
+            var boxes = new HashSet<Cell>(run.BoxesIn(run.ActiveId).Values.Select(v => new Cell(v.x - run.Origin.x, v.y - run.Origin.y)));
+            var parent = new Dictionary<Cell, Cell>();
+            var queue = new Queue<Cell>();
+            var start = run.PlayerLocal;
+            parent[start] = start;
+            queue.Enqueue(start);
+            while (queue.Count > 0 && !parent.ContainsKey(target))
             {
-                var room=(JObject)draft.Room.DeepClone();
-                room["levelId"]=id;
-                room["size"]=new JArray(7,5);
-                room["terrainRowsNorthToSouth"]=new JArray(id=="A"?"###.###":"#######",".......","##...##","##...##","#######");
-                room["spawn"]["cell"]=new JArray(2,1);
-                room["boxes"][0]["cell"]=new JArray(3,1);
-                room["boxes"][0]["recoveryCell"]=new JArray(3,1);
-                room["targets"][0]["cell"]=new JArray(4,1);
-                // A north finish uses a different door from the A-to-B connection.
-                if(id=="A") ((JArray)room["doors"]).Add(new JObject{["id"]="finish",["role"]="exit",["direction"]="N",["cell"]=new JArray(3,4)});
-                catalog[id]=room;
-                ((JArray)world["rooms"]).Add(new JObject{["levelId"]=id,["origin"]=new JArray(id=="A"?0:7,0),["file"]="",["forwardRequiresSolved"]=id=="A"?new JArray():new JArray("A")});
+                var cell = queue.Dequeue();
+                foreach (var direction in Cell.SearchOrder)
+                {
+                    var next = cell + direction;
+                    string category = room.TerrainAt(next).CategoryId;
+                    if (parent.ContainsKey(next) || boxes.Contains(next)) continue;
+                    if (category != TerrainCategories.Floor && category != TerrainCategories.Door) continue;
+                    parent[next] = cell;
+                    queue.Enqueue(next);
+                }
             }
-            world["connections"]=new JArray(new JObject{["id"]="AB",["mode"]="direct",["allowReturn"]=true,["forwardFrom"]=new JObject{["levelId"]="A",["doorId"]="exit"},["forwardTo"]=new JObject{["levelId"]="B",["doorId"]="entry"}});
-            world["finish"]["endpoint"]["doorId"]="finish";
-            world["finish"]["requiresSolved"]=new JArray("A","B");
-            string path=Path.Combine(folder,"required-return.world.json");
-            WorldLayout.Write(path,world,catalog); draft.Open(path,false); draft.UseRoom("A"); return draft;
-        }
-        static void Replay(RoomDraft draft,string route,bool requireReturn)
-        {
-            Require(route.Length>0,"empty route");
-            var run=PuzzleRun.FromDraft(draft);
-            int returns=0;
-            for(int i=0;i<route.Length;i++)
+            Require(parent.ContainsKey(target), "走不到 " + target);
+            var path = new List<Cell>();
+            for (var cell = target; cell != start; cell = parent[cell]) path.Add(cell);
+            path.Reverse();
+            var at = start;
+            foreach (var cell in path)
             {
-                int index="URDL".IndexOf(route[i]); Require(index>=0,"invalid direction "+route[i]);
-                var move=Moves[index];
-                if(i==route.Length-1)
-                {
-                    Require(run.CanLeaveWorld(move),"runtime refused final outward step");
-                    var finish=draft.World["finish"]; var end=finish["endpoint"];
-                    Require(run.ActiveId==(string)end["levelId"],"wrong finish room");
-                    var door=run.Room["doors"].Single(d=>(string)d["id"]==(string)end["doorId"]);
-                    Require(run.Player==run.Origin+RoomFile.At(door) && move==-RoomFile.Inward(door),"wrong finish door or outward step");
-                    foreach(string id in finish["requiresSolved"].Values<string>())
-                    {
-                        var origin=RoomFile.Cell(draft.World["rooms"].Single(r=>(string)r["levelId"]==id)["origin"]);
-                        Require(draft.Catalog[id]["targets"].All(t=>run.BoxesIn(id).Values.Contains(origin+RoomFile.At(t))),"unsolved requirement "+id);
-                    }
-                    Debug.Log($"WORLDQA FINAL step={i+1} {run.ActiveId}.{end["doorId"]} player={run.Player} outward={route[i]}");
-                }
-                else
-                {
-                    var previous=run.ActiveId;
-                    Require(run.Step(move,out _),$"replay rejected step {i+1} {route[i]} at {previous} {run.Player}");
-                    if(previous!=run.ActiveId){Debug.Log($"WORLDQA CROSS step={i+1} {previous}->{run.ActiveId}"); if(previous=="B" && run.ActiveId=="A") returns++;}
-                }
+                var delta = cell - at;
+                Require(run.Step(new Vector2Int(delta.X, delta.Y), out _), "步行被拒绝 " + at + " -> " + cell);
+                at = cell;
             }
-            Require(!requireReturn || returns>0,"missing required B to A crossing");
         }
-        static void Verify(RoomDraft draft,string label,int budget,RoomSolution.Outcome expected,bool requireReturn=false)
+
+        static void Replay(string folder)
         {
-            var before=draft.Snapshot();
-            var result=WorldSolution.Check(draft.World,draft.Catalog,budget);
-            Debug.Log($"WORLDQA OBS {label} budget={budget} status={result.Status} expanded={result.Expanded} detail={result.Detail}");
-            Require(result.Status==expected,label+" expected "+expected);
-            Require(JToken.DeepEquals(before,draft.Snapshot()),"input mutated");
-            if(label=="return-off") Require(result.Detail.Contains("B/entry → A/exit"),"missing disabled return direction");
-            else if(expected==RoomSolution.Outcome.BudgetReached) Require(result.Expanded==budget,"incorrect budget counter");
-            if(expected==RoomSolution.Outcome.Solved) Replay(draft,result.Detail,requireReturn);
+            var models = Pair(Plain);
+            string path = Path.Combine(folder, "two-room.world.json");
+            Directory.CreateDirectory(folder);
+            WorldLayout.Write(path, World(true), models);
+            var draft = new RoomDraft(models["A"]);
+            draft.Open(path, false);
+            draft.UseRoom("A");
+            var run = PuzzleRun.FromDraft(draft);
+            Require(run.ActiveId == "A" && !run.Solved, "起点房间或初始状态错误");
+            SolveInRoom(run);
+            var exitA = run.Room.Doors.Single(d => d.Role == "exit");
+            WalkTo(run, exitA.Cell);
+            Require(run.Step(new Vector2Int(exitA.Outward.X, exitA.Outward.Y), out _) && run.ActiveId == "B", "A 解开后未能经出口进入 B");
+            Require(run.PlayerLocal == run.Room.Doors.Single(d => d.Role == "entry").Cell, "跨房后未落在 B 的入口门格");
+            Debug.Log("WORLDQA CROSS A->B");
+            SolveInRoom(run);
+            var exitB = run.Room.Doors.Single(d => d.Role == "exit");
+            WalkTo(run, exitB.Cell);
+            Require(run.CanLeaveWorld(new Vector2Int(exitB.Outward.X, exitB.Outward.Y)), "运行时拒绝了终点外迈一步");
+            Debug.Log("WORLDQA FINAL " + run.ActiveId + "." + exitB.Id + " player=" + run.PlayerLocal);
         }
+
         [MenuItem("Sokoban/验证/WS-06 世界求解")]
         public static void Run()
         {
-            var folder=Environment.GetEnvironmentVariable("WS06_WORLD_EVIDENCE")??Path.GetFullPath("Logs/WS06World"); Directory.CreateDirectory(folder);
-            var campaign=new LayoutPanel().Draft;
-            campaign.Open(Path.Combine(Application.streamingAssetsPath,"World/main.world.json"),false); campaign.UseRoom((string)campaign.World["start"]["levelId"]);
-            var small=Small(folder);
-            int passed=0,total=0;
-            void Case(string name,Action action){total++;try{action();passed++;Debug.Log("WORLDQA PASS "+name);}catch(Exception ex){Debug.LogError("WORLDQA FAIL "+name+" "+ex);}}
-            Case("fixture-replay",()=>Replay(small,"RUURRRRRRDDRUULLLLLLLUU",true));
-            Case("budget-zero",()=>Verify(campaign,"budget-zero",0,RoomSolution.Outcome.BudgetReached));
-            Case("budget-one",()=>Verify(campaign,"budget-one",1,RoomSolution.Outcome.BudgetReached));
-            Case("campaign-reference",()=>{
-                var run=PuzzleRun.FromDraft(campaign);
-                string route="";
-                foreach(string id in new[]{"warehouse","factory","forest"})
-                {
-                    Require(run.ActiveId==id,"unexpected reference room");
-                    var exit=run.Room["doors"].Single(d=>(string)d["id"]=="exit");
-                    var local=RoomSolution.Check(run.Room,run.Player-run.Origin,100000,run.World,RoomFile.At(exit));
-                    Require(local.Status==RoomSolution.Outcome.Solved,"reference room search: "+local.Detail);
-                    foreach(char c in local.Detail){int i="NESW".IndexOf(c);Require(run.Step(Moves[i],out _),"reference move rejected");route+="URDL"[i];}
-                    var outward=-RoomFile.Inward(exit);route+="URDL"[Array.IndexOf(Moves,outward)];
-                    if(id!="forest") Require(run.Step(outward,out _),"reference cross rejected");
-                }
-                Debug.Log("WORLDQA REFERENCE "+route);Replay(campaign,route,false);
-            });
-            Case("campaign",()=>Verify(campaign,"campaign",100000,RoomSolution.Outcome.Solved));
-            Case("return-on",()=>Verify(small,"return-on",100000,RoomSolution.Outcome.Solved,true));
-            Case("return-off",()=>{small.World["connections"][0]["allowReturn"]=false;Verify(small,"return-off",100000,RoomSolution.Outcome.BudgetReached);});
-            Case("return-off-forward-finish",()=>{small.World["connections"][0]["allowReturn"]=false; small.World["finish"]["endpoint"]=new JObject{["levelId"]="B",["doorId"]="exit"}; Verify(small,"return-off-forward-finish",100000,RoomSolution.Outcome.Solved);});
-            Debug.Log($"WORLDQA RESULT {passed}/{total}");Require(passed==total,"MAP06-002 failures");
+            var folder = Environment.GetEnvironmentVariable("WS06_WORLD_EVIDENCE") ?? Path.GetFullPath("Logs/WS06World");
+            var catalog = new Dictionary<string, RoomDraftModel>(StringComparer.Ordinal);
+            var campaign = WorldLayout.Read(Path.Combine(Application.streamingAssetsPath, "World/main.world.json"), catalog);
+            int passed = 0, total = 0;
+            void Case(string name, Action action)
+            {
+                total++;
+                try { action(); passed++; Debug.Log("WORLDQA PASS " + name); }
+                catch (Exception ex) { Debug.LogError("WORLDQA FAIL " + name + " " + ex); }
+            }
+            Case("budget-zero", () => Require(Verify("budget-zero", campaign, catalog, 0, SolveVerdict.Unverifiable).Expanded == 0, "零预算仍展开状态"));
+            Case("budget-one", () => Require(Verify("budget-one", campaign, catalog, 1, SolveVerdict.Unverifiable).Expanded == 1, "预算计数不符"));
+            Case("campaign-optimistic", () => Verify("campaign", campaign, catalog, 100000, SolveVerdict.Optimistic, "warehouse → factory → forest"));
+            Case("fixture-confirmed", () => Verify("fixture-confirmed", World(true), Pair(Plain), 100000, SolveVerdict.Confirmed, "A → B"));
+            Case("fixture-replay", () => Replay(folder));
+            Case("fixture-unsolvable", () => Verify("fixture-unsolvable", World(true), Pair(new[] { "#########", "<.P#B.T.>", "#########" }), 100000, SolveVerdict.Unsolvable, "房间 B 确认无解"));
+            Case("fixture-vine-optimistic", () => Verify("fixture-vine", World(true), Pair(new[] { "#########", "<.V.B.T.>", "#########" }), 100000, SolveVerdict.Optimistic, "A → B"));
+            Case("fixture-unreached", () => Verify("fixture-unreached", World(false), Pair(Plain), 100000, SolveVerdict.Unverifiable, "候选路线未到终点，已通过：A"));
+            Debug.Log($"WORLDQA RESULT {passed}/{total}");
+            Require(passed == total, "WS06 世界求解回归失败");
         }
     }
 }

@@ -1,99 +1,89 @@
 /**
  * @file WS06PYardVerification.cs
- * @brief Run 加载正式世界，逐房生成地绘，验证 Unity 纹理、网格、邻接裁边和原型标牌尺寸。VerifyFloorTiles 逐格检查主题地砖位置和模型尺寸。
+ * @brief Run 加载正式世界，逐房生成预览，验证外围地绘的纹理与邻接裁边、主题地砖的位置与网格尺寸、门的位置，并确认不再按主题固定生成任何外围陈设、标牌或设备。
+ * VerifyFloorTiles：逐个地板格检查地砖位置、网格名称与尺寸，网格种类数必须等于数据里外观引用解析出的预制件种类数，变体序号来自数据而非坐标。
+ * VerifyDoors：每扇门按门 ID 存在于房间层级，位置等于门格。
+ * Require：把验收差异转成批处理失败。
  */
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Newtonsoft.Json.Linq;
 using UnityEngine;
+using Sokoban.Core;
 
 namespace Sokoban.Editor
 {
     public static class WS06PYardVerification
     {
-        static void VerifyFloorTiles(JObject room, Transform group)
+        static readonly string[] RemovedFixtures = { "RackRow", "TankRow", "SidePipes", "PineBank", "StoneBank", "主题模型", "仓库标牌", "调度岗亭与装卸区" };
+
+        static void Require(bool ok, string message)
         {
-            var size = RoomFile.Size(room);
-            var variants = new System.Collections.Generic.HashSet<Mesh>();
+            if (!ok) throw new InvalidOperationException(message);
+        }
+
+        static void VerifyFloorTiles(RoomDraftModel model, Transform group)
+        {
+            var room = model.Room;
+            var meshes = new HashSet<Mesh>();
+            var prefabs = new HashSet<string>();
             int count = 0;
-            for (int y = 0; y < size.y; y++)
-                for (int x = 0; x < size.x; x++)
+            for (int y = 0; y < room.Height; y++)
+                for (int x = 0; x < room.Width; x++)
                 {
-                    var cell = new Vector2Int(x, y);
-                    if (!RoomFile.Floor(room, cell)) continue;
+                    var cell = new Cell(x, y);
+                    if (room.TerrainAt(cell).CategoryId != TerrainCategories.Floor) continue;
                     var tile = group.Find("Floor " + cell);
-                    RoomFile.Check(tile && tile.localPosition == new Vector3(x, 0, y), "主题地砖与格坐标不一致 " + cell);
-                    var mesh = tile.GetComponent<MeshFilter>().sharedMesh;
-                    var height = mesh.bounds.max.y;
-                    RoomFile.Check(mesh.name.StartsWith((string)room["themeId"] + "Tile") &&
+                    Require(tile && tile.localPosition == new Vector3(x, 0, y), "主题地砖与格坐标不一致 " + cell);
+                    var mesh = tile.GetComponentInChildren<MeshFilter>().sharedMesh;
+                    float height = mesh.bounds.max.y;
+                    Require(mesh.name.StartsWith(model.Meta.ThemeId + "Tile") &&
                         Mathf.Abs(mesh.bounds.size.x - .986f) < .001f && Mathf.Abs(mesh.bounds.size.z - .986f) < .001f &&
                         height > 0 && height < .05f, "主题地砖网格尺寸或表面高度异常 " + cell);
-                    variants.Add(mesh);
+                    meshes.Add(mesh);
+                    prefabs.Add(AppearanceLibrary.Prefab(room.AppearanceAt(cell) ?? AppearanceLibrary.Default(TerrainCategories.Floor, model.Meta.ThemeId)));
                     count++;
                 }
-            RoomFile.Check(variants.Count == 3, "正式房间地面缺少三种变化");
-            Debug.Log($"FLOOR PASS {room["levelId"]} cells={count} variants={variants.Count}");
+            Require(meshes.Count == prefabs.Count, "地面网格种类与数据外观不符 " + meshes.Count + "/" + prefabs.Count);
+            Debug.Log($"FLOOR PASS {room.Id} cells={count} variants={meshes.Count}");
+        }
+
+        static void VerifyDoors(RoomDraftModel model, Transform group)
+        {
+            foreach (var door in model.Doors)
+            {
+                var node = group.Find(door.Id);
+                Require(node && node.localPosition == new Vector3(door.Cell.X, 0, door.Cell.Y), "门位置错误 " + door.Id);
+            }
         }
 
         public static void Run()
         {
-            var catalog = new JObject();
-            var world = WorldLayout.Read(Path.Combine(Application.streamingAssetsPath,"World/main.world.json"),catalog);
+            var catalog = new Dictionary<string, RoomDraftModel>(StringComparer.Ordinal);
+            var world = WorldLayout.Read(Path.Combine(Application.streamingAssetsPath, "World/main.world.json"), catalog);
             var root = new GameObject();
             try
             {
                 float previousEdge = float.NegativeInfinity;
                 var preview = new RoomPreview();
-                foreach (var row in world["rooms"].OrderBy(r => RoomFile.Cell(r["origin"]).x))
+                foreach (var row in world.Rooms.OrderBy(r => r.Origin.X))
                 {
-                    string id = (string)row["levelId"];
-                    var group = preview.BuildRoom((JObject)catalog[id],RoomFile.Cell(row["origin"]),null,root.transform,world,catalog);
+                    var model = catalog[row.LevelId];
+                    var group = preview.BuildRoom(model, row.Origin, null, root.transform, world, catalog);
                     var yard = group.Find("外围地绘");
+                    Require(yard, "缺少外围地绘 " + row.LevelId);
                     var bounds = yard.GetComponent<Renderer>().bounds;
                     var texture = yard.GetComponent<Renderer>().sharedMaterial.GetTexture("_BaseMap");
-                    RoomFile.Check(yard.GetComponent<MeshFilter>().sharedMesh && texture && bounds.size.x > 1 && bounds.min.x >= previousEdge-.001f,"地绘缺失或交叠 " + id);
+                    Require(yard.GetComponent<MeshFilter>().sharedMesh && texture && bounds.size.x > 1 && bounds.min.x >= previousEdge - .001f, "地绘缺失或交叠 " + row.LevelId);
                     previousEdge = bounds.max.x;
-                    VerifyFloorTiles((JObject)catalog[id], group);
-                    var scenery = id == "warehouse" ? new[] { "RackRow" } : id == "factory"
-                        ? new[] { "TankRow", "SidePipes" } : new[] { "PineBank", "StoneBank" };
-                    foreach (var name in scenery)
-                    {
-                        var model = group.Find(name);
-                        RoomFile.Check(model && model.localScale == Vector3.one, "外围模型缺失或比例改变 " + name);
-                        var box = model.GetComponent<Renderer>().bounds;
-                        var size = RoomFile.Size((JObject)catalog[id]);
-                        RoomFile.Check(box.max.z < group.position.z - .5f || box.min.z > group.position.z + size.y - .5f,
-                            "外围模型侵入房间 " + name);
-                        Debug.Log("SCENERY PASS " + name + " bounds=" + box);
-                    }
-                    if (id == "warehouse")
-                    {
-                        var truck = group.Find("主题模型");
-                        var truckBounds = truck.GetComponentsInChildren<Renderer>().Select(r => r.bounds).Aggregate((a, b) => { a.Encapsulate(b); return a; });
-                        foreach (var placement in world["rooms"])
-                        {
-                            var origin = RoomFile.Cell(placement["origin"]);
-                            var dimensions = RoomFile.Size((JObject)catalog[(string)placement["levelId"]]);
-                            var footprint = new Rect(origin.x - .5f, origin.y - .5f, dimensions.x, dimensions.y);
-                            var parked = Rect.MinMaxRect(truckBounds.min.x, truckBounds.min.z, truckBounds.max.x, truckBounds.max.z);
-                            RoomFile.Check(!parked.Overlaps(footprint), "叉车停车位侵入房间 " + placement["levelId"]);
-                        }
-                        Debug.Log("PARK PASS " + truckBounds);
-                        var props = group.Find("调度岗亭与装卸区");
-                        RoomFile.Check(props && props.GetComponentsInChildren<Collider>().Length == 0,"外围陈设缺失或含有碰撞体");
-                        var mesh = props.GetComponent<MeshFilter>().sharedMesh;
-                        foreach (var door in catalog[id]["doors"])
-                        {
-                            var cell = RoomFile.At(door);
-                            RoomFile.Check(!mesh.vertices.Any(v => Mathf.Abs(v.x-cell.x)<.51f && Mathf.Abs(v.z-cell.y)<.51f),"陈设进入门格");
-                        }
-                        Debug.Log("DEPOT PROPS PASS triangles=" + mesh.triangles.Length/3);
-                    }
-                    if (id == "warehouse") RoomFile.Check(group.Find("仓库标牌").GetComponent<Renderer>().sharedMaterial.GetTexture("_BaseMap"),"标牌纹理缺失");
-                    Debug.Log($"YARD PASS {id} {texture.name} {texture.width}x{texture.height} x=[{bounds.min.x},{bounds.max.x}]");
+                    VerifyFloorTiles(model, group);
+                    VerifyDoors(model, group);
+                    foreach (string name in RemovedFixtures) Require(group.Find(name) == null, "不应再按主题固定生成 " + name);
+                    Debug.Log($"YARD PASS {row.LevelId} {texture.name} {texture.width}x{texture.height} x=[{bounds.min.x},{bounds.max.x}]");
                 }
             }
-            finally { Object.DestroyImmediate(root); }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
         }
     }
 }

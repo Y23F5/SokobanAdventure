@@ -9,7 +9,7 @@ namespace Sokoban.Core.Tests
     public class WorldCodecTests
     {
         static WorldDocument Sample() => new WorldDocument(
-            "main", 1, new Cell(0, 0), new Cell(63, 31),
+            "main", new Cell(0, 0), new Cell(63, 31),
             new List<WorldRoomRef>
             {
                 new WorldRoomRef("warehouse", "warehouse.room.json", new Cell(0, 0), new string[0]),
@@ -28,7 +28,6 @@ namespace Sokoban.Core.Tests
         {
             var back = WorldCodec.Decode(WorldCodec.Encode(Sample()));
             Assert.Equal("main", back.WorldId);
-            Assert.Equal(1, back.ContentVersion);
             Assert.Equal(new Cell(63, 31), back.Max);
             Assert.Equal(2, back.Rooms.Count);
             Assert.Equal(new Cell(9, 0), back.Rooms[1].Origin);

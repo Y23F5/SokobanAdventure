@@ -3,6 +3,9 @@
  * @brief InitSlot、Tick 与 Flush 读取恢复槽，按空闲和连续编辑时限原子写盘。
  * SetView 和 RestoreView/TrackView 交换摄像机状态；NewRoom/Exit 保护工作文件。
  * WorkspaceControls 处理房间目录、原点、属性与检查。ClickWorld 选房并换算局部格。
+ * Issues 按草稿修订号缓存 Core 的发布级校验结果与世界布局问题，独立于状态栏的操作反馈；StructuralIssue 取第一条错误，RuleOk 与 RuleHint 按规则 ID 查询必填项清单。
+ * LocateIssue 经 Core 的 IssueLocator 跳转：格类问题选中该格，房间级问题选中第一个空地板格，并按建议工具切到放置目标或画墙，同时从检查模式回到上一模式。
+ * CheckCurrentRoom 进入检查模式并异步求解，CloseSolution 取消结果并回到上一模式；模式只存放在 Mode，不再有独立的显示标志。
  * StartStroke/ExtendStroke/EndStroke 合并一笔，CancelTool 清除暂存，DrawStroke 绘制待提交格。
  */
 using System;
@@ -29,15 +32,41 @@ namespace Sokoban
         public bool PlacingRoom { get; private set; }
         string placementId;
         int issueRevision = -1;
-        string structuralIssue;
-        public string StructuralIssue {
+        System.Collections.Generic.List<Sokoban.Core.Issue> issues = new System.Collections.Generic.List<Sokoban.Core.Issue>();
+        public System.Collections.Generic.IReadOnlyList<Sokoban.Core.Issue> Issues {
             get {
                 if (issueRevision != Draft.Revision) {
                     issueRevision = Draft.Revision;
-                    structuralIssue = (Draft.World == null ? RoomFile.StructureIssues(Draft.Room) : WorldLayout.Issues(Draft.World, Draft.Catalog)).FirstOrDefault();
+                    issues = Sokoban.Core.RoomValidator.ValidateDraft(Draft.Model, Sokoban.Core.ValidationStage.Publish);
+                    if (Draft.World != null)
+                        foreach (var text in WorldLayout.Issues(Draft.World, Draft.Catalog))
+                            issues.Add(new Sokoban.Core.Issue("world.layout", Sokoban.Core.Severity.Error, Draft.ActiveId, text));
                 }
-                return structuralIssue;
+                return issues;
             }
+        }
+        public string StructuralIssue => Issues.FirstOrDefault(i => i.Severity == Sokoban.Core.Severity.Error)?.Message;
+        public bool RuleOk(string ruleId) => !Issues.Any(i => i.RuleId == ruleId);
+        public string RuleHint(string ruleId) => Issues.FirstOrDefault(i => i.RuleId == ruleId)?.Message;
+        public void LocateIssue(Sokoban.Core.Issue issue) {
+            var target = Sokoban.Core.IssueLocator.Locate(issue);
+            if (Mode.Current == Sokoban.Core.UiMode.Check) Mode.Back();
+            CancelTool();
+            if (target.Kind == Sokoban.Core.LocateKind.Cell) Draft.Select(target.Cell);
+            else if (target.Kind == Sokoban.Core.LocateKind.Room) SelectFirstEmptyFloor();
+            if (target.Tool == Sokoban.Core.LocateTool.PlaceTarget) Draft.Tool = RoomTool.Target;
+            else if (target.Tool == Sokoban.Core.LocateTool.PaintWall) Draft.Tool = RoomTool.Wall;
+            Status = issue.Message;
+        }
+        void SelectFirstEmptyFloor() {
+            var room = Draft.Room;
+            for (int y = 0; y < room.Height; y++)
+                for (int x = 0; x < room.Width; x++) {
+                    var cell = new Sokoban.Core.Cell(x, y);
+                    if (room.TerrainAt(cell).CategoryId != Sokoban.Core.TerrainCategories.Floor || room.ObjectAt(cell) != null) continue;
+                    Draft.Select(cell);
+                    return;
+                }
         }
         public void StartRoomPlacement() {
             if (Draft.World == null) return;
@@ -47,16 +76,16 @@ namespace Sokoban
             Status = "移动鼠标预览整房，左键放置，短按右键或 Esc 取消";
         }
         public Color Candidate(Vector2Int origin, out string reason) {
-            reason = WorldLayout.PlacementIssue(Draft.World, Draft.Catalog, Draft.ActiveId, origin, Draft.Placement != null);
+            reason = WorldLayout.PlacementIssue(Draft.World, Draft.Catalog, Draft.ActiveId, new Sokoban.Core.Cell(origin.x, origin.y), Draft.Placement != null);
             if (reason != null) return Color.red;
-            reason = WorldLayout.ConnectionIssues(Draft.World, Draft.Catalog, Draft.ActiveId, origin).FirstOrDefault();
+            reason = WorldLayout.ConnectionIssues(Draft.World, Draft.Catalog, Draft.ActiveId, new Sokoban.Core.Cell(origin.x, origin.y)).FirstOrDefault();
             return reason == null ? Color.green : Color.yellow;
         }
         public void ConfirmRoom(Vector2Int origin) {
             if (Draft.World == null || placementId != Draft.ActiveId) { CancelTool(); return; }
             Color state = Candidate(origin, out string reason);
             if (state == Color.red) { Status = reason; return; }
-            Draft.PlaceRoom(origin, Draft.Placement != null);
+            Draft.PlaceRoom(new Sokoban.Core.Cell(origin.x, origin.y), Draft.Placement != null);
             CancelTool();
             Status = reason ?? "房间已放置到 " + origin;
         }
@@ -71,10 +100,9 @@ namespace Sokoban
             slotPath=Path.Combine(recoveryDirectory??Application.persistentDataPath,slot+"-ws02.json");
             if(!File.Exists(slotPath))return;
             try {
-                var data=JObject.Parse(File.ReadAllText(slotPath));var view=data["view"];
-                if(view is JObject) {var pos=(JArray)view["p"];var rot=(JArray)view["r"];SetView(new Vector3((float)pos[0],(float)pos[1],(float)pos[2]),new Quaternion((float)rot[0],(float)rot[1],(float)rot[2],(float)rot[3]),(float)view["zoom"],(bool)view["ortho"]);}
-                Draft.Recover(data);Status="已恢复上次编辑现场";
-            } catch(Exception ex) {Draft.Recover(new RoomDraft(Resources.Load<TextAsset>("DefaultRoom").text).Snapshot());HasView=false;Status="草稿恢复失败，已打开默认房间："+ex.Message;}
+                var viewPath=slotPath+".view";if(File.Exists(viewPath)){var f=File.ReadAllText(viewPath).Split(',').Select(p=>float.Parse(p,System.Globalization.CultureInfo.InvariantCulture)).ToArray();if(f.Length==9)SetView(new Vector3(f[0],f[1],f[2]),new Quaternion(f[3],f[4],f[5],f[6]),f[7],f[8]>0);}
+                                Draft.Recover(File.ReadAllText(slotPath));Status="已恢复上次编辑现场";
+            } catch(Exception ex) {Draft.NewDefaultRoom();HasView=false;Status="草稿恢复失败，已打开默认房间："+ex.Message;}
         }
         void Changed() {double now=Time.realtimeSinceStartupAsDouble;if(!changed)firstChange=now;changed=true;lastChange=now;}
         public void Tick() {
@@ -85,9 +113,9 @@ namespace Sokoban
         }
         public bool Flush() {
             if(slotPath==null || discardSlot)return true;
-            try {Directory.CreateDirectory(Path.GetDirectoryName(slotPath));var data=Draft.Snapshot();
-                if(HasView) data["view"]=new JObject { ["p"]=new JArray(Pivot.x,Pivot.y,Pivot.z),["r"]=new JArray(Rotation.x,Rotation.y,Rotation.z,Rotation.w),["zoom"]=Zoom,["ortho"]=Ortho };
-                RoomFile.Write(slotPath,data.ToString());changed=false; return true;
+            try {Directory.CreateDirectory(Path.GetDirectoryName(slotPath));string data=Draft.Snapshot();
+                if(HasView) File.WriteAllText(slotPath+".view",string.Join(",",new[]{Pivot.x,Pivot.y,Pivot.z,Rotation.x,Rotation.y,Rotation.z,Rotation.w,Zoom,Ortho?1f:0f}.Select(v=>v.ToString("R",System.Globalization.CultureInfo.InvariantCulture))));
+                File.WriteAllText(slotPath,data);changed=false; return true;
             } catch(Exception ex) {Status="草稿保存失败："+ex.Message;firstChange=lastChange=Time.realtimeSinceStartupAsDouble;return false;}
         }
         public void SetView(Vector3 pivot,Quaternion rotation,float zoom,bool ortho) {
@@ -104,7 +132,7 @@ namespace Sokoban
             DocumentOpened?.Invoke();
             Flush();
         });
-        public void NewRoom(bool blank = false) => Guard(()=>{if (blank) Draft.NewBlankRoom(); else Draft.NewRoom();DocumentOpened?.Invoke();Flush();Status="已创建独立房间";});
+        public void NewRoom(bool blank = false) => Guard(()=>{if (blank) Draft.NewBlankRoom(); else Draft.NewDefaultRoom();DocumentOpened?.Invoke();Flush();Status="已创建独立房间";});
         public void NewDefaultRoom() => Guard(()=>{Draft.NewDefaultRoom();DocumentOpened?.Invoke();Flush();Status="已从默认布局新建";});
         public void RequestExit(Action exit)
         {
@@ -126,14 +154,14 @@ namespace Sokoban
         public void ClickWorld(Vector2Int world) {
             if (PlacingRoom) { ConfirmRoom(world); return; }
             if(Draft.World!=null) {
-                var id=Draft.RoomAt(world);
+                var id=Draft.RoomAt(new Sokoban.Core.Cell(world.x,world.y));
                 if(Draft.Tool==RoomTool.Select && id!=null && id!=Draft.ActiveId) Draft.UseRoom(id);
                 if(Draft.Placement==null) {Status="房间尚未放入世界";return;}
             }
-            Click(world-Draft.Origin);
+            Click(new Sokoban.Core.Cell(world.x,world.y)-Draft.Origin);
         }
-        public string ConnectionAction(JToken link) => (string)link["id"] + ((string)link["mode"] == "direct" ? " · 直连 → 改为传送" : " · 传送 → 改为直连");
-        public void ToggleConnection(JToken link) => Run(() => Draft.SetConnectionMode((string)link["id"], (string)link["mode"] == "direct" ? "teleport" : "direct"), "已更新门连接");
+        public string ConnectionAction(Sokoban.Core.WorldConnection link) => link.Id + (link.Mode == Sokoban.Core.WorldCodec.Direct ? " · 直连 → 改为传送" : " · 传送 → 改为直连");
+        public void ToggleConnection(Sokoban.Core.WorldConnection link) => Run(() => Draft.SetConnectionMode(link.Id, link.Mode == Sokoban.Core.WorldCodec.Direct ? Sokoban.Core.WorldCodec.Teleport : Sokoban.Core.WorldCodec.Direct), "已更新门连接");
         public static readonly string[] MarkerLabels = { "设为出生点", "添加入口", "添加出口" };
         public void ApplyMarker(int index)
         {
@@ -142,36 +170,35 @@ namespace Sokoban
             Run(() => Draft.SetRoomMarker(Draft.SelectedCell.Value, role), MarkerLabels[index] + "已完成");
         }
         int solutionRequest;
-        public bool ShowingSolution { get; private set; }
         public string SolutionText { get; private set; }
-        public void CloseSolution() { ShowingSolution = false; solutionRequest++; }
+        public void CloseSolution() { solutionRequest++; SolutionText = null; Mode.Back(); }
         public async void CheckCurrentRoom()
         {
             int request = ++solutionRequest;
             int revision = Draft.Revision;
-            ShowingSolution = true;
-            if (StructuralIssue != null) { SolutionText = Status = StructuralIssue; return; }
-            var room = (JObject)Draft.Room.DeepClone();
-            var world = (JObject)Draft.World?.DeepClone();
-            var rooms = world == null ? null : (JObject)Draft.Catalog.DeepClone();
-            SolutionText = Status = world == null ? "正在检查房间解法" : "正在检查世界路线";
+            Mode.Enter(Sokoban.Core.UiMode.Check);
+            if (StructuralIssue != null) { SolutionText = StructuralIssue; return; }
+            var model = Draft.Model;
+            var world = Draft.World;
+            var rooms = world == null ? null : new Dictionary<string, Sokoban.Core.RoomDraftModel>(Draft.Catalog);
+            SolutionText = world == null ? "正在检查房间解法" : "正在检查世界路线";
             try
             {
-                var result = await System.Threading.Tasks.Task.Run(() => world == null ? RoomSolution.CheckEntries(room, null) : WorldSolution.Describe(WorldSolution.Check(world, rooms)));
+                var result = await System.Threading.Tasks.Task.Run(() => world == null ? RoomSolution.CheckEntries(model, null) : WorldSolution.Describe(WorldSolution.Check(world, rooms)));
                 if (request != solutionRequest) return;
-                SolutionText = Status = revision == Draft.Revision ? result : "布局已变更，请重新检查";
+                SolutionText = revision == Draft.Revision ? result : "布局已变更，请重新检查";
             }
-            catch (Exception error) { if (request == solutionRequest) SolutionText = Status = "检查失败 · " + error.Message; }
+            catch (Exception error) { if (request == solutionRequest) SolutionText = "检查失败 · " + error.Message; }
         }
         string objectName;
         bool nameMixed;
         int objectNameRevision = -1;
         public void WorkspaceControls() {
-            GUILayout.Label(Draft.World==null?"独立房间":"世界 · "+(string)Draft.World["worldId"]);
+            GUILayout.Label(Draft.World==null?"独立房间":"世界 · "+Draft.World.Rooms.Count+" 个房间");
             if(Draft.World==null) {if(GUILayout.Button("以此房间创建世界")) Run(()=>{Draft.BeginWorld();Flush();},"房间已加入目录，请设置放置原点");}
             else {
-                foreach(var prop in Draft.Catalog.Properties()) if(GUILayout.Button((Draft.ActiveId==prop.Name?"● ":"")+(string)prop.Value["name"]+"  "+prop.Name)) Draft.UseRoom(prop.Name);
-                foreach (var link in Draft.World["connections"])
+                foreach(var prop in Draft.Catalog) if(GUILayout.Button((Draft.ActiveId==prop.Key?"● ":"")+prop.Value.Meta.Name+"  "+prop.Key)) Draft.UseRoom(prop.Key);
+                foreach (var link in Draft.World.Connections)
                     if (GUILayout.Button(ConnectionAction(link))) ToggleConnection(link);
                 if(GUILayout.Button("从文件加入房间"))ChooseFile("加入房间");
                 GUILayout.Label(Draft.Placement==null?"尚未放置":"房间原点 "+Draft.Origin);
@@ -182,20 +209,13 @@ namespace Sokoban
                 for (int i = 0; i < MarkerLabels.Length; i++) if (GUILayout.Button(MarkerLabels[i])) ApplyMarker(i);
             GUILayout.BeginHorizontal(); GUILayout.Label("X",GUILayout.Width(34));fieldX=GUILayout.TextField(fieldX);GUILayout.Label("Y",GUILayout.Width(34));fieldY=GUILayout.TextField(fieldY);GUILayout.EndHorizontal();
             bool valid=int.TryParse(fieldX,out int x) & int.TryParse(fieldY,out int y);
-            var point=new Vector2Int(x,y);
+            var point=new Sokoban.Core.Cell(x,y);
             if(Draft.World!=null) {
                 if(GUILayout.Button(Draft.Placement==null?"放置房间至坐标":"平移房间至坐标")) Run(()=>{RoomFile.Check(valid,"需要整数坐标");Draft.PlaceRoom(point,Draft.Placement!=null);},"已更新房间原点");
                 if(Draft.Placement!=null && GUILayout.Button("从世界移出房间")) Run(Draft.RemoveRoom,"房间已保留在目录中");
                 if(GUILayout.Button("检查世界")) {var issues=WorldLayout.Issues(Draft.World,Draft.Catalog).ToArray();Status=issues.Length==0?"放置与直连检查通过":string.Join("；",issues);}
             }
             if(Draft.Selected!=null && GUILayout.Button("将选中对象移至坐标")) Run(()=>{RoomFile.Check(valid,"需要整数坐标");Draft.Move(point-Draft.Origin);},"已修改格子坐标");
-            if (Draft.Selection.Count > 0)
-            {
-                if (objectNameRevision != Draft.Revision) { nameMixed = !Draft.TryGetSelectedName(out objectName); objectNameRevision = Draft.Revision; }
-                GUILayout.Label("对象名称（已选 " + Draft.Selection.Count + (nameMixed ? "，名称不同）" : "）"));
-                objectName = GUILayout.TextField(objectName);
-                if (GUILayout.Button("应用选中对象名称")) Run(() => Draft.SetSelectedName(objectName), "已修改选中对象名称");
-            }
             if (Draft.BoxSelected)
                 for (int i = 0; i < RoomDraft.BuiltinBoxes.Length; i++)
                 {
@@ -206,19 +226,17 @@ namespace Sokoban
             if (GUILayout.Button(ThemeLabel)) CycleTheme();
             roomName=GUILayout.TextField(roomName); if(GUILayout.Button("应用房间名称")) Run(()=>Draft.Rename(roomName),"已更新名称");
         }
-        public string RecoveryLabel => "恢复演出 · " + ((string)Draft.Room["recoveryPresentation"] switch {
-            "warehouse" => "外围叉车", "factory" => "伸缩输送带", "forest" => "腐朽再生", _ => "跟随主题" });
+        public string RecoveryLabel => "恢复道具 · " + (Draft.Model.RecoveryItems.Count == 0 ? "无" : string.Join("、", Draft.Model.RecoveryItems.Select(i => i.ScriptRef)));
         public void CycleRecovery()
         {
-            int index = Array.IndexOf(RoomFile.RecoveryPresets, (string)Draft.Room["recoveryPresentation"]) + 1;
-            string next = index == RoomFile.RecoveryPresets.Length ? null : RoomFile.RecoveryPresets[index];
-            Run(() => Draft.SetRecoveryPreset(next), "已切换恢复演出，可进入试玩查看");
+            if (Draft.Model.RecoveryItems.Count > 0) { Status = "本房已有恢复道具，脚本与时长请在属性中修改"; return; }
+            Run(() => Draft.Commit(new Sokoban.Core.AddRecoveryItemCommand(Draft.Model, new Sokoban.Core.RecoveryItem("recovery-" + Guid.NewGuid().ToString("N"), Sokoban.Core.Registries.BuiltinRecoveryScripts[0], 3f))), "已添加恢复道具");
         }
-        public string ThemeLabel => "房间主题 · " + AppearanceLibrary.ThemeName((string)Draft.Room["themeId"]);
+        public string ThemeLabel => "房间主题 · " + AppearanceLibrary.ThemeName(Draft.Theme);
         public void CycleTheme()
         {
             var themes = AppearanceLibrary.Themes;
-            string next = themes[(Array.IndexOf(themes, (string)Draft.Room["themeId"]) + 1) % themes.Length];
+            string next = themes[(Array.IndexOf(themes, Draft.Theme) + 1) % themes.Length];
             Run(() => Draft.SetTheme(next), "已切换房间主题，已放置素材保留原样");
         }
         public void CancelTool() {PlacingRoom=false;placementId=null;Painting=false;stroke.Clear();Draft.Tool=RoomTool.Select;Status="已返回选择";}
@@ -230,7 +248,7 @@ namespace Sokoban
         }
         public void EndStroke() {
             if(!Painting)return;Painting=false;
-            Status=Draft.World!=null && Draft.Placement==null?"房间尚未放置":Draft.Brush(stroke.Select(p=>p-Draft.Origin),Draft.Tool)??"笔划已提交";stroke.Clear();
+            Status=Draft.World!=null && Draft.Placement==null?"房间尚未放置":Draft.Brush(stroke.Select(p=>new Sokoban.Core.Cell(p.x,p.y)-Draft.Origin),Draft.Tool)??"笔划已提交";stroke.Clear();
         }
     }
 }

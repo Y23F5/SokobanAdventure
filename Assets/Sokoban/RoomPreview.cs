@@ -1,15 +1,16 @@
 /**
  * @file RoomPreview.cs
- * @brief Sync 按草稿版本与查看范围同步房间，修复外部 Transform 变更；BuildRoom 按整数格生成内置 Prefab。
+ * @brief Sync 按草稿版本与查看范围同步房间，修复外部 Transform 变更；BuildRoom 按房间数据的地形网格、对象表与外观引用生成实例，不追加任何主题藤蔓或主题模型。
  * CreateRoot 和 Model 建立临时层级，Track 缓存模型的设计姿态，Marker 生成选择轮廓；AppearanceIssue 向两个编辑界面提供当前场景的资源诊断。
+ * BoxModel、BrushModel：按外观引用与主题给出内置预制件路径。
  * ShowPlacement 使用同一房间模型生成候选虚影；CreateOutline 沿房间外缘标记候选和原有占地。
  * HidePlacement、Clear 和 DestroyTemporary 清理会话私有实例和材质。CellFromRay 拾取地平面格。
  */
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Sokoban.Core;
 
 namespace Sokoban
 {
@@ -33,27 +34,25 @@ namespace Sokoban
         float landedAt;
         public bool Settling => settling;
 
-
         public void Sync(RoomDraft draft, string onlyRoom = null)
         {
             if (!root || last != draft || version != draft.Revision || visibleRoom != onlyRoom)
             {
                 DestroyTemporary(root);
                 poses.Clear();
-                root = CreateRoot("Room • " + (draft.World == null ? draft.ActiveId : (string)draft.World["worldId"]), null, Vector3.zero);
-                if (draft.World == null) BuildRoom(draft.Room, draft.Origin, draft.Selected, root.transform);
-                else foreach (var entry in draft.World["rooms"])
+                root = CreateRoot("Room • " + (draft.World == null ? draft.ActiveId : draft.World.WorldId), null, Vector3.zero);
+                if (draft.World == null) BuildRoom(draft.Model, draft.Origin, draft.Selected, root.transform);
+                else foreach (var entry in draft.World.Rooms)
                 {
-                    string id = (string)entry["levelId"];
-                    if (onlyRoom != null && id != onlyRoom) continue;
-                    BuildRoom((JObject)draft.Catalog[id], RoomFile.Cell(entry["origin"]), id == draft.ActiveId ? draft.Selected : null, root.transform, draft.World, draft.Catalog);
+                    if (onlyRoom != null && entry.LevelId != onlyRoom) continue;
+                    BuildRoom(draft.Catalog[entry.LevelId], entry.Origin, entry.LevelId == draft.ActiveId ? draft.Selected : null, root.transform, draft.World, draft.Catalog);
                 }
-                settling=null;
+                settling = null;
                 appearances = root.GetComponentsInChildren<ImportedAppearance>(true);
-                if(last==draft && version!=draft.Revision && draft.PlacementRevision==draft.Revision)
+                if (last == draft && version != draft.Revision && draft.PlacementRevision == draft.Revision)
                 {
-                    var roomRoot=root.transform.Find(draft.ActiveId);
-                    settling=roomRoot?.Find(draft.PlacedObject);
+                    var roomRoot = root.transform.Find(draft.ActiveId);
+                    settling = roomRoot?.Find(draft.PlacedObject);
                     if (settling)
                     {
                         rest = settling.localPosition;
@@ -74,7 +73,7 @@ namespace Sokoban
                 p.part.localScale = p.scale;
                 p.part.hasChanged = false;
             }
-            if(settling)
+            if (settling)
             {
                 if (settlingAppearance && settlingAppearance.Ready != null && !settlingAppearance.Ready.IsCompleted)
                 {
@@ -82,9 +81,9 @@ namespace Sokoban
                     return;
                 }
                 if (landedAt < 0f) landedAt = Time.realtimeSinceStartup;
-                float t=Mathf.Clamp01((Time.realtimeSinceStartup-landedAt)/.20f);
-                settling.localPosition=rest+Vector3.up*(.22f*(1-t)*(1-t));
-                if(t>=1) settling=null;
+                float t = Mathf.Clamp01((Time.realtimeSinceStartup - landedAt) / .20f);
+                settling.localPosition = rest + Vector3.up * (.22f * (1 - t) * (1 - t));
+                if (t >= 1) settling = null;
             }
         }
 
@@ -98,7 +97,7 @@ namespace Sokoban
         {
             if (!tracking) return;
             int i = poses.FindLastIndex(p => p.part == part);
-            poses[i] = (part,part.localPosition,part.localScale,part.localRotation);
+            poses[i] = (part, part.localPosition, part.localScale, part.localRotation);
         }
 
         GameObject CreateRoot(string name, Transform parent, Vector3 local)
@@ -110,7 +109,7 @@ namespace Sokoban
             return go;
         }
 
-        Transform Model(string kind, string name, Vector2Int cell, Transform parent, Quaternion rotation)
+        Transform Model(string kind, string name, Cell cell, Transform parent, Quaternion rotation)
         {
             if (!prefabs.TryGetValue(kind, out var prefab))
             {
@@ -120,134 +119,102 @@ namespace Sokoban
             }
             var model = Object.Instantiate(prefab, parent, false);
             model.name = name;
-            model.transform.localPosition = new Vector3(cell.x, 0, cell.y);
+            model.transform.localPosition = new Vector3(cell.X, 0, cell.Y);
             model.transform.localRotation = rotation;
             foreach (var part in model.GetComponentsInChildren<Transform>(true)) Track(part);
             return model.transform;
         }
 
-        public static string BoxModel(string theme, JToken box = null) => AppearanceLibrary.Resolve(RoomTool.Box, theme, Vector2Int.zero, box).Prefab;
-        public static string BrushModel(RoomTool tool, string theme, Vector2Int local = default) =>
-            (AppearanceLibrary.Resolve(tool, theme, local) ?? AppearanceLibrary.Find("Target")).Prefab;
+        public static string BoxModel(string theme, AppearanceRef look = null) =>
+            AppearanceLibrary.Prefab(AppearanceLibrary.Resolve(ObjectCategories.Box, theme, look));
 
-        public Transform BuildRoom(JObject room, Vector2Int origin, string selected, Transform parent, JObject world = null, JObject catalog = null)
+        public static string BrushModel(string categoryId, string theme, int variant = 0) =>
+            AppearanceLibrary.Prefab(AppearanceLibrary.Default(categoryId, theme, variant) ?? AppearanceLibrary.Default(ObjectCategories.Target, theme));
+
+        public Transform BuildRoom(RoomDraftModel model, Cell origin, string selected, Transform parent, WorldDocument world = null, IReadOnlyDictionary<string, RoomDraftModel> catalog = null)
         {
-            var group = CreateRoot((string)room["levelId"], parent, new Vector3(origin.x, 0, origin.y)).transform;
-            var size = RoomFile.Size(room);
-            string theme = (string)room["themeId"];
-            bool factory = theme == "factory", forest = theme == "forest";
-            bool solid = !room["terrainRowsNorthToSouth"].Any(row => ((string)row).Contains(RoomFile.Void));
+            var room = model.Room;
+            var group = CreateRoot(room.Id, parent, new Vector3(origin.X, 0, origin.Y)).transform;
+            string theme = model.Meta.ThemeId;
+            string foundationMaterial = "LayoutModels/" + (theme == "factory" ? "Stone" : theme == "forest" ? "Moss" : "Kraft");
+            bool solid = true;
+            for (int y = 0; y < room.Height && solid; y++)
+                for (int x = 0; x < room.Width; x++)
+                    if (room.TerrainAt(new Cell(x, y)).CategoryId == TerrainCategories.Void) { solid = false; break; }
+
+            Transform Place(AppearanceRef look, string name, Cell cell, Quaternion rotation)
+            {
+                string path = AppearanceLibrary.Prefab(look);
+                if (path != null) return Model(path, name, cell, group, rotation);
+                var anchor = CreateRoot(name, group, new Vector3(cell.X, 0, cell.Y));
+                anchor.transform.localRotation = rotation;
+                Retrack(anchor.transform);
+                if (look != null) anchor.AddComponent<ImportedAppearance>().Apply(model.Assets, look.Id);
+                return anchor.transform;
+            }
+
             if (solid)
             {
-                var baseModel = Model("Floor", "地基", Vector2Int.zero, group, Quaternion.identity);
-                baseModel.localPosition = new Vector3((size.x-1)*.5f,-.15f,(size.y-1)*.5f);
-                baseModel.localScale = new Vector3(size.x,3,size.y);
-                baseModel.GetComponentInChildren<Renderer>().sharedMaterial = Resources.Load<Material>("LayoutModels/" + (factory ? "Stone" : forest ? "Moss" : "Kraft"));
+                var baseModel = Model("Floor", "地基", new Cell(0, 0), group, Quaternion.identity);
+                baseModel.localPosition = new Vector3((room.Width - 1) * .5f, -.15f, (room.Height - 1) * .5f);
+                baseModel.localScale = new Vector3(room.Width, 3, room.Height);
+                baseModel.GetComponentInChildren<Renderer>().sharedMaterial = Resources.Load<Material>(foundationMaterial);
                 Retrack(baseModel);
             }
-            var terrainRecords = (room["terrainObjects"] as JArray ?? new JArray()).ToDictionary(RoomFile.At);
-            for (int y = 0; y < size.y; y++)
-                for (int x = 0; x < size.x; x++)
+            for (int y = 0; y < room.Height; y++)
+                for (int x = 0; x < room.Width; x++)
                 {
-                    var cell = new Vector2Int(x, y);
-                    if (RoomFile.Terrain(room, cell) == RoomFile.Void) continue;
+                    var cell = new Cell(x, y);
+                    string category = room.TerrainAt(cell).CategoryId;
+                    if (category == TerrainCategories.Void) continue;
                     if (!solid)
                     {
                         var foundation = Model("Floor", "地基 " + cell, cell, group, Quaternion.identity);
                         foundation.localPosition += Vector3.down * .15f;
                         foundation.localScale = new Vector3(1, 3, 1);
-                        foundation.GetComponentInChildren<Renderer>().sharedMaterial = Resources.Load<Material>("LayoutModels/" + (factory ? "Stone" : forest ? "Moss" : "Kraft"));
+                        foundation.GetComponentInChildren<Renderer>().sharedMaterial = Resources.Load<Material>(foundationMaterial);
                         Retrack(foundation);
                     }
-                    string kind = RoomFile.Floor(room, cell) ? "Floor" : "Wall";
-                    terrainRecords.TryGetValue(cell, out var record);
-                    string model = AppearanceLibrary.Resolve(kind == "Floor" ? RoomTool.Floor : RoomTool.Wall, theme, cell, record).Prefab;
-                    var tileVisual = record?["visual"];
-                    string tileName = kind + " " + cell;
-                    Transform tile;
-                    if (tileVisual?["model"] != null)
-                        tile = CreateRoot(tileName, group, new Vector3(x, 0, y)).transform;
-                    else
+                    var look = room.AppearanceAt(cell);
+                    if (category == TerrainCategories.Wall)
                     {
-                        tile = Model(model, tileName, cell, group, Quaternion.identity);
-                        if (model == "LayoutModels/Wall") { tile.localScale = new Vector3(1,2.6f,1); Retrack(tile); }
+                        look = look ?? AppearanceLibrary.Default(TerrainCategories.Wall, theme);
+                        var wall = Place(look, "Wall " + cell, cell, Quaternion.identity);
+                        if (AppearanceLibrary.Prefab(look) == "LayoutModels/Wall") { wall.localScale = new Vector3(1, 2.6f, 1); Retrack(wall); }
                     }
-                    if (tileVisual != null) tile.gameObject.AddComponent<ImportedAppearance>().Apply(room, tileVisual);
+                    else if (category == TerrainCategories.Openable)
+                        Place(look ?? AppearanceLibrary.Default(TerrainCategories.Openable, theme), "Vine " + cell, cell, Quaternion.identity);
+                    else Place(look ?? AppearanceLibrary.Default(TerrainCategories.Floor, theme), "Floor " + cell, cell, Quaternion.identity);
                 }
-            bool northRail = RoomFile.RecoveryPreset(room) == "warehouse" && room["doors"].Any(d => RoomFile.Inward(d) == Vector2Int.left);
-            foreach (var item in RoomFile.Objects(room))
+            foreach (var door in model.Doors)
             {
-                var cell = RoomFile.At(item);
-                string id = (string)item["id"];
-                string kind;
-                Quaternion rotation = Quaternion.identity;
-                if (item.Parent == room["boxes"]) kind = BoxModel(theme,item);
-                else if (item.Parent == room["targets"]) kind = AppearanceLibrary.Resolve(RoomTool.Target, theme, cell, item).Prefab;
-                else if (item == room["spawn"]) kind = "Spawn";
-                else if (item.Parent == room["decorations"]) kind = AppearanceLibrary.Find((string)item["builtinModel"])?.Prefab;
-                else
-                {
-                    kind = "Door";
-                    Vector2Int inward = RoomFile.Inward(item);
-                    rotation = Quaternion.LookRotation(new Vector3(inward.x, 0, inward.y));
-                }
-                var visual = item["visual"];
-                if (northRail && kind == "Diorama/Cargo" && visual?["model"] == null)
-                    rotation = Quaternion.Euler(0, 90, 0);
-                if (item["stateProfile"] != null)
-                {
-                    var anchor = CreateRoot(id, group, new Vector3(cell.x, 0, cell.y));
-                    anchor.AddComponent<ObjectStateView>().Configure(room, item, kind);
-                }
-                else if (kind == null || visual?["model"] != null)
-                {
-                    var anchor = CreateRoot(id, group, new Vector3(cell.x, 0, cell.y));
-                    anchor.transform.localRotation = rotation;
-                    Retrack(anchor.transform);
-                    if (visual != null) anchor.AddComponent<ImportedAppearance>().Apply(room, visual);
-                }
-                else
-                {
-                    var builtin = Model(kind, id, cell, group, rotation);
-                    if (visual != null) builtin.gameObject.AddComponent<ImportedAppearance>().Apply(room, visual);
-                }
-                if (selected == id) Marker(group, cell);
+                var inward = new Vector3(-door.Outward.X, 0, -door.Outward.Y);
+                var look = room.AppearanceAt(door.Cell) ?? AppearanceLibrary.Default(TerrainCategories.Door, theme);
+                Place(look, door.Id, door.Cell, inward == Vector3.zero ? Quaternion.identity : Quaternion.LookRotation(inward));
             }
-            string preset = RoomFile.RecoveryPreset(room);
-            if (preset == "forest")
+            foreach (var item in room.Objects)
             {
-                var exit = room["doors"].FirstOrDefault(d => (string)d["role"] == "exit");
-                if (exit != null)
+                var cell = item.Cell;
+                string category = item.CategoryId;
+                AppearanceRef look = item.Appearance;
+                if (category == ObjectCategories.Spawn) look = new AppearanceRef("Spawn");
+                else if (category == ObjectCategories.Box || category == ObjectCategories.Target) look = AppearanceLibrary.Resolve(category, theme, look);
+                if (model.ObjectStates.TryGetValue(item.Id, out var table))
                 {
-                    var inward = RoomFile.Inward(exit);
-                    var side = new Vector2Int(inward.y,-inward.x);
-                    var cell = RoomFile.At(exit) + side;
-                    if (RoomFile.Terrain(room,cell) != '#') cell = RoomFile.At(exit) - side;
-                    if (RoomFile.Terrain(room,cell) == '#')
-                    {
-                        var vine = Model("Diorama/ForestVine","恢复藤蔓",cell,group,Quaternion.LookRotation(new Vector3(inward.x,0,inward.y)));
-                        vine.localPosition += new Vector3(inward.x,0,inward.y)*.70f;
-                        Retrack(vine);
-                    }
+                    var anchor = CreateRoot(item.Id, group, new Vector3(cell.X, 0, cell.Y));
+                    string fallback = AppearanceLibrary.Prefab(look) ?? AppearanceLibrary.Prefab(AppearanceLibrary.Default(ObjectCategories.Box, theme));
+                    anchor.AddComponent<ObjectStateView>().Configure(table, new Vector3(origin.X + cell.X, 0, origin.Y + cell.Y), look, fallback, model.Assets);
                 }
+                else Place(look, item.Id, cell, Quaternion.identity);
+                if (selected == item.Id) Marker(group, cell);
             }
-            if (tracking) RoomYard.Build(room, origin, group, world, catalog);
-            bool warehouse = preset == "warehouse";
-            if (!warehouse && RoomFile.Terrain(room, new Vector2Int(1,size.y-1)) == RoomFile.Void) return group;
-            var dressing = Model("Diorama/" + (preset == "factory" ? "Conveyor" : preset == "forest" ? "Tree" : "Lift"), "主题模型", new Vector2Int(1,size.y-1),group,Quaternion.Euler(0,-25,0));
-            if (warehouse)
-            {
-                dressing.localPosition = northRail
-                    ? new Vector3((size.x - 1) * .5f, -.737f, size.y + .8f)
-                    : new Vector3(size.x + .8f, -.737f, size.y * .57f);
-                dressing.localRotation = Quaternion.Euler(0, northRail ? 180 : -90, 0);
-            }
-            else dressing.localPosition += Vector3.up*1.28f;
-            Retrack(dressing);
+            foreach (var decoration in model.Decorations)
+                if (selected == decoration.Id) Marker(group, decoration.Cell);
+            if (tracking) RoomYard.Build(model, new Vector2Int(origin.X, origin.Y), group, world, catalog);
             return group;
         }
 
-        void Marker(Transform parent, Vector2Int cell)
+        void Marker(Transform parent, Cell cell)
         {
             Model("Selection", "Selection", cell, parent, Quaternion.identity);
         }
@@ -261,7 +228,7 @@ namespace Sokoban
                 try
                 {
                     ghost = CreateRoot("房间放置预览", null, Vector3.zero);
-                    BuildRoom(draft.Room, Vector2Int.zero, null, ghost.transform);
+                    BuildRoom(draft.Model, new Cell(0, 0), null, ghost.transform);
                 }
                 finally { tracking = true; }
                 ghostVersion = draft.Revision;
@@ -280,8 +247,8 @@ namespace Sokoban
             }
             ghost.transform.position = new Vector3(origin.x, 0f, origin.y);
             outlineMaterial.SetColor("_BaseColor", color);
-            originalOutline.enabled = draft.Placement != null && origin != draft.Origin;
-            originalOutline.transform.position = new Vector3(draft.Origin.x, 0, draft.Origin.y);
+            originalOutline.enabled = draft.Placement != null && new Cell(origin.x, origin.y) != draft.Origin;
+            originalOutline.transform.position = new Vector3(draft.Origin.X, 0, draft.Origin.Y);
             color.a = .48f;
             ghostMaterial.SetColor("_BaseColor", color);
         }
@@ -299,14 +266,13 @@ namespace Sokoban
             if (original)
             {
                 var props = new MaterialPropertyBlock();
-                props.SetColor("_BaseColor", new Color(.25f,.8f,1f));
+                props.SetColor("_BaseColor", new Color(.25f, .8f, 1f));
                 line.SetPropertyBlock(props);
             }
-            var size = RoomFile.Size(draft.Room);
-            float left = -.52f, right = size.x-.48f, bottom = -.52f, top = size.y-.48f;
+            float left = -.52f, right = draft.Room.Width - .48f, bottom = -.52f, top = draft.Room.Height - .48f;
             line.positionCount = 4;
-            line.SetPositions(new[] { new Vector3(left,.25f,bottom), new Vector3(right,.25f,bottom),
-                new Vector3(right,.25f,top), new Vector3(left,.25f,top) });
+            line.SetPositions(new[] { new Vector3(left, .25f, bottom), new Vector3(right, .25f, bottom),
+                new Vector3(right, .25f, top), new Vector3(left, .25f, top) });
             return line;
         }
 
@@ -327,11 +293,13 @@ namespace Sokoban
             if (Application.isPlaying) Object.Destroy(item); else Object.DestroyImmediate(item);
         }
 
-        public static bool CellFromRay(Ray ray,out Vector2Int cell)
+        public static bool CellFromRay(Ray ray, out Vector2Int cell)
         {
-            cell=default;
-            if (!new Plane(Vector3.up,Vector3.zero).Raycast(ray,out float distance)) return false;
-            var hit=ray.GetPoint(distance); cell=new Vector2Int(Mathf.RoundToInt(hit.x),Mathf.RoundToInt(hit.z)); return true;
+            cell = default;
+            if (!new Plane(Vector3.up, Vector3.zero).Raycast(ray, out float distance)) return false;
+            var hit = ray.GetPoint(distance);
+            cell = new Vector2Int(Mathf.RoundToInt(hit.x), Mathf.RoundToInt(hit.z));
+            return true;
         }
 
         public void Clear()

@@ -32,13 +32,14 @@ namespace Sokoban.Core.Tests
         static IReadOnlyList<Cell> Moves(string text) => text.Select(c =>
             c == 'E' ? Cell.Right : c == 'W' ? Cell.Left : c == 'N' ? Cell.Up : Cell.Down).ToList();
 
-        static RoomDocument RoundTrip(string id, string[] rows)
+        static RoomDraftModel Source(string id, string[] rows)
         {
             var r = Blueprint.Parse(id, rows);
             var items = new List<RecoveryItem> { new RecoveryItem("recovery-1", id + "-recovery", 3.7f) };
-            var doc = new RoomDocument(r.Room, r.Doors, r.Doors.First(d => d.Role == "entry").Id, items);
-            return RoomCodec.Decode(RoomCodec.Encode(doc));
+            return new RoomDraftModel(r.Room, r.Doors, r.Doors.First(d => d.Role == "entry").Id, null, items);
         }
+
+        static RoomDraftModel RoundTrip(string id, string[] rows) => RoomCodec.Decode(RoomCodec.Encode(Source(id, rows)));
 
         static Cell Spawn(Room r) => r.ObjectsOf(ObjectCategories.Spawn).Single().Cell;
 
@@ -61,8 +62,7 @@ namespace Sokoban.Core.Tests
         [Fact]
         public void RoundTripKeepsContentHash()
         {
-            var original = Blueprint.Parse("factory", Factory).Room;
-            Assert.Equal(ContentHash.Of(original), ContentHash.Of(RoundTrip("factory", Factory).Room));
+            Assert.Equal(ContentHash.Of(Source("factory", Factory)), ContentHash.Of(RoundTrip("factory", Factory)));
         }
 
         [Fact]

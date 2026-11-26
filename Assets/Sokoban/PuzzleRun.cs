@@ -1,106 +1,143 @@
 /**
  * @file PuzzleRun.cs
- * @brief 构造器从设计装配活动房间的世界格。FromDraft 复制未保存设计，Campaign 读取正式世界。
- * Step 原子提交一步或一次单箱推动。Snapshot 保存运行位置与完成历史，Restore 校验并恢复进度。
+ * @brief PuzzleRun 是一局游戏的规则会话：以 ValidatedRoom 与 WorldDocument 装配各房进度，玩家以活动房间的房内格保存，世界格由房间原点换算。
+ * FromDraft(draft)：对草稿目录逐房调用 ValidatedRoom.From，任一房失败抛出带房间 ID 与规则定位的 InvalidOperationException。
+ * Campaign()：读取正式世界文件及其房间文件，逐房校验后装配，起点取世界起点房间的出生点。
+ * Step(delta, out pushed)：经 PushRules.TryPush 提交一步或一次单箱推动，门框外一步交给 CrossDoor 换房。
+ * CanLeaveWorld(direction)：玩家站在终点门上朝外，且终点要求的房间均已解开时为真。
+ * Origin、Player、Boxes、Targets、HomeOf：活动房间的世界格视图，规则状态始终保存在房内坐标。
+ * Models、Hashes：各房草稿模型与内容哈希，供表现层读取装饰、供存档比对。
+ * PuzzleMotion：进行中的一次移动或转向的演出进度，只进演出段，不进规则状态。
  */
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Newtonsoft.Json.Linq;
 using UnityEngine;
+using Sokoban.Core;
 
 namespace Sokoban
 {
+    public sealed class PuzzleMotion
+    {
+        public string Kind;
+        public float Fraction;
+        public Vector2Int Delta;
+        public int Direction;
+        public string Pushed;
+    }
+
     public sealed partial class PuzzleRun
     {
-        public readonly JObject World, Rooms;
+        public readonly WorldDocument World;
+        public readonly IReadOnlyDictionary<string, ValidatedRoom> Rooms;
+        public readonly IReadOnlyDictionary<string, RoomDraftModel> Models;
+        public readonly IReadOnlyDictionary<string, string> Hashes;
+        public readonly string WorldId;
         readonly Dictionary<string, RoomProgress> states = new Dictionary<string, RoomProgress>();
-        readonly List<string> inventory = new List<string>();
+        ExplorationSet exploration = new ExplorationSet();
+        ItemBag bag = new ItemBag();
+        Cell local;
         RoomProgress Current => states[ActiveId];
-        public IReadOnlyList<string> Inventory => inventory;
-        public string SelectedItem { get; private set; }
-        public string PendingItem { get; private set; }
         public string ActiveId { get; private set; }
-        public JObject Room => Current.Design;
-        public Vector2Int Origin => Current.Origin;
-        public Dictionary<string, Vector2Int> Boxes => Current.Boxes;
-        public HashSet<Vector2Int> Targets => Current.Targets;
-        public Vector2Int Player { get; private set; }
+        public ValidatedRoom Room => Current.Validated;
+        public Vector2Int Origin => ToVector(Current.Origin);
+        public Vector2Int Player => ToVector(Current.Origin + local);
+        public Cell PlayerLocal => local;
+        public Dictionary<string, Vector2Int> Boxes => BoxesOf(Current);
+        public IReadOnlyDictionary<string, Vector2Int> BoxesIn(string roomId) => BoxesOf(states[roomId]);
+        public HashSet<Vector2Int> Targets => new HashSet<Vector2Int>(Current.Validated.Room.ObjectsOf(ObjectCategories.Target).Select(t => ToVector(Current.Origin + t.Cell)));
         public bool Solved => Current.Solved;
         public bool EverSolved => Current.EverSolved;
         public int Heading;
-        public JObject Motion { get; internal set; }
+        public PuzzleMotion Motion { get; set; }
 
-        PuzzleRun(JObject world, JObject rooms, string active)
+        internal static Vector2Int ToVector(Cell cell) => new Vector2Int(cell.X, cell.Y);
+        static Dictionary<string, Vector2Int> BoxesOf(RoomProgress progress) => progress.Boxes.ToDictionary(b => b.Key, b => ToVector(progress.Origin + b.Value));
+        static void Check(bool ok, string message) { if (!ok) throw new FormatException(message); }
+        static ValidatedRoom Pick(IReadOnlyDictionary<string, ValidatedRoom> rooms, string id) =>
+            rooms.TryGetValue(id, out var room) ? room : throw new InvalidOperationException("缺少房间 " + id);
+
+        PuzzleRun(WorldDocument world, IReadOnlyDictionary<string, ValidatedRoom> rooms, IReadOnlyDictionary<string, RoomDraftModel> models,
+            IReadOnlyDictionary<string, string> hashes, string active)
         {
             World = world;
             Rooms = rooms;
-            if (world == null)
-            {
-                var room = (JObject)rooms[active];
-                RoomFile.RequireStructure(room);
-                states.Add(active, new RoomProgress(room, Vector2Int.zero));
-            }
-            else
-            {
-                string issue = WorldLayout.Issues(world, rooms).FirstOrDefault();
-                RoomFile.Check(issue == null, issue);
-                foreach (var placement in world["rooms"])
-                {
-                    string id = (string)placement["levelId"];
-                    states.Add(id, new RoomProgress((JObject)rooms[id], RoomFile.Cell(placement["origin"])));
-                }
-            }
-            RoomFile.Check(states.ContainsKey(active), "请先将选中的房间放入世界");
+            Models = models;
+            Hashes = hashes ?? models.ToDictionary(m => m.Key, m => ContentHash.Of(m.Value));
+            WorldId = world?.WorldId ?? "standalone:" + active;
+            if (world == null) states.Add(active, new RoomProgress(Pick(rooms, active), new Cell(0, 0)));
+            else foreach (var entry in world.Rooms) states.Add(entry.LevelId, new RoomProgress(Pick(rooms, entry.LevelId), entry.Origin));
+            if (!states.ContainsKey(active)) throw new InvalidOperationException("请先将选中的房间放入世界");
             ActiveId = active;
-            Player = Origin + RoomFile.At(Room["spawn"]);
-            Discover();
+            local = Current.Validated.Spawn.Cell;
+            Enter();
         }
 
-        public static PuzzleRun FromDraft(RoomDraft draft) => new PuzzleRun((JObject)draft.World?.DeepClone(), (JObject)draft.Catalog.DeepClone(), draft.ActiveId);
-
-        internal static PuzzleRun FromWorld(JObject world, JObject rooms) => new PuzzleRun(world, rooms, (string)world["start"]["levelId"]);
-
-        public bool CanLeaveWorld(Vector2Int direction)
+        static PuzzleRun Assemble(WorldDocument world, Dictionary<string, RoomDraftModel> models, string active)
         {
-            var finish = World?["finish"];
-            var endpoint = finish?["endpoint"];
-            if (Recovering || (string)endpoint?["levelId"] != ActiveId || finish == null) return false;
-            var door = Room["doors"].FirstOrDefault(d => (string)d["id"] == (string)endpoint["doorId"]);
-            return door != null && RoomFile.At(door) + Origin == Player && direction == -RoomFile.Inward(door)
-                && finish["requiresSolved"].All(id => states[(string)id].Solved);
+            var rooms = new Dictionary<string, ValidatedRoom>();
+            foreach (var pair in models)
+            {
+                try { rooms.Add(pair.Key, ValidatedRoom.From(pair.Value, pair.Value.Meta)); }
+                catch (InvalidOperationException error) { throw new InvalidOperationException($"房间 {pair.Key} 未通过发布级校验：{error.Message}", error); }
+            }
+            return new PuzzleRun(world, rooms, models, null, active);
+        }
+
+        public static PuzzleRun FromDraft(RoomDraft draft)
+        {
+            var models = draft.World == null
+                ? new Dictionary<string, RoomDraftModel> { [draft.ActiveId] = draft.Model }
+                : new Dictionary<string, RoomDraftModel>(draft.Catalog);
+            return Assemble(draft.World, models, draft.ActiveId);
         }
 
         public static PuzzleRun Campaign()
         {
-            var rooms = new JObject();
-            var world = WorldLayout.Read(Path.Combine(Application.streamingAssetsPath, "World", "main.world.json"), rooms);
-            return new PuzzleRun(world, rooms, (string)world["start"]["levelId"]);
+            string path = Path.Combine(Application.streamingAssetsPath, "World", "main.world.json");
+            var world = WorldCodec.Decode(File.ReadAllText(path));
+            string folder = Path.GetDirectoryName(path);
+            var models = new Dictionary<string, RoomDraftModel>();
+            foreach (var entry in world.Rooms)
+            {
+                var doc = RoomCodec.Decode(File.ReadAllText(Path.Combine(folder, entry.File)));
+                var model = new RoomDraftModel(doc.Room, doc.Doors, doc.PrimaryEntranceId, doc.Extras, doc.RecoveryItems);
+                doc.Extras.TryGetValue("name", out var name);
+                doc.Extras.TryGetValue("themeId", out var theme);
+                model.Meta = new RoomMeta(name ?? entry.LevelId, theme);
+                models.Add(entry.LevelId, model);
+            }
+            return Assemble(world, models, world.Start.LevelId);
+        }
+
+        public Vector2Int HomeOf(string boxId) =>
+            ToVector(Current.Origin + Current.Validated.Room.ObjectsOf(ObjectCategories.Box).First(b => b.Id == boxId).Cell);
+
+        public bool CanLeaveWorld(Vector2Int direction)
+        {
+            var end = World?.FinishEndpoint;
+            if (end == null || Recovering || end.LevelId != ActiveId) return false;
+            var door = Current.Validated.Doors.FirstOrDefault(d => d.Id == end.DoorId);
+            return door != null && door.Cell == local && new Cell(direction.x, direction.y) == door.Outward
+                && World.FinishRequiresSolved.All(id => states[id].Solved);
         }
 
         public bool Step(Vector2Int delta, out string pushed)
         {
             pushed = null;
             if (Mathf.Abs(delta.x) + Mathf.Abs(delta.y) != 1) return false;
-            var next = Player + delta;
-            if (RoomFile.Terrain(Room, next - Origin) == RoomFile.Void) return CrossDoor(delta);
-            if (!Current.Walkable(next) || IsReserved(next)) return false;
-            var door = Room["doors"].FirstOrDefault(d => RoomFile.At(d) == next - Origin);
-            if (door != null && (string)door["role"] == "exit" && !CanApproach(door)) return false;
-            bool previouslySolved = Solved;
-            string box = Boxes.FirstOrDefault(pair => pair.Value == next).Key;
-            if (box != null)
-            {
-                var beyond = next + delta;
-                if (Recovering || !Current.Walkable(beyond) || Boxes.ContainsValue(beyond)) return false;
-                Boxes[box] = beyond;
-                Current.Pushed(box, next);
-                pushed = box;
-            }
-            Player = next;
-            Current.RecordSolved(previouslySolved);
+            var direction = new Cell(delta.x, delta.y);
+            var next = local + direction;
+            if (Current.Validated.Room.TerrainAt(next).CategoryId == TerrainCategories.Void) return CrossDoor(direction);
+            var door = Current.Validated.Doors.FirstOrDefault(d => d.Cell == next);
+            if (door != null && door.Role == "exit" && !CanApproach(door)) return false;
+            var result = PushRules.TryPush(Current.Session, local, direction);
+            if (!result.Moved) return false;
+            local = result.Player;
+            pushed = result.PushedBoxId;
+            Current.RecordSolved();
             return true;
         }
-
     }
 }

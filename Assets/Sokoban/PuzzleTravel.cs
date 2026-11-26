@@ -1,119 +1,170 @@
 /**
  * @file PuzzleTravel.cs
- * @brief Discover 记录首次访问并发放道具。Route 按门身份寻找正反方向连接，Allowed 读取各房当前解谜状态。
- * CrossDoor 在全部检查通过后提交跨房；BeginRecovery、AdvanceRecovery 和 SafeLanding 管理恢复时钟、受限格和安全移位。
+ * @brief 探索、道具背包、跨房与恢复的会话接口，规则全部委托 Core。
+ * Enter()：首次入房记入探索集合并发放该房的恢复道具，探索集合与道具背包是两份数据。
+ * CycleItem、AcceptItem、ItemRoomName：滚轮切换（恢复期间忽略）、确认全屏通知、按道具 ID 查所属房间的显示名。
+ * Route、Allowed、CanApproach、CrossDoor：按门身份寻找正反方向连接，检查放行条件，全部通过后才提交跨房。
+ * BeginRecovery()：选中项必须是本房恢复道具且未处于恢复中，时长取该道具的 Duration，由 RecoverySession.Start 计算占用区并移位玩家。
+ * AdvanceRecovery(seconds)：由 RecoverySession.Advance 推进，完成时箱子一次性归位，玩家已按完成时刻的禁入集移位，返回本次是否完成。
+ * RecoveryMoves、RecoveryGates：给表现层的恢复任务描述，需要归位的箱子与默认外观的可开合地形格。
+ * ObjectStatesIn、SetObjectState：对象状态以房间隔离保存，由对象状态模块读写。
  */
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json.Linq;
-using UnityEngine;
+using Sokoban.Core;
 
 namespace Sokoban
 {
+    public readonly struct RecoveryMove
+    {
+        public readonly string BoxId;
+        public readonly Cell From;
+        public readonly Cell Home;
+        public RecoveryMove(string boxId, Cell from, Cell home) { BoxId = boxId; From = from; Home = home; }
+    }
+
+    public readonly struct RecoveryGate
+    {
+        public readonly Cell Cell;
+        public readonly float Yaw;
+        public RecoveryGate(Cell cell, float yaw) { Cell = cell; Yaw = yaw; }
+    }
+
     public sealed partial class PuzzleRun
     {
-        static readonly Vector2Int[] SearchOrder = {Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left};
-        public const float RecoveryDuration = 2.4f;
-        public float RecoveryRemaining { get; private set; }
-        public bool Recovering => RecoveryRemaining > 0;
-        public bool Visited(string id) => inventory.Contains(id);
-        public IReadOnlyDictionary<string,Vector2Int> BoxesIn(string id) => states[id].Boxes;
-        public void AcceptItem() => PendingItem = null;
-        void Discover()
+        public const string DefaultGateScript = "forest-vine";
+        public IReadOnlyList<string> Inventory => bag.Items;
+        public string SelectedItem => bag.Selected;
+        public string PendingItem => bag.Pending;
+        public bool Recovering => Current.Session.Recovering;
+        public float RecoveryRemaining => Current.Session.Remaining;
+        public float RecoveryDuration => Current.Session.Duration;
+        public float RecoveryFraction => Recovering ? 1 - Current.Session.Remaining / Current.Session.Duration : 0;
+        public RecoveryItem ActiveItem => Current.Validated.RecoveryItems.FirstOrDefault(i => i.Id == bag.Selected);
+        public bool Visited(string roomId) => exploration.Contains(roomId);
+        public void AcceptItem() => bag.Accept();
+        public void CycleItem(int delta) { if (!Recovering) bag.Cycle(delta); }
+
+        public string ItemRoomName(string itemId)
         {
-            if (Visited(ActiveId)) return;
-            inventory.Add(ActiveId);
-            SelectedItem = PendingItem = ActiveId;
+            var room = states.Values.Select(s => s.Validated).FirstOrDefault(r => r.RecoveryItems.Any(i => i.Id == itemId));
+            return room?.Meta.Name ?? itemId;
         }
-        public void CycleItem(int delta)
+
+        void Enter()
         {
-            int index = inventory.IndexOf(SelectedItem);
-            SelectedItem = inventory[(index + System.Math.Sign(delta) + inventory.Count) % inventory.Count];
+            if (!exploration.Visit(ActiveId)) return;
+            var item = Current.Item;
+            if (item != null) bag.Grant(item.Id);
         }
-        JToken Route(JToken door, out bool reverse)
+
+        DoorLink Route(DoorInfo door)
         {
-            reverse = false;
             if (World == null) return null;
-            bool Matches(JToken end) => (string)end["levelId"] == ActiveId && (string)end["doorId"] == (string)door["id"];
-            foreach (var link in World["connections"])
+            foreach (var link in World.Connections)
             {
-                if (Matches(link["forwardFrom"])) return link;
-                if (Matches(link["forwardTo"])) { reverse = true; return link; }
+                if (link.From.LevelId == ActiveId && link.From.DoorId == door.Id) return new DoorLink(link, false);
+                if (link.To.LevelId == ActiveId && link.To.DoorId == door.Id) return new DoorLink(link, true);
             }
             return null;
         }
-        bool Allowed(JToken route, bool reverse)
+
+        sealed class DoorLink
         {
-            if (reverse) return (bool)route["allowReturn"];
-            var dest = (string)route["forwardTo"]["levelId"];
-            var room = World["rooms"].First(r => (string)r["levelId"] == dest);
-            return Solved && room["forwardRequiresSolved"].All(id => states[(string)id].Solved);
+            internal readonly WorldConnection Link;
+            internal readonly bool Reverse;
+            internal DoorLink(WorldConnection link, bool reverse) { Link = link; Reverse = reverse; }
         }
-        public bool CanApproach(JToken door)
+
+        bool Allowed(DoorLink route)
         {
-            var route = Route(door, out bool reverse);
-            return route == null ? (string)door["role"] == "entry" || Solved : Allowed(route, reverse);
+            if (route.Reverse) return route.Link.AllowReturn;
+            var dest = World.Rooms.First(r => r.LevelId == route.Link.To.LevelId);
+            return Solved && dest.ForwardRequiresSolved.All(id => states[id].Solved);
         }
-        bool CrossDoor(Vector2Int delta)
+
+        public bool CanApproach(DoorInfo door)
+        {
+            var route = Route(door);
+            return route == null ? door.Role == "entry" || Solved : Allowed(route);
+        }
+
+        bool CrossDoor(Cell direction)
         {
             if (Recovering) return false;
-            var door = Room["doors"].FirstOrDefault(d => RoomFile.At(d) + Origin == Player && -RoomFile.Inward(d) == delta);
+            var door = Current.Validated.Doors.FirstOrDefault(d => d.Cell == local && d.Outward == direction);
             if (door == null) return false;
-            var route = Route(door, out bool reverse);
-            if (route == null || !Allowed(route, reverse)) return false;
-            var end = route[reverse ? "forwardFrom" : "forwardTo"];
-            string id = (string)end["levelId"];
-            var dest = states[id];
-            var target = dest.Design["doors"].First(d => (string)d["id"] == (string)end["doorId"]);
-            var landing = dest.Origin + RoomFile.At(target);
-            if (dest.Boxes.ContainsValue(landing)) return false;
-            ActiveId = id;
-            Player = landing;
-            Discover();
+            var route = Route(door);
+            if (route == null || !Allowed(route)) return false;
+            var end = route.Reverse ? route.Link.From : route.Link.To;
+            var dest = states[end.LevelId];
+            var target = dest.Validated.Doors.First(d => d.Id == end.DoorId);
+            if (dest.Boxes.ContainsValue(target.Cell)) return false;
+            ActiveId = end.LevelId;
+            local = target.Cell;
+            Enter();
             return true;
         }
-        public Vector2Int RecoveryCell(string boxId) => Current.Homes[boxId];
-        public string ObjectState(string roomId, string id) => states[roomId].StateOf(id);
-        internal JObject ObjectStateRecords(string roomId) => states[roomId].ObjectStates;
-        internal JToken StateRestoreEdge(string id) => Current.RestoreEdge(id);
-        public bool PlayerOnRecoveryCell => Current.Homes.ContainsValue(Player);
-        bool IsReserved(Vector2Int p) => Recovering && Current.Homes.ContainsValue(p);
+
         public bool BeginRecovery()
         {
-            if (Recovering || Motion != null || SelectedItem != ActiveId) return false;
-            RecoveryRemaining = RecoveryDuration;
+            var item = ActiveItem;
+            if (item == null || Recovering || Motion != null) return false;
+            var session = Current.Rebuild(local);
+            session.Start(item.Duration);
+            local = session.Player;
             return true;
         }
-        Vector2Int SafeLanding()
-        {
-            var queue = new Queue<Vector2Int>();
-            var seen = new HashSet<Vector2Int> {Player};
-            queue.Enqueue(Player);
-            while (queue.Count > 0)
-            {
-                var p = queue.Dequeue();
-                foreach (var d in SearchOrder)
-                {
-                    var next = p + d;
-                    if (!seen.Add(next) || !Current.Walkable(next) || Current.Homes.ContainsValue(next)) continue;
-                    if (!Boxes.ContainsValue(next)) return next;
-                    queue.Enqueue(next);
-                }
-            }
-            var door = Room["doors"].First(d => (string)d["id"] == (string)Room["primaryEntranceId"]);
-            return Origin + RoomFile.At(door) + RoomFile.Inward(door);
-        }
+
         public bool AdvanceRecovery(float seconds)
         {
-            if (!Recovering) return false;
-            RecoveryRemaining = Mathf.Max(0, RecoveryRemaining - Mathf.Max(0, seconds));
-            if (Recovering) return false;
-            if (Current.Homes.ContainsValue(Player)) Player = SafeLanding();
-            bool previouslySolved = Solved;
-            foreach (var home in Current.Homes) Boxes[home.Key] = home.Value;
-            Current.RestoreObjectStates();
-            Current.RecordSolved(previouslySolved);
+            var session = Current.Session;
+            if (!session.Recovering || !session.Advance(seconds)) return false;
+            local = session.Player;
+            Current.RecordSolved();
             return true;
+        }
+
+        public bool PlayerOnClosingCell
+        {
+            get
+            {
+                if (!Recovering) return false;
+                var room = Current.Validated.Room;
+                return room.TerrainAt(local).CategoryId == TerrainCategories.Openable || room.ObjectsOf(ObjectCategories.Box).Any(b => b.Cell == local);
+            }
+        }
+
+        public IReadOnlyList<RecoveryMove> RecoveryMoves()
+        {
+            var list = new List<RecoveryMove>();
+            foreach (var box in Current.Validated.Room.ObjectsOf(ObjectCategories.Box).OrderBy(b => b.Id, StringComparer.Ordinal))
+                if (Current.Boxes.TryGetValue(box.Id, out var now) && now != box.Cell) list.Add(new RecoveryMove(box.Id, now, box.Cell));
+            return list;
+        }
+
+        public IReadOnlyList<RecoveryGate> RecoveryGates()
+        {
+            var room = Current.Validated.Room;
+            var list = new List<RecoveryGate>();
+            bool Passage(Cell cell) { string id = room.TerrainAt(cell).CategoryId; return id == TerrainCategories.Floor || id == TerrainCategories.Door; }
+            for (int x = 0; x < room.Width; x++)
+                for (int y = 0; y < room.Height; y++)
+                {
+                    var cell = new Cell(x, y);
+                    if (room.TerrainAt(cell).CategoryId != TerrainCategories.Openable || room.AppearanceAt(cell) != null) continue;
+                    list.Add(new RecoveryGate(cell, Passage(cell + Cell.Left) && Passage(cell + Cell.Right) ? 90 : 0));
+                }
+            return list;
+        }
+
+        public IReadOnlyDictionary<string, string> ObjectStatesIn(string roomId) => states[roomId].ObjectStates;
+
+        public void SetObjectState(string roomId, string objectId, string state)
+        {
+            var table = states[roomId].ObjectStates;
+            if (state == null) table.Remove(objectId); else table[objectId] = state;
         }
     }
 }

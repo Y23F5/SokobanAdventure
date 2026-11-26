@@ -5,6 +5,8 @@
  * ResetView 在换文件后恢复取景；Release 在关闭场景、进入运行态或域重载时保存并清理；
  * SceneGUI 把 Scene View 的格点击和手柄交给共享命令，保持 Unity 的原生导航。Refresh 刷新工具和视图。
  * PlayState 在域重载前传递草稿并保存单房取景，RestoreTrialView 在返回时还原视角。
+ * 本文件读取 RoomDraft 的 Core 类型化模型：C/V 在 Unity 的 Vector2Int 与 Core.Cell 之间转换，BoundaryGaps 取自 RoomValidator 的 boundary.open 规则，
+ * 选中对象与装饰分别经 RoomDraft.Find 和 FindDecoration 读取，不再有 JObject 访问。
  */
 using System.IO;
 using UnityEngine;
@@ -33,6 +35,18 @@ namespace Sokoban.Editor
         static bool previousOrtho;
         static float previousSize;
         internal static bool IsSolo => soloId != null;
+        static Sokoban.Core.Cell C(Vector2Int v) => new Sokoban.Core.Cell(v.x, v.y);
+        static Vector2Int V(Sokoban.Core.Cell c) => new Vector2Int(c.X, c.Y);
+
+        static System.Collections.Generic.IEnumerable<Vector2Int> BoundaryGaps(RoomDraft draft)
+        {
+            foreach (var issue in RoomFile.Issues(draft.Model, Sokoban.Core.ValidationStage.Publish))
+            {
+                if (issue.RuleId != "boundary.open") continue;
+                var parts = issue.Location.Trim('(', ')').Split(',');
+                yield return new Vector2Int(int.Parse(parts[0]), int.Parse(parts[1]));
+            }
+        }
 
         static WorldSceneSession()
         {
@@ -70,7 +84,7 @@ namespace Sokoban.Editor
             {
                 PuzzleRun.FromDraft(Panel.Draft);
                 if (!Panel.Flush()) throw new System.IO.IOException(Panel.Status);
-                SessionState.SetString("Sokoban.GameTrial", Panel.Draft.Snapshot().ToString());
+                SessionState.SetString("Sokoban.GameTrial", Panel.Draft.Snapshot());
                 if (view)
                     SessionState.SetString("Sokoban.TrialView", JsonUtility.ToJson(new TrialView {
                         solo = soloId, pivot = view.pivot, rotation = view.rotation, size = view.size, ortho = view.orthographic }));
@@ -171,16 +185,16 @@ namespace Sokoban.Editor
         {
             if (!view || Panel == null) return;
             var draft = Panel.Draft;
-            var min = draft.Origin;
-            var max = min + RoomFile.Size(draft.Room) - Vector2Int.one;
-            if (!single && draft.World != null && draft.World["rooms"].HasValues)
+            var min = V(draft.Origin);
+            var max = min + new Vector2Int(draft.Room.Width, draft.Room.Height) - Vector2Int.one;
+            if (!single && draft.World != null && draft.World.Rooms.Count > 0)
             {
                 bool first = true;
-                foreach (var placement in draft.World["rooms"])
+                foreach (var placement in draft.World.Rooms)
                 {
-                    var origin = RoomFile.Cell(placement["origin"]);
-                    var room = (Newtonsoft.Json.Linq.JObject)draft.Catalog[(string)placement["levelId"]];
-                    var end = origin + RoomFile.Size(room) - Vector2Int.one;
+                    var origin = V(placement.Origin);
+                    var room = draft.Catalog[placement.LevelId].Room;
+                    var end = origin + new Vector2Int(room.Width, room.Height) - Vector2Int.one;
                     min = first ? origin : Vector2Int.Min(min, origin);
                     max = first ? end : Vector2Int.Max(max, end);
                     first = false;
@@ -250,8 +264,8 @@ namespace Sokoban.Editor
                     (draft.World == null || draft.Placement != null) &&
                     RoomPreview.CellFromRay(HandleUtility.GUIPointToWorldRay(ev.mousePosition), out var clicked))
                 {
-                    var cell = clicked - draft.Origin;
-                    if (RoomFile.Terrain(draft.Room, cell) != RoomFile.Void)
+                    var cell = C(clicked) - draft.Origin;
+                    if (draft.Room.TerrainAt(cell).CategoryId != Sokoban.Core.TerrainCategories.Void)
                     {
                         if (!draft.Selection.Contains(cell)) draft.Select(cell);
                         var menu = new GenericMenu();
@@ -275,7 +289,7 @@ namespace Sokoban.Editor
                 {
                     var color = Panel.Candidate(world, out var reason);
                     preview.ShowPlacement(draft, world, color);
-                    SceneGhost.Mark(world, color, reason ?? "放置原点 " + world);
+                    SceneGhost.Mark(C(world), color, reason ?? "放置原点 " + world);
                 }
                 if (hit && ev.type == EventType.MouseDown && ev.button == 0)
                 {
@@ -288,38 +302,41 @@ namespace Sokoban.Editor
                 return;
             }
             preview.HidePlacement();
-            var origin=draft.Origin; var local=world-origin;
+            var origin=V(draft.Origin); var local=world-origin;
             bool roomVisible = draft.World == null || draft.Placement != null;
             var obj = roomVisible ? draft.Find(draft.Selected) : null;
-            if(obj!=null && draft.Tool==RoomTool.Select && (obj.Parent==draft.Room["boxes"] || obj.Parent==draft.Room["targets"] || obj.Parent==draft.Room["decorations"])) {
-                var cell=RoomFile.At(obj)+origin;
+            var deco = roomVisible && obj == null ? draft.FindDecoration(draft.Selected) : null;
+            Sokoban.Core.Cell? selAt = obj != null ? obj.Cell : deco?.Cell;
+            bool draggable = obj != null ? obj.CategoryId != Sokoban.Core.ObjectCategories.Spawn : deco != null;
+            if(selAt.HasValue && draggable && draft.Tool==RoomTool.Select) {
+                var cell=V(selAt.Value)+origin;
                 if(!dragging) handle=new Vector3(cell.x,.78f,cell.y);
                 bool release=ev.rawType==EventType.MouseUp && ev.button==0;
                 EditorGUI.BeginChangeCheck(); Handles.color=Color.cyan;
                 handle=Handles.Slider2D(handle,Vector3.up,Vector3.right,Vector3.forward,.20f,Handles.RectangleHandleCap,Vector2.zero);
                 if(EditorGUI.EndChangeCheck()) dragging=true;
                 if(dragging) {world=new Vector2Int(Mathf.RoundToInt(handle.x),Mathf.RoundToInt(handle.z));local=world-origin;}
-                if(dragging && release) { dragging=false; Panel.Run(()=>draft.Move(local),"移动已提交");Refresh();view.Repaint();return; }
+                if(dragging && release) { dragging=false; Panel.Run(()=>draft.Move(C(local)),"移动已提交");Refresh();view.Repaint();return; }
             }
             if(ev.type==EventType.Repaint) {
-                foreach (var gap in RoomFile.BoundaryGaps(draft.Room)) SceneGhost.Mark(origin+gap, Color.red, "边界缺墙");
-                if (draft.Selection.Count > 1) foreach (var point in draft.Selection) SceneGhost.Mark(origin + point, Color.yellow, "");
-                if(obj!=null) SceneGhost.Mark(RoomFile.At(obj)+origin,Color.yellow,draft.Tool==RoomTool.Select && !dragging?draft.Selected+"  "+(RoomFile.At(obj)+origin):"");
+                foreach (var gap in BoundaryGaps(draft)) SceneGhost.Mark(C(origin+gap), Color.red, "边界缺墙");
+                if (draft.Selection.Count > 1) foreach (var point in draft.Selection) SceneGhost.Mark(C(origin + V(point)), Color.yellow, "");
+                if(selAt.HasValue) SceneGhost.Mark(C(V(selAt.Value)+origin),Color.yellow,draft.Tool==RoomTool.Select && !dragging?draft.Selected+"  "+(V(selAt.Value)+origin):"");
                 bool showGhost=false;
                 if(hit && EditorWindow.mouseOverWindow==view) {
                     bool moving=dragging || draft.Tool==RoomTool.Move;
                     if (draft.Tool == RoomTool.Floor || draft.Tool == RoomTool.Wall)
                     {
-                        ghost.Draw(draft, world, false, draft.TerrainPlacementError(local, draft.Tool), null);
+                        ghost.Draw(draft, C(world), false,draft.TerrainPlacementError(C(local), draft.Tool), null);
                         showGhost = true;
                     }
                     else if(moving || draft.Tool==RoomTool.Box || draft.Tool==RoomTool.Target || draft.Tool==RoomTool.Decoration) {
-                        bool box=draft.Tool==RoomTool.Box || moving && obj?.Parent==draft.Room["boxes"];
-                        string issue=moving && (obj==null || !box && obj.Parent!=draft.Room["targets"] && obj.Parent!=draft.Room["decorations"])?"请选择箱子或目标":draft.PlacementError(box,local,moving?draft.Selected:null);
+                        bool box=draft.Tool==RoomTool.Box || moving && obj?.CategoryId==Sokoban.Core.ObjectCategories.Box;
+                        string issue=moving && (!selAt.HasValue || !draggable)?"请选择箱子或目标":draft.PlacementError(box,C(local),moving?draft.Selected:null);
                         if(draft.World!=null && draft.Placement==null) issue="当前房间尚未放入世界";
-                        Vector2Int? source=moving && obj!=null ? (Vector2Int?)(RoomFile.At(obj)+origin) : null;
-                        if(source!=world && (!moving || obj!=null)) { ghost.Draw(draft,world,moving,issue,source);showGhost=true; }
-                    } else if(obj==null || RoomFile.At(obj)+origin!=world) SceneGhost.Mark(world,Color.white,world.ToString());
+                        Sokoban.Core.Cell? source=moving && selAt.HasValue ? (Sokoban.Core.Cell?)C(V(selAt.Value)+origin) : null;
+                        if(source!=C(world) && (!moving || selAt.HasValue)) { ghost.Draw(draft,C(world),moving,issue,source);showGhost=true; }
+                    } else if(!selAt.HasValue || V(selAt.Value)+origin!=world) SceneGhost.Mark(C(world),Color.white,world.ToString());
                 }
                 if(!showGhost) ghost.Hide();
                 Panel.DrawStroke();
@@ -328,13 +345,13 @@ namespace Sokoban.Editor
             if(ev.type==EventType.Layout) HandleUtility.AddDefaultControl(control);
             if (rectangleStart.HasValue && ev.rawType == EventType.MouseUp && ev.button == 0)
             {
-                if (hit) draft.SelectRectangle(rectangleStart.Value,local);
+                if (hit) draft.SelectRectangle(C(rectangleStart.Value),C(local));
                 rectangleStart=null; GUIUtility.hotControl=0; ev.Use(); Refresh(); view.Repaint(); return;
             }
             if(ev.type==EventType.MouseDown && ev.button==0 && hit && HandleUtility.nearestControl==control) {
                 if (draft.Tool == RoomTool.Select && ev.shift) { rectangleStart=local; GUIUtility.hotControl=control; ev.Use(); return; }
-                if (draft.Tool == RoomTool.Select && (ev.control || ev.shift || ev.command)) { draft.Select(local, true); ev.Use(); Refresh(); view.Repaint(); return; }
-                if(IsSolo && !Panel.IsBrush && !RoomFile.Inside(draft.Room,local)) { ev.Use(); return; } if(Panel.IsBrush) {Panel.StartStroke(world);GUIUtility.hotControl=control;} else Panel.ClickWorld(world);
+                if (draft.Tool == RoomTool.Select && (ev.control || ev.shift || ev.command)) { draft.Select(C(local), true); ev.Use(); Refresh(); view.Repaint(); return; }
+                if(IsSolo && !Panel.IsBrush && !draft.Room.Inside(C(local))) { ev.Use(); return; } if(Panel.IsBrush) {Panel.StartStroke(world);GUIUtility.hotControl=control;} else Panel.ClickWorld(world);
                 ev.Use();Refresh();view.Repaint();
             } else if(Panel.Painting && ev.type==EventType.MouseDrag && hit) {Panel.ExtendStroke(world);ev.Use();view.Repaint();}
             else if(Panel.Painting && ev.rawType==EventType.MouseUp && ev.button==0) {Panel.EndStroke();GUIUtility.hotControl=0;ev.Use();Refresh();view.Repaint();}

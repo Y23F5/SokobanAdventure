@@ -1,14 +1,20 @@
 /**
  * @file WorldPreviewVerification.cs
- * @brief Run 在隔离的 Unity 编辑态打开实际场景，比对模型层级、房间平移、独立查看和重开。
- * Root 找到唯一的活动预览根；CheckRoom 核对格子和对象的模型位置；Require 保存断言结果。
- * CheckFactoryRoundTrip 通过布局面板移动箱子、撤销重做并重新打开工作文件；CheckModel 核对模型构件、材质及朝向。
- * CheckFactoryModels 根据工厂草稿逐一比较显示模型与资源，在放置、移动及独立打开后复用。
+ * @brief Run 在隔离的 Unity 编辑态打开实际场景，比对模型层级、房间平移、独立查看和重开，数据全部取自 Core 类型。
+ * Require(condition, detail)：把断言结果写入证据文件，失败抛 InvalidDataException。
+ * Root()：找到唯一的活动预览根。
+ * TileName(room, cell)：按地形分类给出预览节点前缀，空格与门格没有格子节点，返回空。
+ * Links(world)：把世界的全部连接（ID、方式、两端、allowReturn）拼成可比较的字符串。
+ * CheckRoom(model, origin)：核对房间原点、每个地形格与对象的模型位置，以及子节点总数。
+ * CheckModel(instance, kind, rotation, expectedSurface)：核对模型构件、材质及朝向。
+ * CheckFactoryModels(draft)：根据工厂草稿逐一比较显示模型与资源，在放置、移动及独立打开后复用。
+ * CheckFactoryRoundTrip(panel, folder)：通过布局面板移动箱子、撤销重做、保存并重新打开工作文件，比较整房编码。
+ * Run()：批处理入口，环境变量 SOKOBAN_EXCHANGE_DIR 给证据目录，依次验证三次直开、独立查看、返回、整房重放与独立工厂往返。
  */
 using System;
 using System.IO;
 using System.Linq;
-using Newtonsoft.Json.Linq;
+using Sokoban.Core;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -32,27 +38,39 @@ namespace Sokoban.Editor
                 .Single(go => go.activeSelf && go.name.StartsWith("Room • ",StringComparison.Ordinal)).transform;
         }
 
-        static void CheckRoom(JObject room, Vector2Int origin)
+        static string TileName(Room room, Cell cell)
         {
-            var group = Root().Find((string)room["levelId"]);
-            var size = RoomFile.Size(room);
-            Require(group && group.position == new Vector3(origin.x,0,origin.y), room["levelId"] + " 房间原点 " + origin);
-            for (int y=0;y<size.y;y++) for (int x=0;x<size.x;x++)
+            string category = room.TerrainAt(cell).CategoryId;
+            return category == TerrainCategories.Floor ? "Floor" : category == TerrainCategories.Wall ? "Wall" : category == TerrainCategories.Openable ? "Vine" : null;
+        }
+
+        static string Links(WorldDocument world) =>
+            string.Join(";", world.Connections.Select(c => c.Id + "|" + c.Mode + "|" + c.From.LevelId + "." + c.From.DoorId + ">" + c.To.LevelId + "." + c.To.DoorId + "|" + c.AllowReturn));
+
+        static void CheckRoom(RoomDraftModel model, Cell origin)
+        {
+            var room = model.Room;
+            var group = Root().Find(room.Id);
+            Require(group && group.position == new Vector3(origin.X,0,origin.Y), room.Id + " 房间原点 " + origin);
+            int tiles = 0;
+            for (int y=0;y<room.Height;y++) for (int x=0;x<room.Width;x++)
             {
-                var cell=new Vector2Int(x,y);
-                string kind=RoomFile.Floor(room,cell)?"Floor":"Wall";
-                var tile=group.Find(kind+" "+cell);
+                var cell=new Cell(x,y);
+                string name=TileName(room,cell);
+                if (name==null) continue;
+                var tile=group.Find(name+" "+cell);
                 if (!tile || tile.localPosition!=new Vector3(x,0,y) || !tile.GetComponentInChildren<Renderer>())
                     throw new InvalidDataException("格子模型错误 "+cell);
+                tiles++;
             }
-            foreach (var obj in RoomFile.Objects(room))
+            foreach (var obj in room.Objects)
             {
-                var part=group.Find((string)obj["id"]);var cell=RoomFile.At(obj);
-                if (!part || part.localPosition!=new Vector3(cell.x,0,cell.y) || !part.GetComponentInChildren<Renderer>())
-                    throw new InvalidDataException("对象模型错误 "+obj["id"]);
+                var part=group.Find(obj.Id);
+                if (!part || part.localPosition!=new Vector3(obj.Cell.X,0,obj.Cell.Y) || !part.GetComponentInChildren<Renderer>())
+                    throw new InvalidDataException("对象模型错误 "+obj.Id);
             }
-            Require(group.Find("地基") && group.Find("主题模型") && group.childCount == 2+size.x*size.y+RoomFile.Objects(room).Count()+(group.Find("Selection")?1:0),
-                room["levelId"] + " 各格和对象均唯一，模型数量 " + group.childCount);
+            Require(group.Find("地基") && group.Find("主题模型") && group.childCount == 2+tiles+model.Doors.Count+room.Objects.Count+(group.Find("Selection")?1:0),
+                room.Id + " 各格和对象均唯一，模型数量 " + group.childCount);
         }
 
         static void CheckModel(Transform instance, string kind, Quaternion rotation, Material expectedSurface=null)
@@ -76,23 +94,21 @@ namespace Sokoban.Editor
         static void CheckFactoryModels(RoomDraft draft)
         {
             var group = Root().Find("factory");
-            var size = RoomFile.Size(draft.Room);
-            for (int y = 0; y < size.y; y++)
-                for (int x = 0; x < size.x; x++)
+            var room = draft.Room;
+            for (int y = 0; y < room.Height; y++)
+                for (int x = 0; x < room.Width; x++)
                 {
-                    var cell = new Vector2Int(x, y);
-                    var kind = RoomFile.Floor(draft.Room, cell) ? "Floor" : "Wall";
+                    var cell = new Cell(x, y);
+                    string kind = TileName(room, cell);
+                    if (kind != "Floor" && kind != "Wall") continue;
                     CheckModel(group.Find(kind + " " + cell), kind, Quaternion.identity,kind=="Floor"?Resources.Load<Material>("LayoutModels/Stone"):null);
                 }
-            foreach (var door in draft.Room["doors"])
-            {
-                var inward = RoomFile.Inward(door);
-                CheckModel(group.Find((string)door["id"]), "Door", Quaternion.LookRotation(new Vector3(inward.x, 0, inward.y)));
-            }
-            foreach (var box in draft.Room["boxes"]) CheckModel(group.Find((string)box["id"]), RoomPreview.BoxModel("factory"), Quaternion.identity);
-            foreach (var target in draft.Room["targets"]) CheckModel(group.Find((string)target["id"]), "Target", Quaternion.identity);
-            CheckModel(group.Find((string)draft.Room["spawn"]["id"]), "Spawn", Quaternion.identity);
-            CheckRoom(draft.Room, draft.Origin);
+            foreach (var door in draft.Model.Doors)
+                CheckModel(group.Find(door.Id), "Door", Quaternion.LookRotation(new Vector3(-door.Outward.X, 0, -door.Outward.Y)));
+            foreach (var box in room.ObjectsOf(ObjectCategories.Box)) CheckModel(group.Find(box.Id), RoomPreview.BoxModel("factory"), Quaternion.identity);
+            foreach (var target in room.ObjectsOf(ObjectCategories.Target)) CheckModel(group.Find(target.Id), "Target", Quaternion.identity);
+            CheckModel(group.Find(room.ObjectsOf(ObjectCategories.Spawn).Single().Id), "Spawn", Quaternion.identity);
+            CheckRoom(draft.Model, draft.Origin);
             Require(!GameObject.Find("房间放置预览"), "工厂 " + draft.Origin + " 的格子及物件与 Prefab 的网格、材质、部件和朝向一致，无残留虚影");
         }
 
@@ -109,18 +125,18 @@ namespace Sokoban.Editor
             CheckFactoryModels(draft);
             var start = new Vector2Int(4, 2);
             var end = start + Vector2Int.left;
-            var original = draft.Room.DeepClone();
+            var original = RoomCodec.Encode(draft.Model);
             draft.Tool = RoomTool.Select; panel.ClickWorld(start);
             draft.Tool = RoomTool.Move; panel.ClickWorld(end);
-            Require(draft.Selected == "box-2" && RoomFile.At(draft.Find("box-2")) == end, "选中 box-2 并向左移一格");
-            var moved = draft.Room.DeepClone();
-            draft.Undo(); Require(JToken.DeepEquals(original, draft.Room), "撤销一步恢复原房间");
-            draft.Redo(); Require(JToken.DeepEquals(moved, draft.Room), "重做恢复新房间");
+            Require(draft.Selected == "box-2" && draft.Find("box-2").Cell == new Cell(end.x, end.y), "选中 box-2 并向左移一格");
+            var moved = RoomCodec.Encode(draft.Model);
+            draft.Undo(); Require(original == RoomCodec.Encode(draft.Model), "撤销一步恢复原房间");
+            draft.Redo(); Require(moved == RoomCodec.Encode(draft.Model), "重做恢复新房间");
             panel.ChooseFile("保存");
-            Require(JToken.DeepEquals(moved, JObject.Parse(File.ReadAllText(path))), "工作文件逐字段等于已修改房间");
+            Require(moved == File.ReadAllText(path), "工作文件逐字等于已修改房间的编码");
             panel.ChooseFile("打开"); panel.Filename = path; panel.SubmitFile(); WorldSceneSession.Tick();
-            Require(!panel.Modal && JToken.DeepEquals(moved, draft.Room) && RoomFile.Cell(draft.Find("box-2")["recoveryCell"]) == end, "重开后稳定 ID、位置及恢复格一致");
-            CheckRoom(draft.Room, Vector2Int.zero);
+            Require(!panel.Modal && moved == RoomCodec.Encode(draft.Model) && draft.Find("box-2").Cell == new Cell(end.x, end.y), "重开后稳定 ID 与位置一致");
+            CheckRoom(draft.Model, new Cell(0, 0));
         }
 
         public static void Run()
@@ -136,8 +152,8 @@ namespace Sokoban.Editor
                     WorldSceneSession.Tick();WorldSceneSession.Tick();
                     var draft=WorldSceneSession.Panel.Draft;
                     Require(Root().childCount==3,"第 "+(open+1)+" 次直接打开 Game 生成一份三房整图");
-                    foreach(var placement in draft.World["rooms"])
-                        CheckRoom((JObject)draft.Catalog[(string)placement["levelId"]],RoomFile.Cell(placement["origin"]));
+                    foreach(var placement in draft.World.Rooms)
+                        CheckRoom(draft.Catalog[placement.LevelId],placement.Origin);
                     var root=Root(); RoomWindow.Open().Close();WorldSceneSession.Tick();
                     Require(root==Root(),"打开并关闭工具窗口保留原预览实例");
                 }
@@ -146,54 +162,54 @@ namespace Sokoban.Editor
                 var view=EditorWindow.GetWindow<SceneView>();view.Focus();
                 WorldSceneSession.FocusRoom();var pivot=view.pivot;var rotation=view.rotation;float size=view.size;
                 WorldSceneSession.Solo();WorldSceneSession.Tick();Require(Root().childCount==1,"单独查看只生成选中房间");
-                CheckRoom(state.Room,state.Origin);
-                var originalRoom = state.Room.DeepClone();
-                var boxCell = RoomFile.At(state.Find("box-2"));
+                CheckRoom(state.Model,state.Origin);
+                var originalRoom = RoomCodec.Encode(state.Model);
+                var boxCell = state.Find("box-2").Cell;
                 state.Select(boxCell);
-                state.Move(boxCell + Vector2Int.left);
+                state.Move(boxCell + Cell.Left);
                 WorldSceneSession.ReturnToWorld();WorldSceneSession.Tick();
                 Require(Root().childCount==3 && view.pivot==pivot && view.rotation==rotation && Mathf.Approximately(view.size,size),"返回还原整图、观察中心、朝向及缩放");
-                CheckRoom(state.Room, state.Origin);
+                CheckRoom(state.Model, state.Origin);
                 state.Undo();
-                Require(JToken.DeepEquals(originalRoom, state.Room), "退出单房后的第一步撤销还原房内纸箱和恢复格");
+                Require(originalRoom == RoomCodec.Encode(state.Model), "退出单房后的第一步撤销还原房内纸箱位置");
                 var history = state.Snapshot();
                 WorldSceneSession.Solo();
                 WorldSceneSession.FrameWorld();
                 WorldSceneSession.Tick();
-                Require(!WorldSceneSession.IsSolo && Root().childCount == 3 && view.size > size && JToken.DeepEquals(history, state.Snapshot()), "从单房显示整图可见三房，取景扩大且未修改文档或历史");
-                var original=state.Room.DeepClone();
+                Require(!WorldSceneSession.IsSolo && Root().childCount == 3 && view.size > size && history == state.Snapshot(), "从单房显示整图可见三房，取景扩大且未修改文档或历史");
+                var original=RoomCodec.Encode(state.Model);
                 var docked = state.Origin;
-                var savedLinks = state.World["connections"].DeepClone();
+                var savedLinks = Links(state.World);
                 state.RemoveRoom();
                 panel.StartRoomPlacement();
                 var detached = state.Snapshot();
                 var away = new Vector2Int(40, 10);
                 Require(panel.Candidate(away, out var detachedWarning) == Color.yellow && detachedWarning.Contains("factory") && detachedWarning.Contains("直连"), "从目录重新放置，移远已连接的工厂应显示黄色直连警告");
-                Require(panel.Candidate(docked, out _) == Color.green && JToken.DeepEquals(detached, state.Snapshot()), "重新对接的预览为绿色，检查预览不改变草稿或历史");
+                Require(panel.Candidate(new Vector2Int(docked.X, docked.Y), out _) == Color.green && detached == state.Snapshot(), "重新对接的预览为绿色，检查预览不改变草稿或历史");
                 panel.CancelTool();
-                Require(state.Placement == null && JToken.DeepEquals(detached, state.Snapshot()), "取消整房重放保留未放置状态");
+                Require(state.Placement == null && detached == state.Snapshot(), "取消整房重放保留未放置状态");
                 panel.StartRoomPlacement(); panel.ConfirmRoom(away);
                 WorldSceneSession.Tick(); CheckFactoryModels(state);
-                Require(state.Origin == away && JToken.DeepEquals(savedLinks,state.World["connections"]), "黄色确认保留端点、连接模式和 allowReturn");
-                panel.StartRoomPlacement(); panel.ConfirmRoom(docked);
+                Require(state.Origin == new Cell(away.x, away.y) && savedLinks == Links(state.World), "黄色确认保留端点、连接模式和 allowReturn");
+                panel.StartRoomPlacement(); panel.ConfirmRoom(new Vector2Int(docked.X, docked.Y));
                 WorldSceneSession.Tick(); CheckFactoryModels(state);
-                Require(state.Origin == docked && !WorldLayout.ConnectionIssues(state.World,state.Catalog).Any() && JToken.DeepEquals(savedLinks,state.World["connections"]), "回到原点后两扇直连门重新对接并消除警告");
+                Require(state.Origin == docked && !WorldLayout.ConnectionIssues(state.World,state.Catalog).Any() && savedLinks == Links(state.World), "回到原点后两扇直连门重新对接并消除警告");
                 var snapshot=state.Snapshot();
                 panel.StartRoomPlacement();var candidate=new Vector2Int(40,10);
-                var max = RoomFile.Cell(state.World["bounds"]["max"]);
-                var eastEdge = new Vector2Int(max.x, 0);
-                Require(panel.Candidate(eastEdge, out var boundary) == Color.red && boundary.Contains($"({(long)max.x + 1}, 0)"), "右缘越界指出第一个越界格，而原点仍在地图内");
+                var max = state.World.Max;
+                var eastEdge = new Vector2Int(max.X, 0);
+                Require(panel.Candidate(eastEdge, out var boundary) == Color.red && boundary.Contains($"({(long)max.X + 1}, 0)"), "右缘越界指出第一个越界格，而原点仍在地图内");
                 panel.ConfirmRoom(eastEdge);
-                Require(panel.PlacingRoom && JToken.DeepEquals(snapshot, state.Snapshot()), "红色候选拒绝确认并保留原位和历史");
+                Require(panel.PlacingRoom && snapshot == state.Snapshot(), "红色候选拒绝确认并保留原位和历史");
                 Require(panel.Candidate(candidate,out var warning)==Color.yellow && warning.Contains("直连"),"移远已对接房间给出黄色提示");
                 var ghost=new RoomPreview();ghost.ShowPlacement(state,candidate,Color.yellow);
                 var instance=GameObject.Find("房间放置预览");
                 Require(instance && instance.transform.Find("factory") && instance.GetComponentsInChildren<LineRenderer>().Length==2,"虚影含整房模型、原位和候选轮廓");
-                ghost.HidePlacement();panel.CancelTool();Require(!GameObject.Find("房间放置预览") && JToken.DeepEquals(snapshot,state.Snapshot()),"取消清理虚影，不改设计或历史");
-                panel.StartRoomPlacement();panel.ConfirmRoom(candidate);WorldSceneSession.Tick();CheckRoom(state.Room,candidate);
-                state.Undo();WorldSceneSession.Tick();Require(JToken.DeepEquals(original,state.Room) && state.Origin!=candidate,"一步撤销还原原点与对象");
+                ghost.HidePlacement();panel.CancelTool();Require(!GameObject.Find("房间放置预览") && snapshot==state.Snapshot(),"取消清理虚影，不改设计或历史");
+                panel.StartRoomPlacement();panel.ConfirmRoom(candidate);WorldSceneSession.Tick();CheckRoom(state.Model,new Cell(candidate.x,candidate.y));
+                state.Undo();WorldSceneSession.Tick();Require(original==RoomCodec.Encode(state.Model) && state.Origin!=new Cell(candidate.x,candidate.y),"一步撤销还原原点与对象");
                 state.Open(Path.Combine(Application.streamingAssetsPath,"World","forest.room.json"),false);WorldSceneSession.Tick();
-                Require(Root().childCount==1,"独立房间只生成一份");CheckRoom(state.Room,Vector2Int.zero);
+                Require(Root().childCount==1,"独立房间只生成一份");CheckRoom(state.Model,new Cell(0,0));
                 CheckFactoryRoundTrip(panel, folder);
             }
         }

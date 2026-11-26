@@ -1,208 +1,294 @@
 /**
  * @file AppearanceLibrary.cs
- * @brief Entries enumerates built-in appearance IDs independent of the room. Recommended and Resolve supply defaults for legacy room data.
- * ChooseAppearance and ApplyBrush record an explicit visual binding, copying imported descriptors into the destination room for exchange.
+ * @brief 内置外观库按类别 ID 分类，外观引用统一用 Core.AppearanceRef；主题只提供默认外观与推荐，不决定房间里有什么；素材页签按类别 ID 归类。
+ * AppearanceLibrary.Entry(categoryId, id, name, prefab, theme, variants)：一条内置外观，Prefab(variant) 按变体序号取 Resources 路径，单变体时忽略序号。
+ * AppearanceLibrary.Decoration、Remnant：装饰与残留物两个外观类别 ID，不属于对象层；其余类别 ID 取自地形与对象注册表。
+ * AppearanceLibrary.Themes、ThemeName(id)、TypeName(categoryId)：主题 ID 列表与显示名、类别显示名，显示名与 ID 分开。
+ * AppearanceLibrary.Find(id)、Entries(categoryId, theme)：按 ID 查条目；按类别列出全部条目，当前主题的推荐排在前面。
+ * AppearanceLibrary.Default(categoryId, theme, variant)：主题给出的默认外观引用，地板按传入的变体序号取变体，序号由调用方写入数据而非按坐标哈希。
+ * AppearanceLibrary.Resolve(categoryId, theme, explicitRef)：有显式引用时原样返回，否则取主题默认。
+ * AppearanceLibrary.Prefab(look)：内置外观返回 Prefab 路径，导入模型或未知 ID 返回空，由调用方改走 ImportedAppearance。
+ * PaletteTabs：地形、物件、装饰、其他、自定义五个页签 ID，CategoriesOf(tab) 返回页签包含的类别 ID，其他页本轮为空。
+ * RoomDraft.BrushCategory、BrushAppearance、BrushTemplate、ClearBrush()：当前放置画刷的类别、外观与对象模板，切换工具时由调用方清空。
+ * RoomDraft.ChooseAppearance(id, categoryId, variant)：选择内置外观或本房已有的导入模型作为画刷，不修改房间。
+ * RoomDraft.SelectedCategory：所选格上对象的类别；没有对象时为墙外装饰（decoration）或该格地形类别。
+ * RoomDraft.CanReplaceAppearance(id)、ReplaceAppearance(id, variant)：外观类别与所选内容一致时，经一条可撤销命令改写地形、对象或装饰的外观引用。
+ * RoomDraft.SetTheme(theme)：改写 RoomMeta 的主题；同一条命令里先把未写外观的地形、箱子与目标冻结为旧主题默认值，已放内容外观不变。
+ * RoomDraft.PaletteItems(tab)：页签内的候选项；地形与物件页为内置外观，装饰页为内置装饰加装饰类导入模型，自定义页为对象模板与导入的 GLB 模型。
+ * RoomDraft.SetObjectAppearance(model, id, look)：移除后以同 ID、同格、新外观重新登记对象，并原样保留其对象状态表。
  */
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json.Linq;
-using UnityEngine;
+using Sokoban.Core;
 
 namespace Sokoban
 {
     public static class AppearanceLibrary
     {
+        public const string Decoration = "decoration";
+        public const string Remnant = "remnant";
+
         public sealed class Entry
         {
-            public readonly RoomTool Type;
-            public readonly string Id, Name, Prefab, Theme;
-            internal Entry(RoomTool type, string id, string name, string prefab, string theme = null)
-            { Type = type; Id = id; Name = name; Prefab = prefab; Theme = theme; }
+            public readonly string CategoryId, Id, Name, Theme;
+            public readonly int Variants;
+            readonly string prefab;
+
+            internal Entry(string categoryId, string id, string name, string prefab, string theme = null, int variants = 1)
+            {
+                CategoryId = categoryId; Id = id; Name = name; this.prefab = prefab; Theme = theme; Variants = variants;
+            }
+
+            public string Prefab(int variant = 0) => Variants > 1 ? prefab + ((variant % Variants + Variants) % Variants) : prefab;
         }
 
         public static readonly string[] Themes = { "warehouse", "factory", "forest" };
+
         public static string ThemeName(string id) => id == "factory" ? "工厂" : id == "forest" ? "森林" : id == "warehouse" ? "仓库" : id;
-        public static string TypeName(RoomTool tool) => tool switch
+
+        public static string TypeName(string categoryId) => categoryId switch
         {
-            RoomTool.Box => "箱子", RoomTool.Wall => "墙壁", RoomTool.Floor => "地板", RoomTool.Target => "目标点", _ => "其他"
+            ObjectCategories.Box => "箱子", ObjectCategories.Target => "目标点", ObjectCategories.Spawn => "出生点", ObjectCategories.Custom => "自定义物件",
+            TerrainCategories.Floor => "地板", TerrainCategories.Wall => "墙壁", TerrainCategories.Door => "门", TerrainCategories.Openable => "藤门",
+            Decoration => "装饰", Remnant => "残留物", _ => "其他"
         };
 
         static readonly Entry[] Builtins = new[]
         {
-            new Entry(RoomTool.Box, "Cargo", "仓库木箱", "Diorama/Cargo", "warehouse"),
-            new Entry(RoomTool.Box, "Machinery", "工厂货箱", "Diorama/Machinery", "factory"),
-            new Entry(RoomTool.Box, "Logs", "森林原木", "Diorama/Logs", "forest"),
-            new Entry(RoomTool.Wall, "DepotWall", "仓库木墙", "LayoutModels/Wall", "warehouse"),
-            new Entry(RoomTool.Wall, "FactoryWall", "工厂金属墙", "LayoutModels/FactoryWall", "factory"),
-            new Entry(RoomTool.Wall, "ForestWall", "森林青苔石墙", "LayoutModels/ForestWall", "forest"),
-            new Entry(RoomTool.Target, "Target", "目标点", "LayoutModels/Target"),
-            new Entry(RoomTool.Target, "FactoryTarget", "工厂目标点", "LayoutModels/FactoryTarget", "factory"),
-            new Entry(RoomTool.Target, "ForestTarget", "森林目标点", "LayoutModels/ForestTarget", "forest"),
-            new Entry(RoomTool.Decoration, "ForestFence", "森林木篱笆", "LayoutModels/ForestFence", "forest"),
-            new Entry(RoomTool.Decoration, "ForestVine", "森林藤篱", "Diorama/ForestVine", "forest")
-        }.Concat(Themes.SelectMany(theme => Enumerable.Range(0, 3).Select(i =>
-            new Entry(RoomTool.Floor, theme + "Tile" + i, ThemeName(theme) + "地板 " + (i + 1), "Diorama/" + theme + "Tile" + i, theme))))
-            .Append(new Entry(RoomTool.Floor, "Floor", "素面地板", "LayoutModels/Floor")).ToArray();
+            new Entry(ObjectCategories.Box, "Cargo", "仓库木箱", "Diorama/Cargo", "warehouse"),
+            new Entry(ObjectCategories.Box, "Machinery", "工厂货箱", "Diorama/Machinery", "factory"),
+            new Entry(ObjectCategories.Box, "Logs", "森林原木", "Diorama/Logs", "forest"),
+            new Entry(ObjectCategories.Box, "ForestTree", "完整树木", "Diorama/Tree", "forest"),
+            new Entry(ObjectCategories.Target, "Target", "目标点", "LayoutModels/Target", "warehouse"),
+            new Entry(ObjectCategories.Target, "FactoryTarget", "工厂目标点", "LayoutModels/FactoryTarget", "factory"),
+            new Entry(ObjectCategories.Target, "ForestTarget", "森林目标点", "LayoutModels/ForestTarget", "forest"),
+            new Entry(ObjectCategories.Spawn, "Spawn", "出生点", "LayoutModels/Spawn"),
+            new Entry(TerrainCategories.Wall, "DepotWall", "仓库木墙", "LayoutModels/Wall", "warehouse"),
+            new Entry(TerrainCategories.Wall, "FactoryWall", "工厂金属墙", "LayoutModels/FactoryWall", "factory"),
+            new Entry(TerrainCategories.Wall, "ForestWall", "森林青苔石墙", "LayoutModels/ForestWall", "forest"),
+            new Entry(TerrainCategories.Floor, "warehouseFloor", "仓库地板", "Diorama/warehouseTile", "warehouse", 3),
+            new Entry(TerrainCategories.Floor, "factoryFloor", "工厂地板", "Diorama/factoryTile", "factory", 3),
+            new Entry(TerrainCategories.Floor, "forestFloor", "森林地板", "Diorama/forestTile", "forest", 3),
+            new Entry(TerrainCategories.Floor, "Floor", "素面地板", "LayoutModels/Floor"),
+            new Entry(TerrainCategories.Door, "Door", "门", "LayoutModels/Door"),
+            new Entry(TerrainCategories.Openable, "Vine", "藤门", "Diorama/ForestVine"),
+            new Entry(Decoration, "ForestFence", "森林木篱笆", "LayoutModels/ForestFence", "forest"),
+            new Entry(Decoration, "ForestVine", "森林藤篱", "Diorama/ForestVine", "forest"),
+            new Entry(Remnant, "TreeStump", "树桩", "LayoutModels/TreeStump", "forest")
+        };
 
-        public static Entry Find(string id) => Builtins.FirstOrDefault(entry => entry.Id == id);
-        public static IEnumerable<Entry> Entries(RoomTool type, string theme) => Builtins.Where(entry => entry.Type == type)
-            .OrderByDescending(entry => entry.Theme == theme);
-        public static Entry Resolve(RoomTool type, string theme, Vector2Int cell, JToken record = null)
+        public static Entry Find(string id) => id == null ? null : Builtins.FirstOrDefault(entry => entry.Id == id);
+
+        public static IEnumerable<Entry> Entries(string categoryId, string theme) => Builtins.Where(entry => entry.CategoryId == categoryId)
+            .OrderByDescending(entry => theme != null && entry.Theme == theme);
+
+        public static AppearanceRef Default(string categoryId, string theme, int variant = 0)
         {
-            var explicitEntry = Find((string)record?["builtinModel"]);
-            if (explicitEntry != null) return explicitEntry;
-            if (type == RoomTool.Floor)
-            {
-                int variant = Mathf.Abs((cell.x * 17 + cell.y * 29 + cell.x * cell.y) % 3);
-                return Find(theme + "Tile" + variant) ?? Find("Floor");
-            }
-            if (type == RoomTool.Target) return Find("Target");
-            return Entries(type, theme).FirstOrDefault();
+            var candidates = Builtins.Where(entry => entry.CategoryId == categoryId).ToList();
+            var entry = candidates.FirstOrDefault(e => e.Theme == theme) ?? candidates.FirstOrDefault(e => e.Theme == null) ?? candidates.FirstOrDefault();
+            if (entry == null) return null;
+            return new AppearanceRef(entry.Id, entry.Variants > 1 ? (variant % entry.Variants + entry.Variants) % entry.Variants : 0);
         }
 
-        public static RoomTool TypeOf(JObject room, JToken item)
+        public static AppearanceRef Resolve(string categoryId, string theme, AppearanceRef explicitRef = null) =>
+            explicitRef ?? Default(categoryId, theme);
+
+        public static string Prefab(AppearanceRef look) => Find(look?.Id)?.Prefab(look.Variant);
+    }
+
+    public static class PaletteTabs
+    {
+        public const string Terrain = "terrain";
+        public const string Object = "object";
+        public const string Decoration = "decoration";
+        public const string Other = "other";
+        public const string Custom = "custom";
+        public static readonly string[] All = { Terrain, Object, Decoration, Other, Custom };
+
+        public static string Name(string tab) => tab switch
         {
-            if (item == null) return RoomTool.Select;
-            if (item.Parent == room["boxes"]) return RoomTool.Box;
-            if (item.Parent == room["targets"]) return RoomTool.Target;
-            if (item.Parent == room["decorations"]) return RoomTool.Decoration;
-            if (item.Parent == room["terrainObjects"])
-                return RoomFile.Floor(room, RoomFile.At(item)) ? RoomTool.Floor : RoomTool.Wall;
-            return RoomTool.Select;
+            Terrain => "地形", Object => "物件", Decoration => "装饰", Other => "其他", Custom => "自定义", _ => tab
+        };
+
+        public static IReadOnlyList<string> CategoriesOf(string tab) => tab switch
+        {
+            Terrain => new[] { TerrainCategories.Floor, TerrainCategories.Wall, TerrainCategories.Door, TerrainCategories.Openable },
+            Object => new[] { ObjectCategories.Box, ObjectCategories.Target, ObjectCategories.Spawn },
+            Decoration => new[] { AppearanceLibrary.Decoration },
+            Custom => new[] { ObjectCategories.Custom },
+            _ => Array.Empty<string>()
+        };
+    }
+
+    public sealed class PaletteItem
+    {
+        public readonly string Tab, CategoryId, Id, Name, Prefab, AssetId, TemplateId;
+
+        public PaletteItem(string tab, string categoryId, string id, string name, string prefab = null, string assetId = null, string templateId = null)
+        {
+            Tab = tab; CategoryId = categoryId; Id = id; Name = name; Prefab = prefab; AssetId = assetId; TemplateId = templateId;
         }
     }
 
     public sealed partial class RoomDraft
     {
-        public string BrushBuiltin { get; private set; }
-        public JObject AssetDefinition(string id) => id == null ? null : Room["assets"]?[id] as JObject ?? Catalog.Properties()
-            .Select(p => p.Value["assets"]?[id] as JObject).FirstOrDefault(asset => asset != null);
-        public JObject AssetRoom(string id) => id != null && Room["assets"]?[id] == null && AssetDefinition(id) is JObject asset
-            ? new JObject { ["assets"] = new JObject { [id] = asset.DeepClone() } } : Room;
+        public string BrushCategory { get; private set; }
+        public AppearanceRef BrushAppearance { get; private set; }
+        public string BrushTemplate { get; private set; }
 
-        public IEnumerable<string> CategoryAssets(RoomTool type)
+        public void ClearBrush()
         {
-            string key = type.ToString().ToLowerInvariant();
-            return Catalog.Properties().SelectMany(p => (p.Value["appearanceCatalog"]?[key] as JObject)?.Properties()
-                ?? Enumerable.Empty<JProperty>()).Select(p => (string)p.Value["model"]).Where(id => AssetDefinition(id) != null).Distinct();
+            BrushCategory = null;
+            BrushAppearance = null;
+            BrushTemplate = null;
         }
 
-        public void ChooseAppearance(string builtin, RoomTool type)
-        {
-            RoomFile.Check(AppearanceLibrary.Find(builtin)?.Type == type, "素材与基础类型不符");
-            Tool = type;
-            BrushBuiltin = builtin;
-        }
+        public string Theme => Model.Meta?.ThemeId;
 
-        void CopyAssetInto(JObject room, string id)
+        public void ChooseAppearance(string appearanceId, string categoryId, int variant = 0)
         {
-            var descriptor = RequireAsset(id);
-            if (room["assets"] == null) room["assets"] = new JObject();
-            if (room["assets"][id] == null) room["assets"][id] = descriptor.DeepClone();
-        }
-
-        void ApplyBrush(JObject room, JObject item, RoomTool type, Vector2Int cell, string builtin = null)
-        {
-            if (Tool == type && BrushAsset != null && builtin == null)
+            var entry = AppearanceLibrary.Find(appearanceId);
+            if (entry != null)
             {
-                CopyAssetInto(room, BrushAsset);
-                RegisterCategory(room, type, BrushAsset);
-                item.Remove("builtinModel");
-                if (item["visual"] == null) item["visual"] = new JObject();
-                item["visual"]["model"] = BrushAsset;
-                return;
+                if (entry.CategoryId != categoryId) throw new InvalidOperationException("素材与类别不符");
             }
-            string id = builtin ?? (Tool == type ? BrushBuiltin : null) ??
-                AppearanceLibrary.Resolve(type, (string)room["themeId"], cell)?.Id;
-            if (id == null) return;
-            item["builtinModel"] = id;
-            if (item["visual"] is JObject visual)
-            {
-                visual.Remove("model");
-                if (!visual.HasValues) item.Remove("visual");
-            }
+            else if (AssetDefinition(appearanceId)?.Kind != AssetKinds.Model) throw new InvalidOperationException("当前房间没有所选素材");
+            ClearBrush();
+            BrushCategory = categoryId;
+            BrushAppearance = new AppearanceRef(appearanceId, variant);
         }
 
-        public RoomTool SelectedAppearanceType
+        public string SelectedCategory
         {
             get
             {
-                if (!SelectedCell.HasValue) return RoomTool.Select;
-                if (Find(Selected) is JToken item) return AppearanceLibrary.TypeOf(Room, item);
-                return RoomFile.Terrain(Room, SelectedCell.Value) switch { '#' => RoomTool.Wall, '.' => RoomTool.Floor, _ => RoomTool.Select };
+                if (!SelectedCell.HasValue) return null;
+                var cell = SelectedCell.Value;
+                var placed = Room.ObjectAt(cell);
+                if (placed != null) return placed.CategoryId;
+                if (Model.Decorations.Any(d => d.Cell == cell)) return AppearanceLibrary.Decoration;
+                string terrain = Room.TerrainAt(cell).CategoryId;
+                return terrain == TerrainCategories.Void ? null : terrain;
             }
         }
 
         public bool CanReplaceAppearance(string id)
         {
+            string category = SelectedCategory;
+            if (category == null || category == ObjectCategories.Spawn) return false;
             var entry = AppearanceLibrary.Find(id);
-            var type = SelectedAppearanceType;
-            return entry != null && (type == entry.Type || (entry.Type == RoomTool.Floor || entry.Type == RoomTool.Wall) &&
-                SelectedCell.HasValue && RoomFile.Terrain(Room, SelectedCell.Value) == (entry.Type == RoomTool.Floor ? '.' : '#'));
+            if (entry != null) return entry.CategoryId == category;
+            return AssetDefinition(id)?.Kind == AssetKinds.Model;
         }
 
-        public void ReplaceAppearance(string id)
+        public void ReplaceAppearance(string id, int variant = 0)
         {
-            RoomFile.Check(CanReplaceAppearance(id), "请先选择同类对象或对应的地形格");
-            var entry = AppearanceLibrary.Find(id);
+            if (!CanReplaceAppearance(id)) throw new InvalidOperationException("请先选择同类对象或对应的地形格");
+            var look = new AppearanceRef(id, variant);
             var cell = SelectedCell.Value;
-            var next = (JObject)Room.DeepClone();
-            var item = entry.Type == RoomTool.Wall || entry.Type == RoomTool.Floor ? TerrainRecord(next, cell) : (JObject)PropertyObject(next, cell);
-            ApplyBrush(next, item, entry.Type, cell, id);
-            if (!JToken.DeepEquals(next, Room)) { Commit(next, Selected); Select(cell); }
+            var model = Model;
+            var room = Room;
+            var copy = AssetCopy(id);
+            var placed = room.ObjectAt(cell);
+            var decoration = placed == null ? model.Decorations.FirstOrDefault(d => d.Cell == cell) : null;
+            if (placed != null)
+            {
+                if (Equals(placed.Appearance, look)) return;
+                var before = placed.Appearance;
+                Commit(new ModelEdit(() => { copy.Apply(model); SetObjectAppearance(model, placed.Id, look); },
+                    () => { SetObjectAppearance(model, placed.Id, before); copy.Revert(model); }));
+            }
+            else if (decoration != null)
+            {
+                if (Equals(decoration.Appearance, look)) return;
+                var after = new Decoration(decoration.Id, decoration.Cell, look);
+                Commit(new ModelEdit(() => { copy.Apply(model); Swap(model.Decorations, decoration, after); },
+                    () => { Swap(model.Decorations, after, decoration); copy.Revert(model); }));
+            }
+            else
+            {
+                var before = room.AppearanceAt(cell);
+                if (Equals(before, look)) return;
+                Commit(new ModelEdit(() => { copy.Apply(model); room.SetAppearance(cell, look); },
+                    () => { room.SetAppearance(cell, before); copy.Revert(model); }));
+            }
+            Select(cell);
         }
 
-        static JObject TerrainRecord(JObject room, Vector2Int cell)
+        static void Swap<T>(IList<T> list, T from, T to) where T : class
         {
-            if (room["terrainObjects"] == null) room["terrainObjects"] = new JArray();
-            var records = (JArray)room["terrainObjects"];
-            var record = records.OfType<JObject>().FirstOrDefault(item => RoomFile.At(item) == cell);
-            if (record != null) return record;
-            return AddTerrainRecord(records, cell);
+            int index = list.IndexOf(from);
+            if (index >= 0) list[index] = to;
         }
 
-        static JObject AddTerrainRecord(JArray records, Vector2Int cell)
+        internal static void SetObjectAppearance(RoomDraftModel model, string id, AppearanceRef look)
         {
-            var record = new JObject { ["id"] = "tile-" + Guid.NewGuid().ToString("N"), ["cell"] = RoomFile.Point(cell) };
-            records.Add(record);
-            return record;
-        }
-
-        static void FreezeTerrainAppearances(JObject room)
-        {
-            string theme = (string)room["themeId"];
-            var records = (JArray)(room["terrainObjects"] ??= new JArray());
-            var existing = records.OfType<JObject>().ToDictionary(RoomFile.At);
-            var size = RoomFile.Size(room);
-            for (int y = 0; y < size.y; y++)
-                for (int x = 0; x < size.x; x++)
-                {
-                    var cell = new Vector2Int(x, y);
-                    char tile = RoomFile.Terrain(room, cell);
-                    if (tile == RoomFile.Void) continue;
-                    if (existing.TryGetValue(cell, out var item) && (item["builtinModel"] != null || item["visual"]?["model"] != null)) continue;
-                    var type = tile == '#' ? RoomTool.Wall : RoomTool.Floor;
-                    (item ?? AddTerrainRecord(records, cell))["builtinModel"] = AppearanceLibrary.Resolve(type, theme, cell).Id;
-                }
+            var placed = model.Room.Objects.First(o => o.Id == id);
+            model.ObjectStates.TryGetValue(id, out var states);
+            model.Room.RemoveObject(id);
+            model.Room.AddObject(id, placed.CategoryId, placed.Cell, look);
+            if (states != null) model.ObjectStates[id] = states;
         }
 
         public void SetTheme(string theme)
         {
-            RoomFile.Check(AppearanceLibrary.Themes.Contains(theme), "未知房间主题");
-            string previous = (string)Room["themeId"];
+            if (!AppearanceLibrary.Themes.Contains(theme)) throw new InvalidOperationException("未知房间主题");
+            string previous = Theme;
             if (theme == previous) return;
-            var next = (JObject)Room.DeepClone();
-            FreezeTerrainAppearances(next);
-            foreach (var type in new[] { RoomTool.Box, RoomTool.Target })
-                foreach (var item in next[type == RoomTool.Box ? "boxes" : "targets"])
-                    if (item["builtinModel"] == null && item["visual"]?["model"] == null)
-                        item["builtinModel"] = AppearanceLibrary.Resolve(type, previous, RoomFile.At(item)).Id;
-            next["themeId"] = theme;
-            if (next["recoveryPresentation"] == null && RoomFile.RecoveryPresets.Contains(previous)) next["recoveryPresentation"] = previous;
-            var selected = SelectedCell;
-            Commit(next, Selected);
-            if (selected.HasValue) Select(selected.Value);
+            var model = Model;
+            var room = Room;
+            var beforeMeta = model.Meta;
+            var afterMeta = new RoomMeta(beforeMeta?.Name, theme);
+            var frozenCells = new List<(Cell cell, AppearanceRef look)>();
+            for (int x = 0; x < room.Width; x++)
+                for (int y = 0; y < room.Height; y++)
+                {
+                    var cell = new Cell(x, y);
+                    string category = room.TerrainAt(cell).CategoryId;
+                    if (category == TerrainCategories.Void || room.AppearanceAt(cell) != null) continue;
+                    var look = AppearanceLibrary.Default(category, previous);
+                    if (look != null) frozenCells.Add((cell, look));
+                }
+            var frozenObjects = room.Objects.Where(o => o.Appearance == null && (o.CategoryId == ObjectCategories.Box || o.CategoryId == ObjectCategories.Target))
+                .Select(o => (o.Id, look: AppearanceLibrary.Default(o.CategoryId, previous))).ToList();
+            Commit(new ModelEdit(() =>
+            {
+                foreach (var f in frozenCells) room.SetAppearance(f.cell, f.look);
+                foreach (var f in frozenObjects) SetObjectAppearance(model, f.Id, f.look);
+                model.Meta = afterMeta;
+            }, () =>
+            {
+                model.Meta = beforeMeta;
+                foreach (var f in frozenObjects) SetObjectAppearance(model, f.Id, null);
+                foreach (var f in frozenCells) room.SetAppearance(f.cell, null);
+            }));
         }
+
+        public IReadOnlyList<PaletteItem> PaletteItems(string tab)
+        {
+            var items = new List<PaletteItem>();
+            string theme = Theme;
+            if (tab == PaletteTabs.Custom)
+            {
+                foreach (var template in Model.Templates.Values)
+                    items.Add(new PaletteItem(tab, ObjectCategories.Custom, template.Id, template.Name + " · 对象模板",
+                        AppearanceLibrary.Prefab(template.Appearance), template.Appearance?.Id != null && AppearanceLibrary.Find(template.Appearance.Id) == null ? template.Appearance.Id : null, template.Id));
+                foreach (var asset in ModelAssets())
+                    items.Add(new PaletteItem(tab, ObjectCategories.Custom, asset.Id, asset.Name, null, asset.Id));
+                return items;
+            }
+            foreach (string category in PaletteTabs.CategoriesOf(tab))
+            {
+                foreach (var entry in AppearanceLibrary.Entries(category, theme))
+                    items.Add(new PaletteItem(tab, category, entry.Id, entry.Name, entry.Prefab()));
+                if (tab == PaletteTabs.Decoration)
+                    foreach (var asset in ModelAssets())
+                        items.Add(new PaletteItem(tab, category, asset.Id, asset.Name, null, asset.Id));
+            }
+            return items;
+        }
+
+        IEnumerable<AssetDescriptor> ModelAssets() => Model.Assets.Where(a => a.Kind == AssetKinds.Model);
     }
 }

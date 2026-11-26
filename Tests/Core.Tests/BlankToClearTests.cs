@@ -54,9 +54,9 @@ namespace Sokoban.Core.Tests
         public void RoomSurvivesFileRoundTripWithSameHash()
         {
             var draft = Build(new CommandHistory());
-            var doc = new RoomDocument(draft.Room, draft.Doors, draft.PrimaryEntranceId, draft.RecoveryItems);
+            var doc = draft;
             var back = RoomCodec.Decode(RoomCodec.Encode(doc));
-            Assert.Equal(ContentHash.Of(draft.Room), ContentHash.Of(back.Room));
+            Assert.Equal(ContentHash.Of(draft), ContentHash.Of(back));
             Assert.Single(back.RecoveryItems);
         }
 

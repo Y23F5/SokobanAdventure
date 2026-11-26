@@ -1,6 +1,7 @@
 /**
  * @file WS06VLightingVerification.cs
  * @brief Run opens the runtime editor in an empty QA profile. Tick advances Observe once per play frame. Sample reads and checks the live camera, sky and directional light in each view.
+ * Observe：默认房间补上箱子、目标与恢复道具后通过发布级校验，再依次检查编辑、试玩、返回编辑和正式局四个视图；房间尺寸取自 Core.Room。
  */
 using System;
 using System.Collections;
@@ -10,6 +11,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Sokoban.Core;
 using Object = UnityEngine.Object;
 
 namespace Sokoban.Editor
@@ -66,14 +68,17 @@ namespace Sokoban.Editor
             yield return null; yield return null;
             var editor = Object.FindObjectOfType<LayoutHost>();
             var draft = editor.Panel.Draft;
-            Check(draft.World==null && draft.ActiveId=="ws01-room" && (string)draft.Room["themeId"]=="warehouse","fresh warehouse template");
-            var span = RoomFile.Size(draft.Room);
+            Check(draft.World==null && draft.ActiveId=="blank" && draft.Model.Meta.ThemeId=="warehouse","fresh warehouse template");
+            draft.Place(true,new Cell(3,2),"box-qa");
+            draft.Place(false,new Cell(4,2),"target-qa");
+            draft.Commit(new AddRecoveryItemCommand(draft.Model,new RecoveryItem("recovery-qa","warehouse-lift",RecoveryItem.DefaultDuration)));
+            var span = new Vector2Int(draft.Room.Width,draft.Room.Height);
             Sample("editor",span,true);
             var position=Camera.main.transform.position;
             var originalSky=RenderSettings.skybox;
             editor.StartTrial(); yield return null; yield return null;
             var trial = Object.FindObjectOfType<PuzzleHost>();
-            Check(trial.IsTrial && trial.Run.ActiveId==draft.ActiveId,"template trial");
+            Check(trial && trial.IsTrial && trial.Run.ActiveId==draft.ActiveId,"template trial");
             Sample("trial",span,false);
             trial.Leave(); yield return null; yield return null;
             Check(editor.Interface.gameObject.activeInHierarchy && !trial && RenderSettings.skybox==originalSky && Vector3.Distance(Camera.main.transform.position,position)<.001f,"returned editor restores position and original sky material");
@@ -82,7 +87,8 @@ namespace Sokoban.Editor
             SceneManager.LoadScene("Game"); yield return null; yield return null; yield return null;
             var game=Object.FindObjectOfType<PuzzleHost>();
             Check(!game.IsTrial && game.Run.ActiveId=="warehouse","campaign warehouse");
-            Sample("campaign",RoomFile.Size(game.Run.Room),false);
+            var campaignRoom = game.Run.Room.Room;
+            Sample("campaign",new Vector2Int(campaignRoom.Width,campaignRoom.Height),false);
         }
     }
 }

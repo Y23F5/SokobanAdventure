@@ -1,158 +1,66 @@
 /**
  * @file RoomSolution.cs
- * @brief Check 启动指定起点的单房搜索。Search 按四向步进遍历玩家和箱子的位置，返回可回放的方向序列。
- * Key 消除同类箱子排列的差别；Trace 从父状态还原走法。非静态事件与结构问题返回定位说明。
+ * @brief 单房求解的对外入口，全部委托 Core 的 Solver.Judge，对外暴露确认有解、乐观有解、确认无解、无法验证四种结论。
+ * Check(room, start, budget, hasUnsimulatable)：start 为起点格，返回结论、方向字母序列（U、R、D、L）与已展开状态数；含不可模拟节点由调用方传入。
+ * Check(model, ...)：对草稿模型取其房间后同上。
+ * CheckEntries(model, world, budget, hasUnsimulatable)：对出生点与当前可进入的门各出一行结论，单房取 entry 门，世界里取被连接指向或允许回退的门。
+ * Label(verdict)：结论的中文名。Letters(moves)：把方向格序列写成字母。
  */
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json.Linq;
-using UnityEngine;
+using Sokoban.Core;
 
 namespace Sokoban
 {
     public static class RoomSolution
     {
-        public enum Outcome { Solved, Unsolvable, BudgetReached, Unsupported, Invalid }
         public sealed class Result
         {
-            public readonly Outcome Status;
+            public readonly SolveVerdict Verdict;
             public readonly string Detail;
             public readonly int Expanded;
-            internal Result(Outcome status, string detail, int expanded = 0)
-            { Status = status; Detail = detail; Expanded = expanded; }
+            public readonly IReadOnlyList<Cell> Moves;
+            internal Result(SolveVerdict verdict, string detail, int expanded, IReadOnlyList<Cell> moves = null)
+            { Verdict = verdict; Detail = detail; Expanded = expanded; Moves = moves ?? new Cell[0]; }
         }
-        sealed class Node
+
+        public static Result Check(Room room, Cell start, int budget = 100000, bool hasUnsimulatable = false)
         {
-            internal Vector2Int Player;
-            internal Vector2Int[] Boxes;
-            internal Node Parent;
-            internal char Direction;
-            internal bool Unlocked;
+            var judged = Solver.Judge(room, start, budget, hasUnsimulatable);
+            return new Result(judged.Verdict, Letters(judged.Moves), judged.Expanded, judged.Moves);
         }
-        static readonly Vector2Int[] Steps = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
-        const string Directions = "NESW";
-        public static Result Check(JObject room, Vector2Int start, int budget = 100000, JObject world = null, Vector2Int? destination = null, Vector2Int[] currentBoxes = null, bool everSolved = false)
+
+        public static Result Check(RoomDraftModel model, Cell start, int budget = 100000, bool hasUnsimulatable = false) =>
+            Check(model.Room, start, budget, hasUnsimulatable);
+
+        public static string CheckEntries(RoomDraftModel model, WorldDocument world, int budget = 100000, bool hasUnsimulatable = false)
         {
-            string issue = RoomFile.StructureIssues(room).FirstOrDefault();
-            if (issue != null) return new Result(Outcome.Invalid, issue);
-            var boxes = currentBoxes ?? room["boxes"].Select(RoomFile.At).ToArray();
-            var passages = ObjectBehavior.SolvedPassages(room);
-            if (!ObjectBehavior.Walkable(room, start, everSolved, passages) || boxes.Contains(start)) return new Result(Outcome.Invalid, "起点无法站立 " + start);
-            var graph = room["events"].FirstOrDefault(item => !ObjectBehavior.CanSimulate(item));
-            if (graph != null)
+            var entries = new Dictionary<string, Cell>();
+            var spawn = model.Room.ObjectsOf(ObjectCategories.Spawn).FirstOrDefault();
+            if (spawn != null) entries["出生点"] = spawn.Cell;
+            foreach (var door in model.Doors)
             {
-                var node = graph["nodes"]?.FirstOrDefault(item => !ObjectBehavior.CanSimulateNode(item));
-                return new Result(Outcome.Unsupported, $"待模拟对象 {graph["ownerId"]} 的行为图 {graph["id"]}，节点 {node?["id"]}（{node?["kind"]}）");
+                bool Matches(WorldEndpoint end) => end != null && end.LevelId == model.Room.Id && end.DoorId == door.Id;
+                bool accessible = world == null ? door.Role == "entry" : world.Connections.Any(c => Matches(c.To) || (c.AllowReturn && Matches(c.From)));
+                if (accessible) entries["门 " + door.Id] = door.Cell;
             }
-            var targets = new HashSet<Vector2Int>(room["targets"].Select(RoomFile.At));
-            if (targets.Count == 0 || boxes.Length < targets.Count) return new Result(Outcome.Unsolvable, "可占据的目标数量不足");
-            var exits = new HashSet<Vector2Int>(room["doors"].Where(d =>
+            if (entries.Count == 0) return "没有可检查的起点：缺少出生点与入口门";
+            return string.Join("\n", entries.Select(entry =>
             {
-                if ((string)d["role"] != "exit") return false;
-                return world == null || !world["connections"].Any(link => (bool?)link["allowReturn"] == true &&
-                    (string)link["forwardTo"]?["levelId"] == (string)room["levelId"] && (string)link["forwardTo"]?["doorId"] == (string)d["id"]);
-            }).Select(RoomFile.At));
-            if (!everSolved && targets.Any(goal => UnreachableTarget(room, boxes, goal))) return new Result(Outcome.Unsolvable, "存在箱子无法抵达的目标格");
-            return Search(room, start, boxes, targets, exits, budget, destination, passages, everSolved);
+                var result = Check(model.Room, entry.Value, budget, hasUnsimulatable);
+                return entry.Key + " · " + Label(result.Verdict) + " " + result.Detail;
+            }));
         }
-        /** @brief 从目标反向枚举推箱前的箱格和玩家站位，忽略其他箱子。无箱子能抵达某个目标时可证明静态死锁。 */
-        static bool UnreachableTarget(JObject room, Vector2Int[] boxes, Vector2Int target)
+
+        public static string Label(SolveVerdict verdict) => verdict switch
         {
-            var queue = new Queue<Vector2Int>();
-            var reachable = new HashSet<Vector2Int> { target };
-            queue.Enqueue(target);
-            while (queue.Count > 0)
-            {
-                var cell = queue.Dequeue();
-                if (Array.IndexOf(boxes, cell) >= 0) return false;
-                foreach (var step in Steps)
-                {
-                    var before = cell - step;
-                    if (RoomFile.Floor(room, before) && RoomFile.Floor(room, before - step) && reachable.Add(before)) queue.Enqueue(before);
-                }
-            }
-            return true;
-        }
-        public static string CheckEntries(JObject room, JObject world, int budget = 100000)
-        {
-            string roomId = (string)room["levelId"];
-            var entries = new Dictionary<string,Vector2Int> { ["出生点"] = RoomFile.At(room["spawn"]) };
-            foreach (var door in room["doors"])
-            {
-                string id = (string)door["id"];
-                bool Matches(JToken end) => (string)end?["levelId"] == roomId && (string)end?["doorId"] == id;
-                bool accessible = world == null ? (string)door["role"] == "entry" : world["connections"].Any(link =>
-                    Matches(link["forwardTo"]) || (bool?)link["allowReturn"] == true && Matches(link["forwardFrom"]));
-                if (accessible) entries["门 " + id] = RoomFile.At(door);
-            }
-            var reports = new List<string>();
-            foreach (var entry in entries)
-            {
-                var result = Check(room, entry.Value, budget, world);
-                string status = result.Status == Outcome.Solved ? "有解" : result.Status == Outcome.Unsolvable ? "确认无解" :
-                    result.Status == Outcome.BudgetReached ? "搜索未完成" : "无法验证";
-                reports.Add(entry.Key + " · " + status + " " + result.Detail);
-            }
-            foreach (var exit in room["doors"].Where(d => (string)d["role"] == "exit"))
-                foreach (var entry in entries)
-                {
-                    var route = Check(room, entry.Value, budget, world, RoomFile.At(exit));
-                    string label = route.Status == Outcome.Solved ? "有解" : route.Status == Outcome.Unsolvable ? "确认无解" : route.Status == Outcome.BudgetReached ? "搜索未完成" : "无法验证";
-                    reports.Add($"{entry.Key} → {exit["id"]} · {label} {route.Detail}");
-                }
-            return string.Join("\n", reports);
-        }
-        static Result Search(JObject room, Vector2Int start, Vector2Int[] boxes, HashSet<Vector2Int> targets, HashSet<Vector2Int> exits, int budget, Vector2Int? destination, HashSet<Vector2Int> passages, bool everSolved)
-        {
-            var reachable = new HashSet<Vector2Int>(targets);
-            var reverse = new Queue<Vector2Int>(targets);
-            while (reverse.Count > 0)
-            {
-                var target = reverse.Dequeue();
-                foreach (var direction in Steps)
-                {
-                    var before = target - direction;
-                    if (ObjectBehavior.Walkable(room, before, true, passages) && ObjectBehavior.Walkable(room, before - direction, true, passages) && reachable.Add(before)) reverse.Enqueue(before);
-                }
-            }
-            var root = new Node { Player = start, Boxes = boxes, Unlocked = everSolved || targets.All(t => Array.IndexOf(boxes, t) >= 0) };
-            var queue = new Queue<Node>();
-            var seen = new HashSet<string> { Key(root) };
-            queue.Enqueue(root);
-            int expanded = 0;
-            while (queue.Count > 0)
-            {
-                var node = queue.Dequeue();
-                bool solved = targets.All(target => Array.IndexOf(node.Boxes, target) >= 0);
-                if (solved && (!destination.HasValue || destination.Value == node.Player)) return new Result(Outcome.Solved, Trace(node), expanded);
-                if (expanded >= budget) return new Result(Outcome.BudgetReached, "搜索预算已用尽", expanded);
-                expanded++;
-                for (int i = 0; i < Steps.Length; i++)
-                {
-                    var next = node.Player + Steps[i];
-                    if (!ObjectBehavior.Walkable(room, next, node.Unlocked, passages) || !solved && exits.Contains(next)) continue;
-                    var nextBoxes = node.Boxes;
-                    int pushed = Array.IndexOf(nextBoxes, next);
-                    if (pushed >= 0)
-                    {
-                        var beyond = next + Steps[i];
-                        if (!ObjectBehavior.Walkable(room, beyond, node.Unlocked, passages) || Array.IndexOf(nextBoxes, beyond) >= 0 || boxes.Length == targets.Count && !reachable.Contains(beyond)) continue;
-                        nextBoxes = (Vector2Int[])nextBoxes.Clone();
-                        nextBoxes[pushed] = beyond;
-                    }
-                    var child = new Node { Player = next, Boxes = nextBoxes, Parent = node, Direction = Directions[i], Unlocked = node.Unlocked || passages.Count > 0 && targets.All(t => Array.IndexOf(nextBoxes, t) >= 0) };
-                    if (seen.Add(Key(child))) queue.Enqueue(child);
-                }
-            }
-            return new Result(Outcome.Unsolvable, "已遍历此起点的全部可达状态", expanded);
-        }
-        static string Key(Node node) => (node.Unlocked ? "1:" : "0:") + node.Player.x + "," + node.Player.y + ":" + string.Join(";", node.Boxes.OrderBy(b => b.x).ThenBy(b => b.y).Select(b => b.x + "," + b.y));
-        static string Trace(Node node)
-        {
-            var path = new Stack<char>();
-            for (; node.Parent != null; node = node.Parent) path.Push(node.Direction);
-            return new string(path.ToArray());
-        }
+            SolveVerdict.Confirmed => "确认有解",
+            SolveVerdict.Optimistic => "乐观有解",
+            SolveVerdict.Unsolvable => "确认无解",
+            _ => "无法验证"
+        };
+
+        public static string Letters(IEnumerable<Cell> moves) => new string(moves.Select(m =>
+            m == Cell.Up ? 'U' : m == Cell.Right ? 'R' : m == Cell.Down ? 'D' : 'L').ToArray());
     }
 }

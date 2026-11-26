@@ -1,97 +1,77 @@
 /**
  * @file RoomYard.cs
- * @brief Build 按原型尺寸在房间地基下铺设主题地绘，并在仓库外沿放置标牌。Clip 对相邻房间在间隙中点裁切；PlaceScenery 在地绘边界内按原比例摆放外围模型；Surface 建立无碰撞的贴图平面。
+ * @brief Build 铺设房间外围地绘并摆放房间数据里的墙外装饰，不按主题固定摆放任何外围陈设、标牌或设备。
+ * Build(model, origin, group, world, catalog)：地绘尺寸按房间格数换算，相邻房间在间隙中点裁切；装饰逐个取 Model.Decorations，按外观引用取内置预制件放到墙外格位，导入模型外观由表现层其他路径处理，此处跳过。
+ * Ground：按主题取地绘贴图，主题只影响外观，没有对应贴图时不铺设。
+ * Clip 对相邻房间在间隙中点裁切；Surface 建立无碰撞的贴图平面。
  */
-using Newtonsoft.Json.Linq;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Sokoban.Core;
 
 namespace Sokoban
 {
     internal static class RoomYard
     {
-        internal static void Build(JObject room, Vector2Int origin, Transform group, JObject world, JObject catalog)
+        internal static void Build(RoomDraftModel model, Vector2Int origin, Transform group, WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog)
         {
-            string texture = (string)room["themeId"] switch { "warehouse" => "depot", "factory" => "foundry", "forest" => "lagoon", _ => null };
-            if (texture == null || room["spawn"] == null) return;
-            var size = RoomFile.Size(room);
-            var center = ((Vector2)size - Vector2.one) * .5f;
-            var dimensions = texture == "lagoon" ? new Vector2(24 * size.x / 11f,20 * size.y / 6f) : new Vector2(24,20);
-            var low = center - dimensions * .5f;
-            var high = center + dimensions * .5f;
-            if (world != null)
-                foreach (var row in world["rooms"])
-                {
-                    string id = (string)row["levelId"];
-                    if (id == (string)room["levelId"]) continue;
-                    var other = RoomFile.Cell(row["origin"]) - origin;
-                    var otherSize = RoomFile.Size((JObject)catalog[id]);
-                    if (other.x >= size.x || other.x + otherSize.x <= 0) Clip(ref low.x, ref high.x, size.x, other.x, otherSize.x);
-                    else Clip(ref low.y, ref high.y, size.y, other.y, otherSize.y);
-                }
-            var yard = Surface(group,"外围地绘",texture,new Vector3((high.x+low.x)*.5f,-.741f,(high.y+low.y)*.5f), Quaternion.Euler(90,0,0),high-low);
-            var uv = (low - center) / dimensions + Vector2.one * .5f;
-            var scale = (high-low) / dimensions;
-            var block = new MaterialPropertyBlock();
-            block.SetVector("_BaseMap_ST",new Vector4(scale.x,scale.y,uv.x,uv.y));
-            yard.SetPropertyBlock(block);
-            if (texture == "depot")
+            Ground(model, origin, group, world, catalog);
+            foreach (var decoration in model.Decorations)
             {
-                Surface(group,"仓库标牌","depot-plate",new Vector3(center.x,1.08f,-1.06f),Quaternion.Euler(20,0,0),new Vector2(1.72f,.484f));
-                if (size == new Vector2Int(9,7) && low.x <= -2.1f && low.y <= -1.4f && high.y >= 6.8f)
-                {
-                    var props = Object.Instantiate(Resources.Load<GameObject>("Diorama/DepotProps"),group,false);
-                    props.name = "调度岗亭与装卸区";
-                    props.hideFlags = HideFlags.DontSave;
-                }
-            }
-            if (texture == "depot" && size == new Vector2Int(9, 7))
-                PlaceScenery(group, "RackRow", low, high);
-            if (texture == "foundry" && size == new Vector2Int(11, 7))
-            {
-                PlaceScenery(group, "TankRow", low, high);
-                PlaceScenery(group, "SidePipes", low, high, new Vector3(center.x - center.y, 0, -4.6f), 90);
-            }
-            if (texture == "lagoon" && size == new Vector2Int(11, 9))
-            {
-                PlaceScenery(group, "PineBank", low, high);
-                PlaceScenery(group, "StoneBank", low, high);
+                string path = AppearanceLibrary.Prefab(decoration.Appearance);
+                var prefab = path == null ? null : Resources.Load<GameObject>(path);
+                if (!prefab) continue;
+                var part = Object.Instantiate(prefab, group, false);
+                part.name = decoration.Id;
+                part.hideFlags = HideFlags.DontSave;
+                part.transform.localPosition = new Vector3(decoration.Cell.X, 0, decoration.Cell.Y);
             }
         }
 
-        static void PlaceScenery(Transform parent, string asset, Vector2 low, Vector2 high,
-            Vector3 offset = default, float yaw = 0)
+        static void Ground(RoomDraftModel model, Vector2Int origin, Transform group, WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog)
         {
-            var prefab = Resources.Load<GameObject>("Diorama/" + asset);
-            var bounds = prefab.GetComponent<MeshFilter>().sharedMesh.bounds;
-            var rotation = Quaternion.Euler(0, yaw, 0);
-            var center = rotation * bounds.center + offset;
-            var extent = rotation * bounds.extents;
-            if (center.x - Mathf.Abs(extent.x) < low.x || center.x + Mathf.Abs(extent.x) > high.x ||
-                center.z - Mathf.Abs(extent.z) < low.y || center.z + Mathf.Abs(extent.z) > high.y) return;
-            var model = Object.Instantiate(prefab, parent, false);
-            model.name = asset;
-            model.hideFlags = HideFlags.DontSave;
-            model.transform.SetLocalPositionAndRotation(offset, rotation);
+            string texture = model.Meta.ThemeId switch { "warehouse" => "depot", "factory" => "foundry", "forest" => "lagoon", _ => null };
+            if (texture == null) return;
+            var size = new Vector2Int(model.Room.Width, model.Room.Height);
+            var center = ((Vector2)size - Vector2.one) * .5f;
+            var dimensions = texture == "lagoon" ? new Vector2(24 * size.x / 11f, 20 * size.y / 6f) : new Vector2(24, 20);
+            var low = center - dimensions * .5f;
+            var high = center + dimensions * .5f;
+            if (world != null && catalog != null)
+                foreach (var row in world.Rooms)
+                {
+                    if (row.LevelId == model.Room.Id || !catalog.TryGetValue(row.LevelId, out var other)) continue;
+                    var offset = new Vector2Int(row.Origin.X, row.Origin.Y) - origin;
+                    var otherSize = new Vector2Int(other.Room.Width, other.Room.Height);
+                    if (offset.x >= size.x || offset.x + otherSize.x <= 0) Clip(ref low.x, ref high.x, size.x, offset.x, otherSize.x);
+                    else Clip(ref low.y, ref high.y, size.y, offset.y, otherSize.y);
+                }
+            var yard = Surface(group, "外围地绘", texture, new Vector3((high.x + low.x) * .5f, -.741f, (high.y + low.y) * .5f), Quaternion.Euler(90, 0, 0), high - low);
+            var uv = (low - center) / dimensions + Vector2.one * .5f;
+            var scale = (high - low) / dimensions;
+            var block = new MaterialPropertyBlock();
+            block.SetVector("_BaseMap_ST", new Vector4(scale.x, scale.y, uv.x, uv.y));
+            yard.SetPropertyBlock(block);
         }
 
         static void Clip(ref float low, ref float high, int size, int other, int otherSize)
         {
-            if (other >= size) high = Mathf.Min(high,(size + other - 1) * .5f);
-            if (other + otherSize <= 0) low = Mathf.Max(low,(other + otherSize - 1) * .5f);
+            if (other >= size) high = Mathf.Min(high, (size + other - 1) * .5f);
+            if (other + otherSize <= 0) low = Mathf.Max(low, (other + otherSize - 1) * .5f);
         }
 
-        static Renderer Surface(Transform parent,string name,string texture,Vector3 position,Quaternion rotation,Vector2 size)
+        static Renderer Surface(Transform parent, string name, string texture, Vector3 position, Quaternion rotation, Vector2 size)
         {
-            var part = new GameObject(name,typeof(MeshFilter),typeof(MeshRenderer));
+            var part = new GameObject(name, typeof(MeshFilter), typeof(MeshRenderer));
             part.hideFlags = HideFlags.DontSave;
-            part.transform.SetParent(parent,false);
+            part.transform.SetParent(parent, false);
             part.transform.localPosition = position;
             part.transform.localRotation = rotation;
-            part.transform.localScale = new Vector3(size.x,size.y,1);
+            part.transform.localScale = new Vector3(size.x, size.y, 1);
             part.GetComponent<MeshFilter>().sharedMesh = Resources.GetBuiltinResource<Mesh>("Quad.fbx");
             var renderer = part.GetComponent<MeshRenderer>();
-            renderer.sharedMaterial = Resources.Load<Material>("Diorama/Yards/"+texture);
+            renderer.sharedMaterial = Resources.Load<Material>("Diorama/Yards/" + texture);
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             return renderer;
         }

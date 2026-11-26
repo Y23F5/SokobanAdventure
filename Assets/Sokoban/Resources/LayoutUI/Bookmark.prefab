@@ -92,6 +92,7 @@ GameObject:
   - component: {fileID: 8910548421516526106}
   - component: {fileID: 2307011685176232231}
   - component: {fileID: 3281003995861342649}
+  - component: {fileID: 3273625548745515402}
   m_Layer: 0
   m_Name: Bookmark
   m_TagString: Untagged
@@ -186,10 +187,11 @@ MonoBehaviour:
     m_ColorMultiplier: 1
     m_FadeDuration: 0.12
   m_SpriteState:
-    m_HighlightedSprite: {fileID: 0}
-    m_PressedSprite: {fileID: 0}
-    m_SelectedSprite: {fileID: 0}
-    m_DisabledSprite: {fileID: 0}
+    m_HighlightedSprite: {fileID: 21300000, guid: 4bf9bea2ff21aecfcfc8ad898f2ed165,
+      type: 3}
+    m_PressedSprite: {fileID: 21300000, guid: 8b142ab58c171df28159ccfdabc9a923, type: 3}
+    m_SelectedSprite: {fileID: 21300000, guid: 4bf9bea2ff21aecfcfc8ad898f2ed165, type: 3}
+    m_DisabledSprite: {fileID: 21300000, guid: 3d980e765c5d79612842c553537b3ece, type: 3}
   m_AnimationTriggers:
     m_NormalTrigger: Normal
     m_HighlightedTrigger: Highlighted
@@ -223,5 +225,17 @@ MonoBehaviour:
     insetMin: {x: 2, y: 0}
     insetMax: {x: -2, y: 0}
     stretched: 1
-    isTitle: 0
   layout: []
+--- !u!114 &3273625548745515402
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6920200372309552467}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cd7cf4a65bd10874e8de2c5f2078000e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  kind: 4

@@ -1,9 +1,13 @@
 /**
  * @file PaletteView.cs
- * @brief 运行端像素风素材栏与地图覆盖层。Fill 绘制纯色矩形；Frame 叠绘像素边缘；Text 设定字色及对齐；Button 绘制可点击按钮；
- * Card 为内置素材绘制缩略图、悬停与选中态；Sidebar 切换工具及当前对象的移动操作；Project 投影格子顶点；
- * Outline 标出悬停与选中格；Line 将像素线段对齐两个端点；MapOverlay 绘制网格、半透明体积预览及合法性轮廓；Face 用纯色纹理绘制半透明四边形。
+ * @brief 运行端像素风素材栏与地图覆盖层，页签为地形、物件、装饰、其他、自定义，候选项按类别 ID 由 RoomDraft.PaletteItems 给出。
+ * Fill 绘制纯色矩形；Frame 叠绘像素边缘；Text 设定字色及对齐；Button 绘制可点击按钮；
+ * Card(item)：为一个素材候选项绘制名称、悬停与选中态，点击后按类别选择画刷：内置外观与本房模型走 ChooseAppearance 或 SelectAsset，对象模板走 SelectDefinition。
+ * Sidebar：页签条加候选列表加所选内容信息，其他页本轮为空；Project 投影格子顶点；Outline 标出悬停与选中格；Line 将像素线段对齐两个端点；
+ * MapOverlay 绘制网格、半透明体积预览及合法性轮廓，格坐标一律用 Core.Cell；Face 用纯色纹理绘制半透明四边形。
  */
+using System;
+using Sokoban.Core;
 using UnityEngine;
 
 namespace Sokoban
@@ -12,7 +16,7 @@ namespace Sokoban
     {
         static readonly Color Ink = new Color32(100,71,61,255), Border = new Color32(156,111,75,255), Paper = new Color32(255,232,185,255), Gold = new Color32(248,193,92,255);
         Vector2 scroll;
-        bool terrain;
+        string tab = PaletteTabs.Object;
         public static void Fill(Rect rect,Color color)
         { var old=GUI.color; GUI.color=color; GUI.DrawTexture(rect,Texture2D.whiteTexture); GUI.color=old; }
         public static void Frame(Rect r, bool selected=false)
@@ -26,47 +30,56 @@ namespace Sokoban
         { var s=new GUIStyle(GUI.skin.label){fixedHeight=0,fontSize=size,alignment=align,wordWrap=true,padding=new RectOffset(),contentOffset=new Vector2(0,-2)}; s.normal.textColor=Ink; GUI.Label(r,value,s); }
         public static bool Button(Rect r,string value,bool selected=false)
         { Frame(r,selected); Text(r,value,15,TextAnchor.MiddleCenter); return GUI.Button(r,GUIContent.none,GUIStyle.none); }
-        void Card(Rect r,RoomDraft draft,RoomTool tool,string name)
+
+        static bool IsChosen(RoomDraft draft, PaletteItem item) =>
+            item.TemplateId != null ? draft.BrushTemplate == item.TemplateId : draft.BrushAppearance?.Id == item.Id && draft.BrushCategory == item.CategoryId;
+
+        static void Choose(RoomDraft draft, PaletteItem item)
+        {
+            if (item.TemplateId != null) draft.SelectDefinition(item.TemplateId);
+            else if (item.AssetId != null) draft.SelectAsset(item.AssetId, item.CategoryId);
+            else draft.ChooseAppearance(item.Id, item.CategoryId);
+        }
+
+        void Card(Rect r,RoomDraft draft,PaletteItem item)
         {
             if(r.Contains(Event.current.mousePosition)) r.y-=2;
-            Frame(r,draft.Tool==tool); var x=r.x+12; var y=r.y+10;
+            Frame(r,IsChosen(draft,item)); var x=r.x+12; var y=r.y+10;
             Fill(new Rect(x,y,29,28),Ink);
-            Fill(new Rect(x+3,y+3,23,22),tool==RoomTool.Box?new Color32(191,133,74,255):new Color32(105,150,117,255));
-            if(tool==RoomTool.Box) Fill(new Rect(x+12,y+3,5,22),Gold);
+            Fill(new Rect(x+3,y+3,23,22),item.CategoryId==ObjectCategories.Box?new Color32(191,133,74,255):new Color32(105,150,117,255));
+            if(item.CategoryId==ObjectCategories.Box) Fill(new Rect(x+12,y+3,5,22),Gold);
             else Fill(new Rect(x+9,y+9,11,10),Paper);
-            Text(new Rect(x+40,r.y,r.width-54,r.height),name,17);
-            if(GUI.Button(r,GUIContent.none,GUIStyle.none)) draft.Tool=tool;
+            Text(new Rect(x+40,r.y,r.width-54,r.height),item.Name,15);
+            if(GUI.Button(r,GUIContent.none,GUIStyle.none)) Choose(draft,item);
         }
+
         public void Sidebar(Rect r,LayoutPanel panel)
         {
             Frame(r); var d=panel.Draft; float x=r.x+9,w=r.width-18;
-                        if(Button(new Rect(x,r.y-5,60,32),"物件",!terrain)) terrain=false;
-            if(Button(new Rect(x+64,r.y-5,60,32),"地形",terrain)) terrain=true;
+            float tabWidth=(w-4*3)/PaletteTabs.All.Length;
+            for(int i=0;i<PaletteTabs.All.Length;i++)
+                if(Button(new Rect(x+i*(tabWidth+3),r.y-5,tabWidth,32),PaletteTabs.Name(PaletteTabs.All[i]),tab==PaletteTabs.All[i])) { tab=PaletteTabs.All[i]; d.ClearBrush(); }
+            var items=d.PaletteItems(tab);
             var list=new Rect(x,r.y+43,w,Mathf.Max(112,r.height-229));
-            scroll=GUI.BeginScrollView(list,scroll,new Rect(0,0,w-16,terrain?155:110));
-            if(terrain) {
-                int row=0; foreach(var tool in new[]{RoomTool.Floor,RoomTool.Wall,RoomTool.Erase}) {
-                    string name=tool==RoomTool.Floor?"地板":tool==RoomTool.Wall?"墙壁":"擦除";
-                    if(Button(new Rect(2,row++*50+3,w-20,43),name,d.Tool==tool))d.Tool=tool;
-                }
-            } else { Card(new Rect(2,3,w-20,47),d,RoomTool.Box,"纸箱"); Card(new Rect(2,58,w-20,47),d,RoomTool.Target,"目标点"); } GUI.EndScrollView();
+            scroll=GUI.BeginScrollView(list,scroll,new Rect(0,0,w-16,Mathf.Max(list.height,items.Count*55+6)));
+            for(int i=0;i<items.Count;i++) Card(new Rect(2,i*55+3,w-20,47),d,items[i]);
+            if(items.Count==0) Text(new Rect(6,6,w-30,40),"本页暂无内容");
+            GUI.EndScrollView();
             float y=list.yMax+9; Fill(new Rect(x,y,w,2),Border);y+=9;
-            if(d.Tool==RoomTool.Box || d.Tool==RoomTool.Target)
+            if(d.BrushCategory!=null)
             {
-                Text(new Rect(x,y,w,24),d.Tool==RoomTool.Box?"纸箱":"目标点",18);
-                Text(new Rect(x,y+28,w,46),d.Tool==RoomTool.Box?"占一格。请放在空地上。":"标出箱子需要抵达的格子。");
-                if(Button(new Rect(x,y+83,w,30),"返回选择")) d.Tool=RoomTool.Select;
+                Text(new Rect(x,y,w,24),AppearanceLibrary.TypeName(d.BrushCategory),18);
+                Text(new Rect(x,y+28,w,46),d.BrushCategory==AppearanceLibrary.Decoration?"只能放在房间外，不占房内格。":"占一格。请放在地板上。");
+                if(Button(new Rect(x,y+83,w,30),"返回选择")) d.ClearBrush();
+                return;
             }
+            var cell=d.SelectedCell;
+            var placed=cell.HasValue?d.Room.ObjectAt(cell.Value):null;
+            if(placed==null) Text(new Rect(x,y,w,64),(d.Model.Meta?.Name??"")+"\n"+d.Room.Width+" × "+d.Room.Height);
             else
             {
-                var obj=d.Find(d.Selected);
-                if(obj==null) Text(new Rect(x,y,w,64),(string)d.Room["name"]+"\n"+RoomFile.Size(d.Room));
-                else
-                {
-                    Text(new Rect(x,y,w,44),d.Selected,12);Text(new Rect(x,y+46,w,26),"格子  "+RoomFile.At(obj));
-                    if(obj["recoveryCell"]!=null) Text(new Rect(x,y+73,w,22),"恢复格  "+RoomFile.Cell(obj["recoveryCell"]));
-                    if((obj.Parent==d.Room["boxes"] || obj.Parent==d.Room["targets"]) && Button(new Rect(x,y+103,w,30),d.Tool==RoomTool.Move?"取消移动":"移动位置",d.Tool==RoomTool.Move)) d.Tool=d.Tool==RoomTool.Move?RoomTool.Select:RoomTool.Move;
-                }
+                Text(new Rect(x,y,w,44),placed.Id,12);Text(new Rect(x,y+46,w,26),"格子  "+placed.Cell);
+                if(AppearanceLibrary.TypeName(placed.CategoryId)!=null) Text(new Rect(x,y+73,w,22),AppearanceLibrary.TypeName(placed.CategoryId));
             }
         }
         static Vector2 Project(Camera lens,float x,float y,float z,float scale)
@@ -79,11 +92,11 @@ namespace Sokoban
         }
         static void Face(Vector2 a,Vector2 b,Color color)
         {Fill(Rect.MinMaxRect(Mathf.Min(a.x,b.x),Mathf.Min(a.y,b.y),Mathf.Max(a.x,b.x),Mathf.Max(a.y,b.y)),color);}
-        static void Outline(Camera lens,float scale,Vector2Int cell,Color color,float width)
+        static void Outline(Camera lens,float scale,Cell cell,Color color,float width)
         {
             if (Event.current.type != EventType.Repaint) return;
-            var a = Project(lens,cell.x-.48f,.04f,cell.y+.48f,scale);
-            var b = Project(lens,cell.x+.48f,.04f,cell.y-.48f,scale);
+            var a = Project(lens,cell.X-.48f,.04f,cell.Y+.48f,scale);
+            var b = Project(lens,cell.X+.48f,.04f,cell.Y-.48f,scale);
             var topRight = new Vector2(b.x,a.y);
             var bottomLeft = new Vector2(a.x,b.y);
             Line(a,topRight,color,width);
@@ -91,31 +104,30 @@ namespace Sokoban
             Line(bottomLeft,b,color,width);
             Line(a,bottomLeft,color,width);
         }
-        public static string MapOverlay(RoomDraft draft,Camera lens,float scale,bool grid,bool hovered,Vector2Int cell)
+        public static string MapOverlay(RoomDraft draft,Camera lens,float scale,bool grid,bool hovered,Cell cell)
         {
-            var origin=draft.Origin;var size=RoomFile.Size(draft.Room); var line=new Color(0.31f,.27f,.18f,.42f);
+            var origin=draft.Origin; int width=draft.Room.Width, height=draft.Room.Height; var line=new Color(0.31f,.27f,.18f,.42f);
             if(grid && Event.current.type==EventType.Repaint)
             {
-                for(int x=origin.x;x<=origin.x+size.x;x++) Line(Project(lens,x-.5f,.02f,origin.y-.5f,scale),Project(lens,x-.5f,.02f,origin.y+size.y-.5f,scale),line,1);
-                for(int z=origin.y;z<=origin.y+size.y;z++) Line(Project(lens,origin.x-.5f,.02f,z-.5f,scale),Project(lens,origin.x+size.x-.5f,.02f,z-.5f,scale),line,1);
+                for(int x=origin.X;x<=origin.X+width;x++) Line(Project(lens,x-.5f,.02f,origin.Y-.5f,scale),Project(lens,x-.5f,.02f,origin.Y+height-.5f,scale),line,1);
+                for(int z=origin.Y;z<=origin.Y+height;z++) Line(Project(lens,origin.X-.5f,.02f,z-.5f,scale),Project(lens,origin.X+width-.5f,.02f,z-.5f,scale),line,1);
             }
             if (draft.SelectedCell.HasValue)
                 Outline(lens, scale, draft.SelectedCell.Value+origin, new Color32(255,181,48,255), 3);
             if (!hovered) return null;
-            if (draft.Tool == RoomTool.Select || (int)draft.Tool>=(int)RoomTool.Floor)
+            string category=draft.BrushCategory;
+            if (category==null)
             {
-                if (RoomFile.Inside(draft.Room,cell-origin)) Outline(lens,scale,cell,new Color32(255,248,195,255),2);
+                if (draft.Room.Inside(cell-origin)) Outline(lens,scale,cell,new Color32(255,248,195,255),2);
                 return null;
             }
-            var obj=draft.Find(draft.Selected);
-            bool box=draft.Tool==RoomTool.Box || (draft.Tool==RoomTool.Move && obj?.Parent==draft.Room["boxes"]);
-            var error=draft.PlacementError(box,cell-origin,draft.Tool==RoomTool.Move?draft.Selected:null);
+            var error=draft.PlacementError(category,cell-origin);
             var tint=error==null?new Color(.18f,.63f,.32f):new Color(.85f,.2f,.13f);
-            
-            var roof=Project(lens,cell.x+.34f,box?.65f:.06f,cell.y+.34f,scale);
-            var front=Project(lens,cell.x-.34f,box?.65f:.06f,cell.y-.34f,scale);
+            bool tall=category==ObjectCategories.Box;
+            var roof=Project(lens,cell.X+.34f,tall?.65f:.06f,cell.Y+.34f,scale);
+            var front=Project(lens,cell.X-.34f,tall?.65f:.06f,cell.Y-.34f,scale);
             Face(front,roof,new Color(tint.r,tint.g,tint.b,.52f));
-            Face(front,Project(lens,cell.x+.34f,0,cell.y-.34f,scale),new Color(tint.r*.8f,tint.g*.8f,tint.b*.8f,.56f));
+            Face(front,Project(lens,cell.X+.34f,0,cell.Y-.34f,scale),new Color(tint.r*.8f,tint.g*.8f,tint.b*.8f,.56f));
             Outline(lens,scale,cell,tint,3);
             return error;
         }

@@ -3,12 +3,16 @@
  * @brief Awake 打开编辑会话并恢复镜头；FrameDocument 在换文档时重新取景。Update 按起手位置分派地图和 UI 输入，
  * DragCamera 将屏幕拖动转换成绕焦点旋转或地面平移；ViewSize 根据可用画幅计算缩放，UpdateCamera 应用草稿视角。
  * LateUpdate 同步正式与半透明模型，RenderOverlay 对齐网格和选择框；RequestQuit 和 Leave 保护未保存现场。
- * StartTrial 和 EndTrial 保留编辑会话，在独立根运行草稿副本，退出后重新投影编辑相机与模型。
+ * StartTrial 先让 Panel.Mode 进入试玩模式开启输入遮罩，再对目录内每个房间调用 ValidatedRoom.From 做发布级校验；失败时退回上一模式，经 Panel 上报规则、定位与修复入口，
+ * 成功后在同一帧生成运行副本并最后关闭编辑界面。ValidateTrial 逐房校验并返回首个失败的规则问题与完整说明，FixEntry 把建议工具翻译成修复入口文字。
+ * EndTrial 保留编辑会话，退出试玩模式并重新投影编辑相机与模型。OverUI 在射线命中界面或鼠标落在可见 InterfaceTooltip 提示面板矩形内时返回 true，
+ * Update 的地图输入遮罩读取 Panel.Mode.BlocksMapInput，不再依赖独立的界面状态。
  */
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Sokoban
 {
@@ -22,6 +26,7 @@ namespace Sokoban
         public RuntimeLayoutUI Interface;
         readonly RoomPreview preview = new RoomPreview();
         readonly List<RaycastResult> hits = new List<RaycastResult>();
+        readonly List<InterfaceTooltip> tips = new List<InterfaceTooltip>();
         LayoutOverlay overlay;
         Camera lens;
         DioramaLighting lighting;
@@ -41,9 +46,22 @@ namespace Sokoban
             trialStarting = true;
             try
             {
-                var run = PuzzleRun.FromDraft(Panel.Draft);
-                if (!Panel.Flush()) return;
+                if (!Panel.Mode.Enter(Core.UiMode.Trial))
+                {
+                    Panel.ReportIssue(Panel.Mode.Current == Core.UiMode.Check ? "无法开始试玩：请先关闭检查页" : "无法开始试玩：当前界面模式不允许试玩");
+                    return;
+                }
+                var failure = ValidateTrial(out var failedRoom, out var report);
+                if (failure != null)
+                {
+                    Panel.Mode.Back();
+                    if (failedRoom == Panel.Draft.ActiveId) Panel.LocateIssue(failure);
+                    Panel.ReportIssue(report);
+                    return;
+                }
+                if (!Panel.Flush()) { Panel.Mode.Back(); return; }
                 var prefab = Resources.Load<PuzzleHost>("PuzzleSession");
+                var run = PuzzleRun.FromDraft(Panel.Draft);
                 trial = Instantiate(prefab);
                 trial.Begin(run, true, EndTrial);
                 gesture = -1;
@@ -56,9 +74,43 @@ namespace Sokoban
             catch (System.Exception error)
             {
                 EndTrial();
-                Panel.Status = "无法开始试玩：" + error.Message;
+                Panel.ReportIssue("无法开始试玩：" + error.Message);
             }
             finally { trialStarting = false; }
+        }
+
+        Core.Issue ValidateTrial(out string roomId, out string report)
+        {
+            roomId = null;
+            report = null;
+            foreach (var pair in Panel.Draft.Catalog)
+            {
+                try { Core.ValidatedRoom.From(pair.Value, pair.Value.Meta); }
+                catch (System.InvalidOperationException error)
+                {
+                    var issue = Core.RoomValidator.ValidateDraft(pair.Value, Core.ValidationStage.Publish).FirstOrDefault(i => i.Severity == Core.Severity.Error)
+                        ?? new Core.Issue("validation.failed", Core.Severity.Error, pair.Key, error.Message);
+                    var target = Core.IssueLocator.Locate(issue);
+                    roomId = pair.Key;
+                    report = "无法开始试玩，房间 " + pair.Key + " 未通过发布级校验：" + error.Message + "｜定位：" + issue.Location + "｜修复入口：" + FixEntry(target.Tool);
+                    return issue;
+                }
+            }
+            return null;
+        }
+
+        static string FixEntry(Core.LocateTool tool)
+        {
+            switch (tool)
+            {
+                case Core.LocateTool.PlaceSpawn: return "放置出生点";
+                case Core.LocateTool.PlaceTarget: return "放置目标";
+                case Core.LocateTool.PaintWall: return "用墙壁工具补全边界";
+                case Core.LocateTool.SetDoor: return "设置门";
+                case Core.LocateTool.AddRecoveryItem: return "添加恢复道具";
+                case Core.LocateTool.Select: return "选择该对象检查";
+                default: return "打开检查页按规则逐项处理";
+            }
         }
 
         void EndTrial()
@@ -69,6 +121,7 @@ namespace Sokoban
                 Destroy(trial.gameObject);
                 trial = null;
             }
+            if (Panel.Mode.Current == Core.UiMode.Trial) Panel.Mode.Back();
             Interface.gameObject.SetActive(true);
             if (overlay == null) overlay = new LayoutOverlay();
             UpdateCamera();
@@ -117,25 +170,29 @@ namespace Sokoban
             gesture = -1;
             Panel.CancelTool();
             var draft = Panel.Draft;
-            if (draft.World != null && draft.World["rooms"].HasValues)
+            if (draft.World != null && draft.World.Rooms.Count > 0)
             {
                 var lower = new Vector2Int(int.MaxValue, int.MaxValue);
                 var upper = new Vector2Int(int.MinValue, int.MinValue);
-                foreach (var placement in draft.World["rooms"])
+                foreach (var placement in draft.World.Rooms)
                 {
-                    var origin = RoomFile.Cell(placement["origin"]);
-                    var room = (Newtonsoft.Json.Linq.JObject)draft.Catalog[(string)placement["levelId"]];
+                    var origin = new Vector2Int(placement.Origin.X, placement.Origin.Y);
+                    var room = draft.Catalog[placement.LevelId].Room;
                     lower = Vector2Int.Min(lower, origin);
-                    upper = Vector2Int.Max(upper, origin + RoomFile.Size(room) - Vector2Int.one);
+                    upper = Vector2Int.Max(upper, origin + new Vector2Int(room.Width, room.Height) - Vector2Int.one);
                 }
-                var worldMin = RoomFile.Cell(draft.World["bounds"]["min"]);
-                var worldMax = RoomFile.Cell(draft.World["bounds"]["max"]);
+                var worldMin = new Vector2Int(draft.World.Min.X, draft.World.Min.Y);
+                var worldMax = new Vector2Int(draft.World.Max.X, draft.World.Max.Y);
                 var offset = ((Vector2)(lower-worldMin) + (Vector2)(upper-worldMax)) * .5f;
                 pan = new Vector3(offset.x,0,offset.y);
                 zoom = ViewSize(upper-lower+Vector2Int.one) / ViewSize(worldMax-worldMin+Vector2Int.one);
             }
             UpdateCamera();
         }
+
+        Vector2Int DraftOrigin => new Vector2Int(Panel.Draft.Origin.X, Panel.Draft.Origin.Y);
+
+        static Sokoban.Core.Cell ToCell(Vector2Int v) => new Sokoban.Core.Cell(v.x, v.y);
 
         float ViewSize(Vector2Int span)
         {
@@ -151,17 +208,27 @@ namespace Sokoban
             hits.Clear();
             var data = new PointerEventData(EventSystem.current) { position = position };
             EventSystem.current.RaycastAll(data,hits);
-            return hits.Count != 0;
+            if (hits.Count != 0) return true;
+            if (!Interface) return false;
+            Interface.GetComponentsInChildren(false, tips);
+            foreach (var tip in tips)
+            {
+                if (!tip.tooltip || !tip.tooltip.gameObject.activeInHierarchy) continue;
+                var canvas = tip.tooltip.GetComponentInParent<Canvas>();
+                var camera = canvas && canvas.rootCanvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.rootCanvas.worldCamera : null;
+                if (RectTransformUtility.RectangleContainsScreenPoint(tip.tooltip, position, camera)) return true;
+            }
+            return false;
         }
 
         void UpdateCamera()
         {
             var draft = Panel.Draft;
-            Vector2Int min = draft.Origin, span = RoomFile.Size(draft.Room);
+            Vector2Int min = new Vector2Int(draft.Origin.X, draft.Origin.Y), span = new Vector2Int(draft.Room.Width, draft.Room.Height);
             if (draft.World != null && solo==null)
             {
-                min = RoomFile.Cell(draft.World["bounds"]["min"]);
-                span = RoomFile.Cell(draft.World["bounds"]["max"]) - min + Vector2Int.one;
+                min = new Vector2Int(draft.World.Min.X, draft.World.Min.Y);
+                span = new Vector2Int(draft.World.Max.X, draft.World.Max.Y) - min + Vector2Int.one;
             }
             lens.orthographic = true;
             lens.transform.rotation = Quaternion.Euler(pitch, yaw, 0);
@@ -192,7 +259,7 @@ namespace Sokoban
         {
             if (trial) return;
             Vector3 pointer = Input.mousePosition;
-            bool modal = Panel.Modal || Interface && Interface.CoversMap;
+            bool modal = Panel.Modal || Panel.Mode.BlocksMapInput;
             hovering = !modal && !OverUI(pointer) && new Rect(0,0,Screen.width,Screen.height).Contains(pointer)
                 && RoomPreview.CellFromRay(lens.ScreenPointToRay(pointer), out hoveredCell);
             if (modal) { gesture = -1; return; }
@@ -203,7 +270,7 @@ namespace Sokoban
                 UpdateCamera();
             }
             if (solo != null && solo != Panel.Draft.ActiveId) solo = null;
-            if (solo != null && !Panel.IsBrush && !RoomFile.Inside(Panel.Draft.Room, hoveredCell - Panel.Draft.Origin)) hovering = false;
+            if (solo != null && !Panel.IsBrush && !Panel.Draft.Room.Inside(ToCell(hoveredCell - DraftOrigin))) hovering = false;
             if (gesture == -1 && hovering)
             {
                 for (int i=0;i<=2;i++)
@@ -214,9 +281,9 @@ namespace Sokoban
                     {
                         if (!Panel.PlacingRoom && Panel.IsBrush) Panel.StartStroke(hoveredCell);
                         else if (Panel.Draft.Tool == RoomTool.Select && (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)))
-                            rectangleStart = hoveredCell - Panel.Draft.Origin;
+                            rectangleStart = hoveredCell - DraftOrigin;
                         else if (Panel.Draft.Tool == RoomTool.Select && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl) || Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)))
-                            Panel.Draft.Select(hoveredCell - Panel.Draft.Origin, true);
+                            Panel.Draft.Select(ToCell(hoveredCell - DraftOrigin), true);
                         else Panel.ClickWorld(hoveredCell);
                     }
                     break;
@@ -231,7 +298,7 @@ namespace Sokoban
             if (!Input.GetMouseButtonUp(gesture)) return;
             if (gesture == 0 && rectangleStart.HasValue)
             {
-                if (hovering) Panel.Draft.SelectRectangle(rectangleStart.Value, hoveredCell - Panel.Draft.Origin);
+                if (hovering) Panel.Draft.SelectRectangle(ToCell(rectangleStart.Value), ToCell(hoveredCell - DraftOrigin));
                 rectangleStart = null;
             }
             if (gesture == 0 && Panel.Painting) Panel.EndStroke();
@@ -246,7 +313,7 @@ namespace Sokoban
         void LateUpdate()
         {
             if (trial) return;
-            var theme = (string)Panel.Draft.Room["themeId"] ?? "warehouse";
+            var theme = Panel.Draft.Model.Meta.ThemeId ?? "warehouse";
             if (theme != litTheme) { lighting.Apply(DioramaLighting.Theme(theme),1); litTheme = theme; }
             UpdateCamera();
             preview.Sync(Panel.Draft,solo);

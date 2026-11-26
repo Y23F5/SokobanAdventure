@@ -1,26 +1,33 @@
 /**
  * @file WS06FormalRoutesVerification.cs
- * @brief Run 从正式世界连接枚举准入端点。Route 在首次到房快照上恢复指定起点，逐步回放到出口。
- * Whitelist 检查未导出游戏动作及已导出动作对照。Require 将验收差异转成批处理失败。
+ * @brief 正式三房的起点枚举与求解回归：对 StreamingAssets/World 下的房间与世界文件，逐房逐起点核对 SolveVerdict、CheckEntries 报告行与真实回放，并检查 Lua 动作白名单。
+ * Run：菜单与批处理入口，读入世界与房间，对每个起点逐路线验证并汇总。
+ * Starts：按世界连接枚举起点，出生点加被连接指向或允许回退的门。
+ * Route：含可开合地形的房间只能是乐观有解，其余为确认有解；确认有解的走法经 Solver.Replay 回放，出生点起点再经 PuzzleRun 真实步进；乐观有解的走法不得通过回放。
+ * Whitelist：Lua 环境只导出 setVisible，playSound 调用必须被拒绝且不产生任何动作。
+ * Require：把验收差异转成批处理失败。
  */
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using MoonSharp.Interpreter;
-using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
+using Sokoban.Core;
 
 namespace Sokoban.Editor
 {
     public static class WS06FormalRoutesVerification
     {
-        static readonly Vector2Int[] Moves = {Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left};
-        static void Require(bool ok, string message) { if (!ok) throw new InvalidOperationException(message); }
+        static void Require(bool ok, string message)
+        {
+            if (!ok) throw new InvalidOperationException(message);
+        }
 
         static void Whitelist(string owner)
         {
-            var effects = new List<JToken>();
+            var effects = new List<BehaviorNode>();
             Require(BehaviorLua.Evaluate("self.playSound == nil", owner, true, effects), "playSound is exported");
             try
             {
@@ -33,77 +40,84 @@ namespace Sokoban.Editor
                 Debug.Log("FLOWQA DENIED self.playSound effects=0 error=" + ex.Message);
             }
             BehaviorLua.Evaluate("self.setVisible(false)", owner, false, effects);
-            Require(effects.Count == 1 && (string)effects[0]["kind"] == "setVisible" && (bool?)effects[0]["visible"] == false, "positive control failed");
+            Require(effects.Count == 1 && effects[0].Kind == ObjectBehavior.SetVisible && effects[0].Parameters["visible"] == "false", "positive control failed");
             Debug.Log("FLOWQA ALLOWED self.setVisible(false) effects=1");
         }
 
-        static void Route(PuzzleRun run, JObject arrival, string label, Vector2Int start, JToken exit, string[] report)
+        static bool HasOpenable(Room room)
         {
-            var state = (JObject)arrival.DeepClone();
-            state["player"] = RoomFile.Point(run.Origin + start);
-            run.Restore(state);
-            string id = run.ActiveId;
-            Require(!run.Solved && run.Room["boxes"].All(b => run.Boxes[(string)b["id"]] == run.Origin + RoomFile.At(b)), "initial box layout");
-            var end = RoomFile.At(exit);
-            var result = RoomSolution.Check(run.Room, start, 100000, run.World, end);
-            Debug.Log($"FLOWQA SEARCH {id} {label} → {exit["id"]} {result.Status} expanded={result.Expanded} path={result.Detail}");
-            Require(result.Status == RoomSolution.Outcome.Solved, result.Detail);
-            Require(report.Count(line => line == $"{label} → {exit["id"]} · 有解 {result.Detail}") == 1, "CheckEntries mismatch");
-            int solvedAt = 0;
-            for (int i = 0; i < result.Detail.Length; i++)
+            for (int x = 0; x < room.Width; x++)
+                for (int y = 0; y < room.Height; y++)
+                    if (room.TerrainAt(new Cell(x, y)).CategoryId == TerrainCategories.Openable) return true;
+            return false;
+        }
+
+        static Dictionary<string, Cell> Starts(string id, RoomDraftModel model, WorldDocument world)
+        {
+            var starts = new Dictionary<string, Cell> { ["出生点"] = model.Room.ObjectsOf(ObjectCategories.Spawn).Single().Cell };
+            foreach (var link in world.Connections)
             {
-                int direction = "NESW".IndexOf(result.Detail[i]);
-                Require(direction >= 0 && run.Step(Moves[direction], out _) && run.ActiveId == id, $"rejected or crossed at step {i+1}");
-                if (solvedAt == 0 && run.Solved) solvedAt = i + 1;
+                var ends = new List<WorldEndpoint> { link.To };
+                if (link.AllowReturn) ends.Add(link.From);
+                foreach (var endpoint in ends.Where(e => e.LevelId == id))
+                    starts["门 " + endpoint.DoorId] = model.Doors.Single(d => d.Id == endpoint.DoorId).Cell;
             }
-            Require(solvedAt > 0 && run.Solved && run.Targets.All(t => run.Boxes.ContainsValue(t)) && run.Player == run.Origin + end, "wrong final state");
-            Debug.Log($"FLOWQA REPLAY {id} {label} → {exit["id"]} steps={result.Detail.Length} solvedAt={solvedAt} local={end} world={run.Player}");
+            return starts;
+        }
+
+        static void StepThrough(RoomDraftModel model, RoomSolution.Result result)
+        {
+            var run = PuzzleRun.FromDraft(new RoomDraft(model));
+            Require(!run.Solved, "initial layout already solved");
+            foreach (var move in result.Moves)
+                Require(run.Step(new Vector2Int(move.X, move.Y), out _), "rejected step " + move);
+            Require(run.Solved && run.Targets.All(t => run.Boxes.ContainsValue(t)), "wrong final state");
+        }
+
+        static void Route(string id, RoomDraftModel model, string label, Cell start, string[] report)
+        {
+            bool vine = HasOpenable(model.Room);
+            var expected = vine ? SolveVerdict.Optimistic : SolveVerdict.Confirmed;
+            var result = RoomSolution.Check(model, start, 100000);
+            Debug.Log($"FLOWQA SEARCH {id} {label} {result.Verdict} expanded={result.Expanded} path={result.Detail}");
+            Require(result.Verdict == expected, id + " " + label + " expected " + expected + " observed " + result.Verdict);
+            string line = label + " · " + RoomSolution.Label(result.Verdict) + " " + result.Detail;
+            Require(report.Count(l => l == line) == 1, "CheckEntries mismatch " + line);
+            bool replayed = Solver.Replay(model.Room, start, result.Moves);
+            if (vine) Require(!replayed, "乐观有解不应被真实回放确认 " + id);
+            else
+            {
+                Require(replayed, "确认有解的走法未通过真实回放 " + id + " " + label);
+                if (label == "出生点") StepThrough(model, result);
+            }
         }
 
         [MenuItem("Sokoban/验证/WS-06 正式三房指定出口与 Lua 白名单")]
         public static void Run()
         {
+            var catalog = new Dictionary<string, RoomDraftModel>(StringComparer.Ordinal);
+            var world = WorldLayout.Read(Path.Combine(Application.streamingAssetsPath, "World/main.world.json"), catalog);
             var campaign = PuzzleRun.Campaign();
-            Whitelist((string)campaign.Room["boxes"][0]["id"]);
-            var arrivals = new Dictionary<string,JObject> { [campaign.ActiveId] = campaign.Snapshot() };
-            const string reference = "RRRURRRRRURRRRRRLDLDDLUULURRRDLDDRRRRUURRRURUULURDRDRRDRRURRDDLUURULRDDDRR";
-            foreach (char step in reference.Take(reference.Length - 1))
-            {
-                Require(campaign.Step(Moves["URDL".IndexOf(step)], out _), "campaign approach rejected");
-                if (!arrivals.ContainsKey(campaign.ActiveId)) arrivals.Add(campaign.ActiveId, campaign.Snapshot());
-                if (arrivals.Count == campaign.Rooms.Count) break;
-            }
+            Whitelist(catalog["warehouse"].Room.ObjectsOf(ObjectCategories.Box).First().Id);
             int passed = 0, total = 0;
-            foreach (var placement in campaign.World["rooms"])
+            foreach (var placement in world.Rooms)
             {
-                string id = (string)placement["levelId"];
-                var arrival = arrivals[id];
-                campaign.Restore(arrival);
-                var room = campaign.Room;
-                RoomFile.RequireStructure(room);
+                string id = placement.LevelId;
+                var model = catalog[id];
+                Require(!RoomValidator.HasErrors(RoomValidator.ValidateDraft(model, ValidationStage.Publish)), "发布级校验未通过 " + id);
                 Debug.Log("FLOWQA STRUCTURE PASS " + id);
-                var starts = new Dictionary<string,Vector2Int> { ["出生点"] = RoomFile.At(room["spawn"]) };
-                foreach (var link in campaign.World["connections"])
+                var starts = Starts(id, model, world);
+                var report = RoomSolution.CheckEntries(model, world).Split('\n');
+                Require(report.Length == starts.Count, "CheckEntries 行数与起点数不符 " + id);
+                foreach (var start in starts)
                 {
-                    var ends = new List<JToken> {link["forwardTo"]};
-                    if ((bool?)link["allowReturn"] == true) ends.Add(link["forwardFrom"]);
-                    foreach (var endpoint in ends.Where(e => (string)e["levelId"] == id))
-                    {
-                        string door = (string)endpoint["doorId"];
-                        starts["门 " + door] = RoomFile.At(room["doors"].Single(d => (string)d["id"] == door));
-                    }
+                    total++;
+                    try { Route(id, model, start.Key, start.Value, report); passed++; }
+                    catch (Exception ex) { Debug.LogError($"FLOWQA FAIL {id} {start.Key} {ex}"); }
                 }
-                var report = RoomSolution.CheckEntries(room, campaign.World).Split('\n');
-                foreach (var exit in room["doors"].Where(d => (string)d["role"] == "exit"))
-                    foreach (var start in starts)
-                    {
-                        total++;
-                        try { Route(campaign, arrival, start.Key, start.Value, exit, report); passed++; }
-                        catch (Exception ex) { Debug.LogError($"FLOWQA FAIL {id} {start.Key} {ex}"); }
-                    }
             }
-            Debug.Log($"FLOWQA RESULT routes={passed}/{total} rooms={arrivals.Count}");
-            Require(passed == total && total == 7 && arrivals.Count == 3, "formal routes incomplete");
+            Debug.Log($"FLOWQA RESULT routes={passed}/{total} rooms={catalog.Count}");
+            Require(passed == total && total == 7 && catalog.Count == 3 && campaign.Rooms.Count == 3, "formal routes incomplete");
         }
     }
 }

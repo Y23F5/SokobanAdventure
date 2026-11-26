@@ -22,7 +22,7 @@ namespace Sokoban.Core.Tests
             new WorldConnection(id, mode, new WorldEndpoint(fromRoom, fromDoor), new WorldEndpoint(toRoom, toDoor), false);
 
         static WorldDocument World(WorldRoomRef[] rooms, WorldConnection[] links, WorldEndpoint start = null, WorldEndpoint finish = null) =>
-            new WorldDocument("w", 1, new Cell(0, 0), new Cell(19, 9), rooms, links,
+            new WorldDocument("w", new Cell(0, 0), new Cell(19, 9), rooms, links,
                 start ?? new WorldEndpoint("a", "spawn"), finish ?? new WorldEndpoint("a", "exit"), new[] { "a" });
 
         static WorldRoomRef[] Both(int bx) => new[] { Ref("a", 0, 0), Ref("b", bx, 0) };

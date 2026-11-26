@@ -1,73 +1,64 @@
 /**
  * @file WorldSolution.cs
- * @brief Check searches room-to-room routes and replays each candidate with campaign movement. Describe formats the route or verification limit for both editors.
+ * @brief 世界级求解：沿连接从起点房间逐房调用单房结论，前置房间解开后才放行后续房间，到达终点即给出整体结论。
+ * Check(world, models, budget)：每个房间从进入它的门（起点房间从出生点）起算，求解器不建模跨房时的中途箱位，所以只比较各房初始布局的结论；
+ * 任一经过的房间确认无解则整体确认无解，整体结论取路线上各房最保守的一档，终点不可达或含无法验证的房间时报无法验证。
+ * Describe(result)：世界结论的中文文字。
  */
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json.Linq;
-using UnityEngine;
+using Sokoban.Core;
 using Result = Sokoban.RoomSolution.Result;
-using Outcome = Sokoban.RoomSolution.Outcome;
 
 namespace Sokoban
 {
     public static class WorldSolution
     {
-        static readonly Vector2Int[] Directions = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
-        const string Letters = "URDL";
-
-        public static Result Check(JObject world, JObject rooms, int budget = 100000)
+        public static Result Check(WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> models, int budget = 100000)
         {
-            var issue = WorldLayout.Issues(world, rooms).FirstOrDefault();
-            if (issue != null) return new Result(Outcome.Invalid, issue);
-            foreach (var placement in world["rooms"])
-            {
-                var room = rooms[(string)placement["levelId"]];
-                var graph = room["events"].FirstOrDefault(g => !ObjectBehavior.CanSimulate(g));
-                if (graph == null) continue;
-                var node = graph["nodes"]?.FirstOrDefault(n => !ObjectBehavior.CanSimulateNode(n));
-                return new Result(Outcome.Unsupported, $"{room["levelId"]}/{graph["ownerId"]}/{graph["id"]}/{node?["id"]}");
-            }
-            var run = PuzzleRun.FromWorld(world, rooms);
-            var queue = new Queue<(JObject snapshot, string path)>();
-            var seen = new HashSet<string>();
-            queue.Enqueue((run.Snapshot(), ""));
+            foreach (var entry in world.Rooms)
+                if (!models.ContainsKey(entry.LevelId)) return new Result(SolveVerdict.Unverifiable, "缺少房间 " + entry.LevelId, 0);
+            var startModel = models[world.Start.LevelId];
+            var spawn = startModel.Room.ObjectsOf(ObjectCategories.Spawn).FirstOrDefault(o => o.Id == world.Start.DoorId)
+                ?? startModel.Room.ObjectsOf(ObjectCategories.Spawn).FirstOrDefault();
+            if (spawn == null) return new Result(SolveVerdict.Unverifiable, "起点房间没有出生点", 0);
+            var verdicts = new Dictionary<string, SolveVerdict>();
+            var route = new List<string>();
+            var entered = new HashSet<string> { world.Start.LevelId };
+            var queue = new Queue<(string room, Cell entry)>();
+            var waiting = new List<(string room, Cell entry)>();
+            queue.Enqueue((world.Start.LevelId, spawn.Cell));
             int expanded = 0;
             while (queue.Count > 0)
             {
-                var branch = queue.Dequeue();
-                run.Restore(branch.snapshot);
-                var key = new JArray(run.ActiveId, RoomFile.Point(run.Player), branch.snapshot["rooms"]).ToString(Newtonsoft.Json.Formatting.None);
-                if (!seen.Add(key)) continue;
-                foreach (var door in run.Room["doors"].ToArray())
+                var (id, entry) = queue.Dequeue();
+                var result = RoomSolution.Check(models[id], entry, Math.Max(0, budget - expanded));
+                expanded += result.Expanded;
+                if (result.Verdict == SolveVerdict.Unsolvable) return new Result(SolveVerdict.Unsolvable, "房间 " + id + " 确认无解", expanded);
+                if (result.Verdict == SolveVerdict.Unverifiable) continue;
+                verdicts[id] = result.Verdict;
+                route.Add(id);
+                foreach (var door in models[id].Doors)
+                    foreach (var link in world.Connections.Where(c => c.From.LevelId == id && c.From.DoorId == door.Id))
+                    {
+                        var destDoor = models[link.To.LevelId].Doors.FirstOrDefault(d => d.Id == link.To.DoorId);
+                        if (destDoor != null && entered.Add(link.To.LevelId)) waiting.Add((link.To.LevelId, destDoor.Cell));
+                    }
+                foreach (var item in waiting.ToList())
                 {
-                    run.Restore(branch.snapshot);
-                    if (expanded >= budget) return new Result(Outcome.BudgetReached, "世界搜索预算已用尽", expanded);
-                    var endpoint = world["finish"]["endpoint"];
-                    bool Matches(JToken end) => (string)end["levelId"] == run.ActiveId && (string)end["doorId"] == (string)door["id"];
-                    if (!Matches(endpoint) && !world["connections"].Any(link => Matches(link["forwardFrom"]) ||
-                        (bool)link["allowReturn"] && Matches(link["forwardTo"]))) continue;
-                    var result = RoomSolution.Check(run.Room, run.Player - run.Origin, budget - expanded, world,
-                        RoomFile.At(door), run.Boxes.Values.Select(p => p - run.Origin).ToArray(), run.EverSolved);
-                    expanded += System.Math.Max(1, result.Expanded);
-                    if (result.Status != Outcome.Solved) continue;
-                    string segment = new string(result.Detail.Select(c => Letters["NESW".IndexOf(c)]).ToArray());
-                    if (!segment.All(c => run.Step(Directions[Letters.IndexOf(c)], out _))) continue;
-                    var outward = -RoomFile.Inward(door);
-                    var path = branch.path + segment + Letters[System.Array.IndexOf(Directions, outward)];
-                    if (run.CanLeaveWorld(outward)) return new Result(Outcome.Solved, path, expanded);
-                    if (run.Step(outward, out _)) { run.AcceptItem(); queue.Enqueue((run.Snapshot(), path)); }
+                    var need = world.Rooms.First(r => r.LevelId == item.room).ForwardRequiresSolved;
+                    if (!need.All(verdicts.ContainsKey)) continue;
+                    waiting.Remove(item);
+                    queue.Enqueue(item);
                 }
             }
-            var oneWay = world["connections"].Where(link => (bool?)link["allowReturn"] == false)
-                .Select(link => $"{link["forwardTo"]["levelId"]}/{link["forwardTo"]["doorId"]} → {link["forwardFrom"]["levelId"]}/{link["forwardFrom"]["doorId"]}");
-            return new Result(Outcome.BudgetReached, "候选路线未到终点。禁止回退的方向：" + string.Join("，", oneWay), expanded);
+            bool reached = verdicts.ContainsKey(world.FinishEndpoint.LevelId) && world.FinishRequiresSolved.All(verdicts.ContainsKey);
+            if (!reached) return new Result(SolveVerdict.Unverifiable, "候选路线未到终点，已通过：" + string.Join("，", route), expanded);
+            var worst = verdicts.Values.Any(v => v == SolveVerdict.Optimistic) ? SolveVerdict.Optimistic : SolveVerdict.Confirmed;
+            return new Result(worst, string.Join(" → ", route), expanded);
         }
 
-        public static string Describe(Result result)
-        {
-            string label = result.Status == Outcome.Solved ? "世界有解" : result.Status == Outcome.BudgetReached ? "世界搜索未完成" : "世界无法验证";
-            return label + " · " + result.Detail;
-        }
+        public static string Describe(Result result) => "世界" + RoomSolution.Label(result.Verdict) + " · " + result.Detail;
     }
 }

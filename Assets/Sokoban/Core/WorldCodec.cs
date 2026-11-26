@@ -1,6 +1,6 @@
 /**
  * @file WorldCodec.cs
- * @brief 世界文件的数据与编解码：世界 ID、内容版本、有限整数边界、房间引用与原点、门连接、起点与终点，用 MiniJson 读写。
+ * @brief 世界文件的数据与编解码：世界 ID、有限整数边界、房间引用与原点、门连接、起点与终点，用 MiniJson 读写。
  * WorldEndpoint：一个端点，由房间 ID 与门 ID（起点时为出生点 ID）组成。
  * WorldRoomRef：世界中的一个房间引用（房间 ID、相对世界文件的文件名、整数原点、前进所需已解开的房间 ID 列表）。
  * WorldConnection：一条门连接（唯一 ID、模式 direct 或 teleport、源端点、目标端点、是否允许回退）。
@@ -63,7 +63,6 @@ namespace Sokoban.Core
     public sealed class WorldDocument
     {
         public string WorldId { get; }
-        public int ContentVersion { get; }
         public Cell Min { get; }
         public Cell Max { get; }
         public IReadOnlyList<WorldRoomRef> Rooms { get; }
@@ -72,12 +71,11 @@ namespace Sokoban.Core
         public WorldEndpoint FinishEndpoint { get; }
         public IReadOnlyList<string> FinishRequiresSolved { get; }
 
-        public WorldDocument(string worldId, int contentVersion, Cell min, Cell max,
+        public WorldDocument(string worldId, Cell min, Cell max,
             IReadOnlyList<WorldRoomRef> rooms, IReadOnlyList<WorldConnection> connections,
             WorldEndpoint start, WorldEndpoint finishEndpoint, IReadOnlyList<string> finishRequiresSolved)
         {
             WorldId = worldId;
-            ContentVersion = contentVersion;
             Min = min;
             Max = max;
             Rooms = rooms ?? new List<WorldRoomRef>();
@@ -121,7 +119,6 @@ namespace Sokoban.Core
                 ["kind"] = "world",
                 ["formatVersion"] = (long)FormatVersion,
                 ["worldId"] = doc.WorldId,
-                ["contentVersion"] = (long)doc.ContentVersion,
                 ["bounds"] = new Dictionary<string, object> { ["min"] = pair(doc.Min), ["max"] = pair(doc.Max) },
                 ["rooms"] = rooms,
                 ["connections"] = connections,
@@ -240,7 +237,7 @@ namespace Sokoban.Core
             foreach (var need in finishRequires)
                 if (!known.Contains(need)) throw new FormatException("终点所需房间不存在：" + need);
 
-            return new WorldDocument(Str(root, "worldId"), Int(root, "contentVersion"), min, max, rooms, connections, start, finishEndpoint, finishRequires);
+            return new WorldDocument(Str(root, "worldId"), min, max, rooms, connections, start, finishEndpoint, finishRequires);
         }
     }
 }

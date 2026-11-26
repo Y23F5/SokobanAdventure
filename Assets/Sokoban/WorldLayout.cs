@@ -1,194 +1,135 @@
 /**
  * @file WorldLayout.cs
- * @brief Read 预读世界及相对引用；Write 先发布不可变房间内容，再原子替换世界清单。
- * Empty 建立有限世界；PlacementIssue 比较含边界的矩形；Issues 校验房间、连接与起终点。
- * ConnectionIssues 接受候选原点以便预演平移，不写草稿；Endpoint 查找指定门；RequireValid 在读写前检查整图。
+ * @brief 世界文件的薄工具：编解码与规则全部交给 Core 的 WorldCodec 与 WorldValidator，本文件不含 JObject 与旧版本实现。
+ * Empty(first)：建立只含一个起终点占位的有限世界；WithRooms、WithConnections、WithStart、WithFinish：世界文档不可变，用于生成修改后的新文档。
+ * Sizes(catalog)、ToCoreRooms(catalog)：把房间目录转成 WorldValidator 需要的尺寸表与门信息表。
+ * PlacementIssue(world, catalog, id, origin, moving[, size])：转调 WorldValidator.Placement，含边界与重叠判定。
+ * ConnectionIssues(world, catalog, movingRoom, candidate)：转调 WorldValidator.Connections，movingRoom 非空时按候选原点预演。
+ * EndpointIssues(world, catalog)：转调 WorldValidator.Endpoints。
+ * Issues(world, catalog)：汇总前置房间引用、放置、各房结构错误、连接与起终点问题。
+ * Read(path, catalog)：WorldCodec.Decode 后逐房经 RoomFile.Load 读入目录，检查相对引用与房间 ID，再整图校验。
+ * Write(path, world, catalog)：整图校验后逐房经 RoomFile.Save 写成按内容哈希命名的文件，再用 WorldCodec.Encode 与 AtomicFile.Write 原子替换世界清单，返回带最新文件名的新世界文档。
  */
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Security.Cryptography;
-using System.Collections.Generic;
-using UnityEngine;
-using Newtonsoft.Json.Linq;
+using System.Text;
+using Sokoban.Core;
 
 namespace Sokoban
 {
     public static class WorldLayout
     {
-        public static JObject Empty(string first) => new JObject {
-            ["kind"]="world", ["formatVersion"]=1, ["worldId"]=Guid.NewGuid().ToString("N"), ["contentVersion"]=1,
-            ["bounds"]=new JObject { ["min"]=new JArray(0,0), ["max"]=new JArray(63,31) },
-            ["rooms"]=new JArray(), ["connections"]=new JArray(),
-            ["start"]=new JObject { ["levelId"]=first,["spawnId"]="spawn" },
-            ["finish"]=new JObject { ["endpoint"]=new JObject { ["levelId"]=first,["doorId"]="exit" }, ["requiresSolved"]=new JArray(first) }
-        };
-        public static string PlacementIssue(JObject world,JObject rooms,string id,Vector2Int origin,bool moving)
+        public static WorldDocument Empty(string first) => new WorldDocument(Guid.NewGuid().ToString("N"), new Cell(0, 0), new Cell(63, 31),
+            new List<WorldRoomRef>(), new List<WorldConnection>(), new WorldEndpoint(first, "spawn"), new WorldEndpoint(first, "exit"), new[] { first });
+
+        public static WorldDocument WithRooms(WorldDocument w, IReadOnlyList<WorldRoomRef> rooms) =>
+            new WorldDocument(w.WorldId, w.Min, w.Max, rooms, w.Connections, w.Start, w.FinishEndpoint, w.FinishRequiresSolved);
+
+        public static WorldDocument WithConnections(WorldDocument w, IReadOnlyList<WorldConnection> connections) =>
+            new WorldDocument(w.WorldId, w.Min, w.Max, w.Rooms, connections, w.Start, w.FinishEndpoint, w.FinishRequiresSolved);
+
+        public static WorldDocument WithStart(WorldDocument w, WorldEndpoint start) =>
+            new WorldDocument(w.WorldId, w.Min, w.Max, w.Rooms, w.Connections, start, w.FinishEndpoint, w.FinishRequiresSolved);
+
+        public static WorldDocument WithFinish(WorldDocument w, WorldEndpoint finish) =>
+            new WorldDocument(w.WorldId, w.Min, w.Max, w.Rooms, w.Connections, w.Start, finish, w.FinishRequiresSolved);
+
+        public static Dictionary<string, Cell> Sizes(IReadOnlyDictionary<string, RoomDraftModel> catalog) =>
+            catalog.ToDictionary(pair => pair.Key, pair => new Cell(pair.Value.Room.Width, pair.Value.Room.Height));
+
+        public static Dictionary<string, WorldRoomInfo> ToCoreRooms(IReadOnlyDictionary<string, RoomDraftModel> catalog) =>
+            catalog.ToDictionary(pair => pair.Key, pair => new WorldRoomInfo(pair.Key,
+                pair.Value.Room.ObjectsOf(ObjectCategories.Spawn).FirstOrDefault()?.Id, pair.Value.Doors));
+
+        public static string PlacementIssue(WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog, string id, Cell origin, bool moving)
         {
-            return PlacementIssue(world, rooms, id, origin, moving, RoomFile.Size((JObject)rooms[id]));
+            var room = catalog[id].Room;
+            return PlacementIssue(world, catalog, id, origin, moving, new Cell(room.Width, room.Height));
         }
-        public static string PlacementIssue(JObject world,JObject rooms,string id,Vector2Int origin,bool moving,Vector2Int size)
+
+        public static string PlacementIssue(WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog, string id, Cell origin, bool moving, Cell size) =>
+            WorldValidator.Placement(world, Sizes(catalog), id, origin, moving, size);
+
+        public static IEnumerable<string> ConnectionIssues(WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog, string movingRoom = null, Cell candidate = default) =>
+            WorldValidator.Connections(world, ToCoreRooms(catalog), movingRoom, candidate).ToList();
+
+        public static IEnumerable<string> EndpointIssues(WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog) =>
+            WorldValidator.Endpoints(world, ToCoreRooms(catalog)).ToList();
+
+        public static IEnumerable<string> Issues(WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog)
         {
-            var min=RoomFile.Cell(world["bounds"]["min"]); var max=RoomFile.Cell(world["bounds"]["max"]);
-            long right=(long)origin.x+size.x, top=(long)origin.y+size.y;
-            if (origin.x < min.x || origin.y < min.y || right - 1 > max.x || top - 1 > max.y)
+            var known = new HashSet<string>(world.Rooms.Select(r => r.LevelId));
+            foreach (var row in world.Rooms)
             {
-                long outsideX = origin.x;
-                long outsideY = origin.y;
-                if (origin.x >= min.x && origin.y >= min.y)
-                {
-                    if (right - 1 > max.x) outsideX = Math.Max(outsideX, (long)max.x + 1);
-                    else outsideY = Math.Max(outsideY, (long)max.y + 1);
-                }
-                return $"{id} 超出世界边界，冲突格 ({outsideX}, {outsideY})";
+                if (row.ForwardRequiresSolved.Any(required => !known.Contains(required))) yield return row.LevelId + " 的前置房间引用无效";
+                if (!catalog.ContainsKey(row.LevelId)) { yield return row.LevelId + " 缺少房间数据"; continue; }
+                var error = PlacementIssue(world, catalog, row.LevelId, row.Origin, true);
+                if (error != null) yield return error;
+                foreach (var issue in RoomValidator.ValidateDraft(catalog[row.LevelId], ValidationStage.Publish).Where(i => new[] { "spawn.missing", "door.geometry", "entry.occupied", "entry.missing", "boundary.open" }.Contains(i.RuleId))) yield return row.LevelId + " " + issue.Location + " " + issue.Message;
             }
-            foreach(var other in world["rooms"])
+            foreach (var issue in ConnectionIssues(world, catalog)) yield return issue;
+            foreach (var issue in EndpointIssues(world, catalog)) yield return issue;
+            if (world.FinishRequiresSolved.Any(id => !known.Contains(id))) yield return "世界终局的前置房间引用无效";
+        }
+
+        static void RequireValid(WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog)
+        {
+            string issue = Issues(world, catalog).FirstOrDefault();
+            RoomFile.Check(issue == null, issue);
+        }
+
+        static string RoomPath(string root, string relative)
+        {
+            RoomFile.Check(!string.IsNullOrEmpty(relative) && !Path.IsPathRooted(relative) && !relative.Split('/', '\\').Contains(".."), "需要世界目录内的相对引用");
+            return Path.Combine(root, relative);
+        }
+
+        public static WorldDocument Read(string path, Dictionary<string, RoomDraftModel> catalog)
+        {
+            WorldDocument world;
+            try { world = WorldCodec.Decode(File.ReadAllText(path)); }
+            catch (FormatException error) { throw new InvalidDataException(error.Message, error); }
+            string root = Path.GetDirectoryName(Path.GetFullPath(path));
+            foreach (var placement in world.Rooms)
             {
-                string otherId=(string)other["levelId"];
-                if(otherId==id) { if(moving) continue; return id+" 已放置"; }
-                var pos=RoomFile.Cell(other["origin"]); var extent=RoomFile.Size((JObject)rooms[otherId]);
-                if(origin.x<(long)pos.x+extent.x && right>pos.x && origin.y<(long)pos.y+extent.y && top>pos.y) return id+" 与 "+otherId+" 占地重叠 "+Vector2Int.Max(origin,pos);
+                string roomPath = RoomPath(root, placement.File);
+                RoomFile.Check(File.Exists(roomPath), placement.LevelId + " 引用的房间文件缺失：" + placement.File);
+                var room = RoomFile.Load(roomPath);
+                RoomFile.Check(room.Room.Id == placement.LevelId && !catalog.ContainsKey(placement.LevelId), "房间 ID 不匹配或重复：" + placement.LevelId);
+                catalog[placement.LevelId] = room;
             }
-            return null;
-        }
-        static JToken Endpoint(JToken endpoint,JObject world,JObject rooms,out Vector2Int origin,string movingRoom = null,Vector2Int candidate = default)
-        {
-            string id=(string)endpoint?["levelId"];
-            if (movingRoom != null && id == movingRoom)
-            {
-                origin = candidate;
-                return rooms[id]?["doors"]?.FirstOrDefault(door => (string)door["id"] == (string)endpoint["doorId"]);
-            }
-            var placed=world["rooms"].FirstOrDefault(r=>(string)r["levelId"]==id);
-            origin=placed==null?Vector2Int.zero:RoomFile.Cell(placed["origin"]);
-            return placed==null?null:rooms[id]?["doors"]?.FirstOrDefault(d=>(string)d["id"]==(string)endpoint?["doorId"]);
-        }
-        public static IEnumerable<string> Issues(JObject world,JObject rooms)
-        {
-            foreach(var row in world["rooms"]) {
-                string id=(string)row["levelId"];
-                if (!(row["forwardRequiresSolved"] is JArray requirements) || requirements.Any(required => !world["rooms"].Any(r => (string)r["levelId"] == (string)required)))
-                    yield return id + " 的前置房间引用无效";
-                var error=PlacementIssue(world,rooms,id,RoomFile.Cell(row["origin"]),true);
-                if(error!=null) yield return error;
-                foreach(var issue in RoomFile.StructureIssues((JObject)rooms[id])) yield return issue;
-                foreach(var issue in ObjectBehavior.TargetIssues((JObject)rooms[id],world,rooms)) yield return issue;
-            }
-            foreach (var issue in ConnectionIssues(world,rooms)) yield return issue;
-            var endpointIssues = EndpointIssues(world, rooms);
-            foreach (var issue in endpointIssues.Where(i => i.StartsWith("世界起点"))) yield return issue;
-            if (!(world["finish"]?["requiresSolved"] is JArray finishRooms) || finishRooms.Any(id => !world["rooms"].Any(r => (string)r["levelId"] == (string)id)))
-                yield return "世界终局的前置房间引用无效";
-            foreach (var issue in endpointIssues.Where(i => i.StartsWith("世界终点门"))) yield return issue;
-        }
-        public static List<string> EndpointIssues(JObject world,JObject rooms)
-        {
-            try
-            {
-                var core = Sokoban.Core.WorldCodec.Decode(world.ToString(Newtonsoft.Json.Formatting.None));
-                return Sokoban.Core.WorldValidator.Endpoints(core, ToCoreRooms(rooms)).ToList();
-            }
-            catch (FormatException) { }
-            catch (InvalidDataException) { }
-            return LegacyEndpointIssues(world, rooms).ToList();
-        }
-        public static IEnumerable<string> LegacyEndpointIssues(JObject world,JObject rooms)
-        {
-            var start = world["start"];
-            string startRoom = (string)start?["levelId"];
-            if (!world["rooms"].Any(r => (string)r["levelId"] == startRoom)
-                || (string)rooms[startRoom]?["spawn"]?["id"] != (string)start?["spawnId"])
-                yield return "世界起点无效 "+startRoom;
-            if (Endpoint(world["finish"]?["endpoint"],world,rooms,out _) == null)
-                yield return "世界终点门无效 "+world["finish"]?["endpoint"];
-        }
-        public static IEnumerable<string> ConnectionIssues(JObject world,JObject rooms,string movingRoom=null,Vector2Int candidate=default)
-        {
-            List<string> routed = null;
-            try
-            {
-                var core = Sokoban.Core.WorldCodec.Decode(world.ToString(Newtonsoft.Json.Formatting.None));
-                routed = Sokoban.Core.WorldValidator.Connections(core, ToCoreRooms(rooms), movingRoom, new Sokoban.Core.Cell(candidate.x, candidate.y)).ToList();
-            }
-            catch (FormatException) { }
-            catch (InvalidDataException) { }
-            return routed ?? LegacyConnectionIssues(world, rooms, movingRoom, candidate).ToList();
-        }
-        public static IEnumerable<string> LegacyConnectionIssues(JObject world,JObject rooms,string movingRoom=null,Vector2Int candidate=default)
-        {
-            var ids=new HashSet<string>();
-            var endpoints=new HashSet<(string,string)>();
-            foreach(var link in world["connections"]) {
-                string id=(string)link["id"];
-                if (string.IsNullOrWhiteSpace(id) || !ids.Add(id)) yield return "连接 ID 缺失或重复 "+id;
-                var from=Endpoint(link["forwardFrom"],world,rooms,out var a,movingRoom,candidate);
-                var to=Endpoint(link["forwardTo"],world,rooms,out var b,movingRoom,candidate);
-                foreach(var end in new[]{link["forwardFrom"],link["forwardTo"]}) {
-                    var key=((string)end?["levelId"],(string)end?["doorId"]);
-                    if(!endpoints.Add(key)) yield return $"{id} 端点重复使用 {key}";
-                }
-                string source=(string)link["forwardFrom"]?["levelId"], target=(string)link["forwardTo"]?["levelId"];
-                string label=$"{id} {source}.{link["forwardFrom"]?["doorId"]} → {target}.{link["forwardTo"]?["doorId"]}";
-                if(from==null || to==null) yield return label+" 端点缺失";
-                else if((string)link["mode"]=="direct") {
-                    if (RoomFile.Inward(from)!=-RoomFile.Inward(to) || a+RoomFile.At(from)-RoomFile.Inward(from)!=b+RoomFile.At(to))
-                        yield return label+" 直连门不相邻或朝向不匹配";
-                } else if((string)link["mode"]!="teleport") yield return label+" 连接方式无效";
-            }
-        }
-        public static Dictionary<string, Sokoban.Core.WorldRoomInfo> ToCoreRooms(JObject rooms)
-        {
-            var result = new Dictionary<string, Sokoban.Core.WorldRoomInfo>();
-            foreach (var pair in rooms)
-            {
-                var data = RoomFile.ToLegacyData((JObject)pair.Value);
-                var draft = Sokoban.Core.LegacyRoomAdapter.ToDraft(data);
-                result[pair.Key] = new Sokoban.Core.WorldRoomInfo(pair.Key, data.Spawn?.Id, draft.Doors);
-            }
-            return result;
-        }
-        static void RequireValid(JObject world,JObject rooms)
-        {
-            string issue=Issues(world,rooms).FirstOrDefault();
-            RoomFile.Check(issue==null,issue);
-        }
-        public static JObject Read(string path,JObject catalog)
-        {
-            var world=JObject.Parse(File.ReadAllText(path));
-            RoomFile.Check((string)world["kind"]=="world" && (int?)world["formatVersion"]==1 && world["rooms"] is JArray && world["connections"] is JArray,"无法读取世界格式");
-            var min=RoomFile.Cell(world["bounds"]["min"]); var max=RoomFile.Cell(world["bounds"]["max"]);
-            RoomFile.Check(min.x<=max.x && min.y<=max.y,"世界边界无效");
-            string root=Path.GetDirectoryName(Path.GetFullPath(path))+Path.DirectorySeparatorChar;
-            foreach(var placement in world["rooms"]) {
-                string id=(string)placement["levelId"], relative=(string)placement["file"];
-                RoomFile.Check(!Path.IsPathRooted(relative) && !relative.Split('/','\\').Contains(".."),"需要世界目录内的相对引用");
-                string roomPath=Path.Combine(root,relative);
-                RoomFile.Check(File.Exists(roomPath),$"{id} 引用的房间文件缺失：{relative}");
-                var room=RoomAssets.ReadRoom(roomPath);
-                RoomFile.Check((string)room["levelId"]==id && catalog[id]==null,"房间 ID 不匹配或重复："+id);
-                catalog[id]=room; RoomFile.Cell(placement["origin"]);
-            }
-            RequireValid(world,catalog);
+            RequireValid(world, catalog);
             return world;
         }
-        public static JObject Write(string path,JObject source,JObject catalog)
+
+        public static WorldDocument Write(string path, WorldDocument source, IReadOnlyDictionary<string, RoomDraftModel> catalog)
         {
-            RequireValid(source,catalog);
-            var world=(JObject)source.DeepClone(); var root=Path.GetDirectoryName(Path.GetFullPath(path));
-            foreach(var row in world["rooms"]) {
-                var room=RoomFile.ForExport((JObject)catalog[(string)row["levelId"]]); var text=room.ToString();
-                string relative=(string)row["file"];
-                if(!string.IsNullOrEmpty(relative) && !Path.IsPathRooted(relative) && !relative.Split('/','\\').Contains("..")) {
-                    var original=Path.Combine(root,relative);
-                    if(File.Exists(original) && JToken.DeepEquals(JToken.Parse(File.ReadAllText(original)),room)) { RoomAssets.Publish((JObject)room,original); continue; }
+            RequireValid(source, catalog);
+            string root = Path.GetDirectoryName(Path.GetFullPath(path));
+            var rows = new List<WorldRoomRef>();
+            foreach (var row in source.Rooms)
+            {
+                string text = RoomCodec.Encode(catalog[row.LevelId]);
+                string relative = row.File;
+                if (!string.IsNullOrEmpty(relative) && !Path.IsPathRooted(relative) && !relative.Split('/', '\\').Contains("..") &&
+                    File.Exists(Path.Combine(root, relative)) && File.ReadAllText(Path.Combine(root, relative)) == text)
+                {
+                    rows.Add(row);
+                    continue;
                 }
-                using(var hash=SHA256.Create()) relative="rooms/"+BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(text))).Replace("-","").ToLowerInvariant()+".json";
-                string target=Path.Combine(root,relative); Directory.CreateDirectory(Path.GetDirectoryName(target));
-                RoomAssets.Publish((JObject)room,target);
-                RoomFile.Write(target,text); row["file"]=relative;
+                using (var hash = SHA256.Create())
+                    relative = "rooms/" + BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(text))).Replace("-", "").ToLowerInvariant() + ".json";
+                string target = Path.Combine(root, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                RoomFile.Save(target, catalog[row.LevelId]);
+                rows.Add(new WorldRoomRef(row.LevelId, relative, row.Origin, row.ForwardRequiresSolved));
             }
-            RoomFile.Write(path,world.ToString()); return world;
+            var written = WithRooms(source, rows);
+            AtomicFile.Write(path, WorldCodec.Encode(written), temporary => WorldCodec.Decode(File.ReadAllText(temporary)));
+            return written;
         }
     }
 }

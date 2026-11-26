@@ -1,268 +1,356 @@
 /**
  * @file WorkspaceDraft.cs
- * @brief Reset/NewRoom 初始化工作区。Design/State/Apply、Snapshot/Recover 保存与还原设计、选择及双向历史。
- * Remember 在命令提交前记录，UseRoom/RoomAt 切换房间。BeginWorld、Attach、PlaceRoom 和 RemoveRoom 管理房间清单。
- * Brush 先经 Core 的 BrushPlanner 整笔预检，任一格非法即整笔拒绝，擦除只改地形、格上有对象则拒绝；RemoveObject 删除箱、目标或装饰并连带删除其行为图；Rename 修改名称。Origin 将世界格转换到当前房间。
+ * @brief RoomDraft 的工作区部分：初始化、世界房间清单、笔划、快照与单独编辑，全部数据用 Core 类型。
+ * Reset：以草稿模型、世界、房间目录和路径重置会话，并为每个房间建立持有者与新的命令历史。
+ * NewBlankRoom/NewDefaultRoom：新建无恢复道具的空白房间与默认房间；DefaultModel 读取 Resources 里的默认房间，Renamed 复制草稿并换房间 ID。
+ * Origin/Placement：当前房间在世界中的原点与放置记录，单独编辑时原点由本地原点给出。
+ * Snapshot/Recover：用 RoomCodec 与 WorldCodec 序列化全部房间、世界、路径与脏标记，不保存撤销历史。
+ * BeginWorld/Attach/UseRoom/RoomAt/PlaceRoom/RemoveRoom/SetConnectionMode：管理世界房间清单，修改世界文档的操作都经命令历史提交。
+ * EnterStandaloneEdit/ReturnToWorld：以零原点单独编辑世界中的房间，返回时把改动作为一条可撤销命令写回世界并重跑世界校验。
+ * Brush：经 BrushPlanner 整笔预检，世界视图越界整笔拒绝；TerrainPlacementError 给出笔刷悬停提示。
  */
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Collections.Generic;
 using UnityEngine;
-using Newtonsoft.Json.Linq;
+using Sokoban.Core;
 
 namespace Sokoban
 {
     public sealed partial class RoomDraft
     {
-        Vector2Int editorOrigin;
-        JObject removedPlacements=new JObject();
-        public JObject World {get;private set;}
-        public JObject Catalog {get;private set;}
-        public string ActiveId => (string)Room["levelId"];
-        public JToken Placement => World?["rooms"].FirstOrDefault(r=>(string)r["levelId"]==ActiveId);
-        public Vector2Int Origin => World == null ? editorOrigin : Placement == null ? Vector2Int.zero : RoomFile.Cell(Placement["origin"]);
-        void Reset(JObject room,JObject world,JObject catalog,string path)
+        sealed class Stash
         {
-            Selection.Clear(); editorOrigin=Vector2Int.zero; removedPlacements=new JObject(); Room=room; World=world; Catalog=catalog??new JObject(); Catalog[ActiveId]=room;
-            Selected=null; SelectedCell=null; Tool=RoomTool.Select; BrushAsset=null; WorkPath=path; undo.Clear(); redo.Clear(); saved=Design(); Revision++;
+            public WorldDocument World;
+            public Dictionary<string, RoomDraftModel> Catalog;
+            public Dictionary<string, DraftHolder> Holders;
+            public CommandHistory History;
+            public Dictionary<string, WorldRoomRef> Removed;
+            public string RoomId, WorkPath;
+            public bool Unsaved;
         }
-        public void NewRoom(string name="新房间") {
-            var room=RoomFile.Parse(Resources.Load<TextAsset>("DefaultRoom").text);
-            room["levelId"]="room-"+Guid.NewGuid().ToString("N"); room["name"]=name;
-            room["boxes"]=new JArray(); room["targets"]=new JArray(); Reset(room,null,null,null); saved=null;
+
+        sealed class DelegateCommand : ICommand
+        {
+            readonly Action apply, revert;
+            public DelegateCommand(Action apply, Action revert) { this.apply = apply; this.revert = revert; }
+            public void Apply() => apply();
+            public void Revert() => revert();
         }
+
+        sealed class Wrapped : ICommand
+        {
+            readonly ICommand inner;
+            readonly Action applied, reverted;
+            public Wrapped(ICommand inner, Action applied, Action reverted) { this.inner = inner; this.applied = applied; this.reverted = reverted; }
+            public void Apply() { inner.Apply(); applied(); }
+            public void Revert() { inner.Revert(); reverted(); }
+        }
+
+        Cell editorOrigin;
+        bool unsaved;
+        string activeId;
+        Stash stash;
+        readonly Dictionary<string, WorldRoomRef> removedPlacements = new Dictionary<string, WorldRoomRef>(StringComparer.Ordinal);
+
+        public WorldDocument World { get; private set; }
+        public string ActiveId => activeId;
+        public bool IsStandalone => stash != null;
+        public WorldRoomRef Placement => World?.Rooms.FirstOrDefault(r => r.LevelId == activeId);
+        public Cell Origin => World == null ? editorOrigin : (Placement?.Origin ?? new Cell(0, 0));
+
+        void Reset(RoomDraftModel model, WorldDocument world, Dictionary<string, RoomDraftModel> catalog, string path)
+        {
+            Selection.Clear();
+            editorOrigin = new Cell(0, 0);
+            removedPlacements.Clear();
+            stash = null;
+            World = world;
+            Catalog = catalog ?? new Dictionary<string, RoomDraftModel>(StringComparer.Ordinal);
+            Catalog[model.Room.Id] = model;
+            holders.Clear();
+            foreach (var pair in Catalog) holders[pair.Key] = new DraftHolder(pair.Value);
+            activeId = model.Room.Id;
+            Selected = null;
+            SelectedCell = null;
+            Tool = RoomTool.Select;
+            WorkPath = path;
+            history = new CommandHistory();
+            unsaved = false;
+            revision++;
+        }
+
+        static RoomDraftModel DefaultModel() => RoomCodec.Decode(Resources.Load<TextAsset>("DefaultRoom").text);
+
+        static void CopyRest(RoomDraftModel src, RoomDraftModel next)
+        {
+            next.Meta = src.Meta;
+            next.Decorations.AddRange(src.Decorations);
+            next.Assets.AddRange(src.Assets);
+            next.Graphs.AddRange(src.Graphs);
+            next.Instances.AddRange(src.Instances);
+            foreach (var pair in src.Templates) next.Templates[pair.Key] = pair.Value;
+            foreach (var pair in src.ObjectStates) next.ObjectStates[pair.Key] = pair.Value;
+            next.UiImageAssetId = src.UiImageAssetId;
+        }
+
+        static RoomDraftModel Renamed(RoomDraftModel src, string id)
+        {
+            var s = src.Room;
+            var room = new Room(id, s.Width, s.Height);
+            for (int x = 0; x < s.Width; x++)
+                for (int y = 0; y < s.Height; y++)
+                {
+                    var cell = new Cell(x, y);
+                    var t = s.TerrainAt(cell);
+                    if (t.CategoryId != TerrainCategories.Void) room.SetTerrain(cell, t.CategoryId, t.EntityId, t.State);
+                    var look = s.AppearanceAt(cell);
+                    if (look != null) room.SetAppearance(cell, look);
+                }
+            foreach (var o in s.Objects) room.AddObject(o.Id, o.CategoryId, o.Cell, o.Appearance);
+            var next = new RoomDraftModel(room, src.Doors, src.PrimaryEntranceId, src.Extras, src.RecoveryItems);
+            CopyRest(src, next);
+            return next;
+        }
+
+        public void NewBlankRoom() => NewBlankRoom("room-" + Guid.NewGuid().ToString("N"), "空白房间", DefaultModel().Meta.ThemeId, new Cell(15, 15));
+
+        public void NewBlankRoom(string id, string name, string theme, Cell size)
+        {
+            RoomFile.Check(size.X > 0 && size.Y > 0, "房间尺寸必须为正");
+            var model = new RoomDraftModel(new Room(id, size.X, size.Y));
+            model.Meta = new RoomMeta(name, theme);
+            Reset(model, null, null, null);
+            unsaved = true;
+        }
+
         public void NewDefaultRoom()
         {
-            var room = RoomFile.Parse(Resources.Load<TextAsset>("DefaultRoom").text);
-            room["levelId"] = "room-" + Guid.NewGuid().ToString("N");
-            Reset(room, null, null, null);
-            saved = null;
+            Reset(Renamed(DefaultModel(), "room-" + Guid.NewGuid().ToString("N")), null, null, null);
+            unsaved = true;
         }
-        public void NewBlankRoom() => NewBlankRoom("room-" + Guid.NewGuid().ToString("N"), "空白房间",
-            (string)RoomFile.Parse(Resources.Load<TextAsset>("DefaultRoom").text)["themeId"], new Vector2Int(15,15));
 
-        public void NewBlankRoom(string id, string name, string theme, Vector2Int size)
-        {
-            var room = RoomFile.Parse(Resources.Load<TextAsset>("DefaultRoom").text);
-            RoomFile.Check(size.x > 0 && size.y > 0, "房间尺寸必须为正");
-            room["levelId"] = id;
-            room["name"] = name;
-            room["themeId"] = theme;
-            room["size"] = RoomFile.Point(size);
-            room["terrainRowsNorthToSouth"] = new JArray(Enumerable.Repeat(new string(RoomFile.Void, size.x), size.y));
-            foreach (string key in new[] { "doors", "boxes", "targets", "events" }) room[key] = new JArray();
-            room.Remove("spawn");
-            room.Remove("primaryEntranceId");
-            Reset(room, null, null, null);
-            saved = null;
-        }
-        JObject Design() => new JObject { ["world"]=World?.DeepClone(),["rooms"]=Catalog.DeepClone() };
-        JObject State()
-        {
-            var state = new JObject { ["data"]=Design(),["removed"]=removedPlacements.DeepClone(),["active"]=ActiveId,["selected"]=Selected,["cell"]=SelectedCell.HasValue?RoomFile.Point(SelectedCell.Value):null };
-            if (World == null && editorOrigin != Vector2Int.zero) state["editorOrigin"] = RoomFile.Point(editorOrigin);
-            if (Selection.Count > 1) state["selection"] = new JArray(Selection.OrderBy(p=>p.y).ThenBy(p=>p.x).Select(RoomFile.Point));
-            return state;
-        }
-        void Remember() { undo.Push(State()); redo.Clear(); }
-        void Apply(JObject state) {
-            editorOrigin = state["editorOrigin"] is JArray point ? RoomFile.Cell(point) : Vector2Int.zero;
-            removedPlacements=state["removed"] is JObject removed?(JObject)removed.DeepClone():new JObject();var data=state["data"]; Catalog=(JObject)data["rooms"].DeepClone(); World=data["world"] as JObject;
-            Room=(JObject)Catalog[(string)state["active"]]; RoomFile.Check(Room!=null,"草稿缺少选中房间");
-            if (BrushDefinition != null && Room["objectDefinitions"]?[BrushDefinition] == null) Tool = RoomTool.Select;
-            if (BrushAsset!=null && AssetDefinition(BrushAsset)==null) { BrushAsset=null; if(Tool==RoomTool.Decoration) Tool=RoomTool.Select; }
-            Selected=(string)state["selected"]; SelectedCell=state["cell"] is JArray?RoomFile.Cell(state["cell"]):(Vector2Int?)null;
-            Selection.Clear();
-            if (state["selection"] is JArray selected) foreach (var selectedPoint in selected) Selection.Add(RoomFile.Cell(selectedPoint));
-            else if (SelectedCell.HasValue && RoomFile.Terrain(Room, SelectedCell.Value) != RoomFile.Void) Selection.Add(SelectedCell.Value);
-        }
-        public JObject Snapshot() => new JObject { ["version"]=1,["current"]=State(),["path"]=WorkPath,["saved"]=saved?.DeepClone(),["tool"]=(int)Tool,["brushAsset"]=BrushAsset,["brushDefinition"]=BrushDefinition,["brushBuiltin"]=BrushBuiltin,["typedBrush"]=BrushAsset != null,["undo"]=new JArray(undo.Reverse()),["redo"]=new JArray(redo.Reverse()) };
-        public void Recover(JObject snapshot) {
-            RoomFile.Check((int?)snapshot["version"]==1,"草稿版本无效");
-            foreach(var state in snapshot["undo"].Concat(snapshot["redo"]).Append(snapshot["current"])) {
-                var rooms=(JObject)state["data"]["rooms"];foreach(var prop in rooms.Properties()) RoomFile.Parse(prop.Value.ToString(), draft: true);
-                RoomFile.Check(rooms[(string)state["active"]]!=null,"草稿房间引用缺失");
-            }
-            Apply((JObject)snapshot["current"]); saved=snapshot["saved"] as JObject; WorkPath=(string)snapshot["path"];Tool=(RoomTool)(int)snapshot["tool"];
-            var model = (string)snapshot["brushAsset"];
-            var definition = (string)snapshot["brushDefinition"];
-            if (!string.IsNullOrEmpty(definition)) SelectDefinition(definition);
-            else if (model != null && (Tool == RoomTool.Decoration || (bool?)snapshot["typedBrush"] == true)) SelectAsset(model, Tool);
-            else if ((string)snapshot["brushBuiltin"] is string builtin) ChooseAppearance(builtin, Tool);
-            undo.Clear(); redo.Clear();foreach(JObject value in snapshot["undo"]) undo.Push(value);foreach(JObject value in snapshot["redo"]) redo.Push(value);Revision++;
-        }
+        void Execute(ICommand command) { history.Execute(command); revision++; }
+
         public void BeginWorld()
         {
             RoomFile.Check(World == null, "已在世界工作区");
-            World = WorldLayout.Empty(ActiveId);
-            World["start"]["spawnId"] = (string)Room["spawn"]?["id"] ?? "spawn";
-            var exit = Room["doors"].LastOrDefault(door => (string)door["role"] == "exit") ?? Room["doors"].LastOrDefault();
-            World["finish"]["endpoint"]["doorId"] = (string)exit?["id"] ?? "exit";
+            var world = WorldLayout.Empty(ActiveId);
+            var spawn = Room.ObjectsOf(ObjectCategories.Spawn).FirstOrDefault();
+            world = WorldLayout.WithStart(world, new WorldEndpoint(ActiveId, spawn?.Id ?? "spawn"));
+            var exit = Model.Doors.LastOrDefault(d => d.Role == "exit") ?? Model.Doors.LastOrDefault();
+            world = WorldLayout.WithFinish(world, new WorldEndpoint(ActiveId, exit?.Id ?? "exit"));
+            World = world;
             WorkPath = null;
-            saved = null;
-            undo.Clear();
-            redo.Clear();
-            Revision++;
+            history = new CommandHistory();
+            unsaved = true;
+            revision++;
         }
-        public void Attach(string path) {
-            var candidate=RoomAssets.ReadRoom(path);string id=(string)candidate["levelId"];
-            RoomFile.Check(World!=null && Catalog[id]==null,"房间已在目录中或尚未创建世界");Remember();Catalog[id]=candidate;UseRoom(id);
+
+        public void Attach(string path)
+        {
+            var candidate = RoomFile.Load(path);
+            string id = candidate.Room.Id;
+            RoomFile.Check(World != null && !Catalog.ContainsKey(id), "房间已在目录中或尚未创建世界");
+            string previous = activeId;
+            Execute(new DelegateCommand(
+                () => { Catalog[id] = candidate; holders[id] = new DraftHolder(candidate); },
+                () => { Catalog.Remove(id); holders.Remove(id); if (activeId == id) activeId = previous; }));
+            UseRoom(id);
         }
-        public void UseRoom(string id) { Selection.Clear(); Room=(JObject)Catalog[id];Selected=null;SelectedCell=null;Tool=RoomTool.Select;BrushAsset=null;Revision++; }
-        public string RoomAt(Vector2Int point) {
-            if(World==null) return ActiveId;
-            foreach(var row in World["rooms"]) {string id=(string)row["levelId"];if(RoomFile.Inside((JObject)Catalog[id],point-RoomFile.Cell(row["origin"]))) return id;}
+
+        public void UseRoom(string id)
+        {
+            RoomFile.Check(Catalog.ContainsKey(id), "目录中没有房间 " + id);
+            Selection.Clear();
+            activeId = id;
+            Selected = null;
+            SelectedCell = null;
+            Tool = RoomTool.Select;
+            revision++;
+        }
+
+        public string RoomAt(Cell point)
+        {
+            if (World == null) return ActiveId;
+            foreach (var row in World.Rooms)
+                if (Catalog[row.LevelId].Room.Inside(point - row.Origin)) return row.LevelId;
             return null;
         }
-        public void PlaceRoom(Vector2Int origin,bool move) {
-            RoomFile.Check(World!=null && (!move || Placement!=null),"请先放置房间");
-            var error=WorldLayout.PlacementIssue(World,Catalog,ActiveId,origin,move);RoomFile.Check(error==null,error);
-            Remember(); if(move) Placement["origin"]=RoomFile.Point(origin);
-                        else {
-                var row=removedPlacements[ActiveId] as JObject ?? new JObject { ["levelId"]=ActiveId,["file"]="",["forwardRequiresSolved"]=new JArray() };
-                row["origin"]=RoomFile.Point(origin); ((JArray)World["rooms"]).Add(row); removedPlacements.Remove(ActiveId);
-            }
-            Revision++;
+
+        public void PlaceRoom(Cell origin, bool move)
+        {
+            RoomFile.Check(World != null && (!move || Placement != null), "请先放置房间");
+            var error = WorldLayout.PlacementIssue(World, Catalog, ActiveId, origin, move);
+            RoomFile.Check(error == null, error);
+            string id = ActiveId;
+            var before = World;
+            WorldRoomRef old = Placement;
+            bool hadRemoved = removedPlacements.TryGetValue(id, out var removedRow);
+            var rooms = move
+                ? before.Rooms.Select(r => r.LevelId == id ? new WorldRoomRef(id, r.File, origin, r.ForwardRequiresSolved) : r).ToList()
+                : before.Rooms.Concat(new[] { hadRemoved ? new WorldRoomRef(id, removedRow.File, origin, removedRow.ForwardRequiresSolved) : new WorldRoomRef(id, "", origin, new string[0]) }).ToList();
+            var after = WorldLayout.WithRooms(before, rooms);
+            Execute(new DelegateCommand(
+                () => { World = after; removedPlacements.Remove(id); },
+                () => { World = before; if (hadRemoved) removedPlacements[id] = removedRow; }));
         }
+
+        public void RemoveRoom()
+        {
+            RoomFile.Check(Placement != null, "房间尚未放置");
+            string id = ActiveId;
+            var placed = Placement;
+            var before = World;
+            var after = WorldLayout.WithRooms(before, before.Rooms.Where(r => r.LevelId != id).ToList());
+            Execute(new DelegateCommand(
+                () => { World = after; removedPlacements[id] = placed; },
+                () => { World = before; removedPlacements.Remove(id); }));
+        }
+
         public void SetConnectionMode(string id, string mode)
         {
-            RoomFile.Check(mode == "teleport" || mode == "direct", "未知连接方式");
-            var link = World?["connections"]?.SingleOrDefault(row => (string)row["id"] == id);
+            RoomFile.Check(mode == WorldCodec.Teleport || mode == WorldCodec.Direct, "未知连接方式");
+            var link = World?.Connections.SingleOrDefault(row => row.Id == id);
             RoomFile.Check(link != null, "未找到连接 " + id);
-            if ((string)link["mode"] == mode) return;
-            Remember();
-            link["mode"] = mode;
-            Revision++;
+            if (link.Mode == mode) return;
+            var before = World;
+            var after = WorldLayout.WithConnections(before, before.Connections.Select(c => c.Id == id ? new WorldConnection(c.Id, mode, c.From, c.To, c.AllowReturn) : c).ToList());
+            Execute(new DelegateCommand(() => World = after, () => World = before));
         }
-        public void RemoveRoom() {RoomFile.Check(Placement!=null,"房间尚未放置");Remember();removedPlacements[ActiveId]=Placement.DeepClone();Placement.Remove();Revision++;}
-        public void SetRecoveryPreset(string preset)
+
+        public string Snapshot()
         {
-            RoomFile.Check(preset == null || RoomFile.RecoveryPresets.Contains(preset), "未知恢复演出");
-            if ((string)Room["recoveryPresentation"] == preset) return;
-            var next = (JObject)Room.DeepClone();
-            if (preset == null) next.Remove("recoveryPresentation");
-            else next["recoveryPresentation"] = preset;
-            Commit(next, Selected);
+            var rooms = new Dictionary<string, object>();
+            foreach (var pair in Catalog) rooms[pair.Key] = RoomCodec.Encode(pair.Value);
+            var root = new Dictionary<string, object>
+            {
+                ["active"] = activeId,
+                ["path"] = WorkPath,
+                ["dirty"] = Dirty,
+                ["rooms"] = rooms,
+                ["world"] = World == null ? null : WorldCodec.Encode(World),
+                ["originX"] = (long)editorOrigin.X,
+                ["originY"] = (long)editorOrigin.Y,
+            };
+            return MiniJson.Write(root);
         }
-        public void Rename(string name) { RoomFile.Check(!string.IsNullOrWhiteSpace(name),"房间名称不能为空"); var next=(JObject)Room.DeepClone();next["name"]=name;Commit(next,Selected); }
-        public static bool LegacyNeedsFloor(JObject room, Vector2Int cell) =>
-            RoomFile.Objects(room).Any(item => RoomFile.At(item) == cell) ||
-            room["doors"].Any(door => RoomFile.At(door) + RoomFile.Inward(door) == cell) ||
-            room["boxes"].Any(box => RoomFile.Cell(box["recoveryCell"]) == cell);
-        public bool NeedsFloor(JObject room, Vector2Int cell)
+
+        public void Recover(string snapshot)
         {
-            Sokoban.Core.RoomDraftModel core;
-            try { core = ReferenceEquals(room, Room) ? TryCoreDraft() : Sokoban.Core.LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(room)); }
-            catch (System.FormatException) { core = null; }
-            if (core == null) return LegacyNeedsFloor(room, cell);
-            return Sokoban.Core.PlacementRules.NeedsFloor(core, new Sokoban.Core.Cell(cell.x, cell.y)) ||
-                (room["decorations"] as JArray ?? new JArray()).Any(item => RoomFile.At(item) == cell) ||
-                room["doors"].Any(door => RoomFile.At(door) == cell) ||
-                room["boxes"].Any(box => RoomFile.Cell(box["recoveryCell"]) == cell);
+            var root = MiniJson.Parse(snapshot) as Dictionary<string, object>;
+            RoomFile.Check(root != null && root.TryGetValue("rooms", out var raw) && raw is Dictionary<string, object>, "草稿快照无效");
+            var catalog = new Dictionary<string, RoomDraftModel>(StringComparer.Ordinal);
+            try
+            {
+                foreach (var pair in (Dictionary<string, object>)root["rooms"]) catalog[pair.Key] = RoomCodec.Decode((string)pair.Value);
+            }
+            catch (FormatException error) { throw new InvalidDataException(error.Message, error); }
+            string active = root.TryGetValue("active", out var a) ? a as string : null;
+            RoomFile.Check(active != null && catalog.ContainsKey(active), "草稿房间引用缺失");
+            WorldDocument world = null;
+            if (root.TryGetValue("world", out var w) && w is string worldText)
+            {
+                try { world = WorldCodec.Decode(worldText); }
+                catch (FormatException error) { throw new InvalidDataException(error.Message, error); }
+            }
+            string path = root.TryGetValue("path", out var p) ? p as string : null;
+            bool dirty = root.TryGetValue("dirty", out var d) && d is bool flag && flag;
+            Reset(catalog[active], world, catalog, path);
+            if (root.TryGetValue("originX", out var ox) && ox is long x && root.TryGetValue("originY", out var oy) && oy is long y && world == null)
+                editorOrigin = new Cell((int)x, (int)y);
+            unsaved = dirty;
         }
-        public string TerrainPlacementError(Vector2Int cell, RoomTool tool)
+
+        public string TerrainPlacementError(Cell cell, RoomTool tool)
         {
             if (World != null && Placement == null) return "房间尚未放置";
-            if (!RoomFile.Inside(Room, cell) && World != null)
-            {
-                var low = Vector2Int.Min(Vector2Int.zero, cell);
-                var high = Vector2Int.Max(RoomFile.Size(Room) - Vector2Int.one, cell);
-                return WorldLayout.PlacementIssue(World, Catalog, ActiveId, Origin + low, true, high - low + Vector2Int.one);
-            }
-            return tool == RoomTool.Wall && NeedsFloor(Room, cell) ? "对象或门内侧占用 " + cell : null;
+            if (!Room.Inside(cell) && World != null) return "请进入单独编辑后再扩建";
+            return tool == RoomTool.Wall && PlacementRules.NeedsFloor(Model, cell) ? "对象或门内侧占用 " + cell : null;
         }
-        public void RemoveObject(string id)
+
+        public string Brush(IEnumerable<Cell> cells, RoomTool tool)
         {
-            var item = Find(id);
-            RoomFile.Check(item != null && (item.Parent == Room["boxes"] || item.Parent == Room["targets"] || item.Parent == Room["decorations"]), "请选择箱子、目标或装饰");
-            var next = (JObject)Room.DeepClone();
-            var obj = RoomFile.Objects(next).First(o => (string)o["id"] == id);
-            if (obj["definitionId"] != null)
-                foreach (var graph in next["events"].Where(graph => (string)graph["ownerId"] == id).ToArray()) graph.Remove();
-            obj.Remove();
-            Commit(next, null);
+            if (tool != RoomTool.Wall && tool != RoomTool.Floor && tool != RoomTool.Erase) return "当前工具不是地形画刷";
+            if (World != null && Placement == null) return "房间尚未放置";
+            var plan = BrushPlanner.Preflight(Model, cells, tool == RoomTool.Wall ? BrushTool.Wall : tool == RoomTool.Floor ? BrushTool.Floor : BrushTool.Erase);
+            if (plan.Error != null) return plan.Error;
+            if (World != null && plan.Expands) return "请进入单独编辑后再扩建";
+            if (plan.NoChange) return null;
+            var shift = new Cell(-plan.Left, -plan.Bottom);
+            var command = new Wrapped(plan.CreateCommand(holders[ActiveId]),
+                () => { if (World == null) editorOrigin = editorOrigin + shift; },
+                () => { if (World == null) editorOrigin = editorOrigin - shift; });
+            Commit(command, null);
+            return null;
         }
-        public string Brush(IEnumerable<Vector2Int> cells,RoomTool tool) {
-            var points = cells.Distinct().ToArray();
-            var core = tool == RoomTool.Wall || tool == RoomTool.Floor || tool == RoomTool.Erase ? TryCoreDraft() : null;
-            if (core != null)
+
+        public void EnterStandaloneEdit(string roomId)
+        {
+            RoomFile.Check(World != null && stash == null, "当前不在世界视图");
+            RoomFile.Check(Catalog.ContainsKey(roomId), "目录中没有房间 " + roomId);
+            stash = new Stash
             {
-                var plan = Sokoban.Core.BrushPlanner.Preflight(core, points.Select(p => new Sokoban.Core.Cell(p.x, p.y)),
-                    tool == RoomTool.Wall ? Sokoban.Core.BrushTool.Wall : tool == RoomTool.Floor ? Sokoban.Core.BrushTool.Floor : Sokoban.Core.BrushTool.Erase);
-                if (plan.Error != null) return plan.Error;
-            }
-            var size = RoomFile.Size(Room);
-            var min = Vector2Int.zero;
-            var max = size - Vector2Int.one;
-            if (tool == RoomTool.Floor || tool == RoomTool.Wall)
-                foreach (var point in points)
-                {
-                    min = Vector2Int.Min(min, point);
-                    max = Vector2Int.Max(max, point);
-                }
-            var next = (JObject)Room.DeepClone();
-            var origin = Origin + min;
-            var placement = Placement;
-            if (min != Vector2Int.zero || max != size - Vector2Int.one)
-            {
-                var extent = max - min + Vector2Int.one;
-                if (placement != null)
-                {
-                    string conflict = WorldLayout.PlacementIssue(World, Catalog, ActiveId, origin, true, extent);
-                    if (conflict != null) return conflict;
-                }
-                if (min != Vector2Int.zero) FreezeTerrainAppearances(next);
-                next["size"] = RoomFile.Point(extent);
-                var rows = new JArray();
-                for (int y = max.y; y >= min.y; y--)
-                {
-                    var row = new char[extent.x];
-                    for (int x = 0; x < extent.x; x++) row[x] = RoomFile.Terrain(Room, new Vector2Int(min.x + x, y));
-                    rows.Add(new string(row));
-                }
-                next["terrainRowsNorthToSouth"] = rows;
-                foreach (var entity in RoomFile.Objects(next).Concat(next["terrainObjects"] as JArray ?? new JArray()))
-                {
-                    entity["cell"] = RoomFile.Point(RoomFile.At(entity) - min);
-                    if (entity["recoveryCell"] != null) entity["recoveryCell"] = RoomFile.Point(RoomFile.Cell(entity["recoveryCell"]) - min);
-                }
-                size = extent;
-            }
-            string issue = null;
-            foreach (var point in points) {
-                var cell = point - min;
-                if(!RoomFile.Inside(next,cell)) {issue="越界 "+cell;continue;}
-                var obj=RoomFile.Objects(next).FirstOrDefault(item=>RoomFile.At(item)==cell);
-                if (tool == RoomTool.Erase && obj != null && (obj.Parent == next["boxes"] || obj.Parent == next["targets"] || obj.Parent == next["decorations"]))
-                {
-                    if (obj["definitionId"] != null)
-                        foreach (var graph in next["events"].Where(graph => (string)graph["ownerId"] == (string)obj["id"]).ToArray()) graph.Remove();
-                    obj.Remove();
-                    continue;
-                }
-                if((tool==RoomTool.Wall || tool==RoomTool.Erase) && NeedsFloor(next, cell)) {issue="对象或门内侧占用 "+cell;continue;}
-                int index = size.y - 1 - cell.y;
-                var row = ((string)next["terrainRowsNorthToSouth"][index]).ToCharArray();
-                char tile = tool == RoomTool.Wall ? '#' : tool == RoomTool.Erase ? RoomFile.Void : '.';
-                var identity = next["terrainObjects"]?.FirstOrDefault(item => RoomFile.At(item) == cell);
-                if (row[cell.x] != tile)
-                {
-                    identity?.Remove();
-                    identity = null;
-                    row[cell.x] = tile;
-                    next["terrainRowsNorthToSouth"][index] = new string(row);
-                }
-                if (tool == RoomTool.Floor || tool == RoomTool.Wall)
-                    ApplyBrush(next, (JObject)identity ?? TerrainRecord(next, cell), tool, cell);
-            }
-            if (!JToken.DeepEquals(Room, next))
-            {
-                Commit(next, null);
-                if (placement != null) placement["origin"] = RoomFile.Point(origin);
-                else if (World == null) editorOrigin = origin;
-            }
-            return issue;
+                World = World,
+                Catalog = Catalog,
+                Holders = new Dictionary<string, DraftHolder>(holders, StringComparer.Ordinal),
+                History = history,
+                Removed = new Dictionary<string, WorldRoomRef>(removedPlacements, StringComparer.Ordinal),
+                RoomId = activeId,
+                WorkPath = WorkPath,
+                Unsaved = unsaved,
+            };
+            var source = Catalog[roomId];
+            var copy = CloneWith(source, source.Doors, source.PrimaryEntranceId);
+            World = null;
+            Catalog = new Dictionary<string, RoomDraftModel>(StringComparer.Ordinal) { [roomId] = copy };
+            holders.Clear();
+            holders[roomId] = new DraftHolder(copy);
+            removedPlacements.Clear();
+            activeId = roomId;
+            editorOrigin = new Cell(0, 0);
+            history = new CommandHistory();
+            Selection.Clear();
+            Selected = null;
+            SelectedCell = null;
+            Tool = RoomTool.Select;
+            revision++;
         }
+
+        public List<string> ReturnToWorld()
+        {
+            RoomFile.Check(stash != null, "当前不在单独编辑");
+            var s = stash;
+            string id = activeId;
+            var edited = holders[id].Draft;
+            bool changed = history.Revision > 0;
+            stash = null;
+            World = s.World;
+            Catalog = s.Catalog;
+            holders.Clear();
+            foreach (var pair in s.Holders) holders[pair.Key] = pair.Value;
+            removedPlacements.Clear();
+            foreach (var pair in s.Removed) removedPlacements[pair.Key] = pair.Value;
+            history = s.History;
+            WorkPath = s.WorkPath;
+            unsaved = s.Unsaved;
+            editorOrigin = new Cell(0, 0);
+            activeId = id;
+            Selection.Clear();
+            Selected = null;
+            SelectedCell = null;
+            Tool = RoomTool.Select;
+            if (changed)
+            {
+                var original = Catalog[id];
+                Execute(new DelegateCommand(
+                    () => { Catalog[id] = edited; holders[id].Draft = edited; },
+                    () => { Catalog[id] = original; holders[id].Draft = original; }));
+            }
+            else revision++;
+            return WorldLayout.Issues(World, Catalog).ToList();
+        }
+
     }
 }

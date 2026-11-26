@@ -1,6 +1,8 @@
 /**
  * @file LayoutPanel.cs
  * @brief 两种宿主共用的布局工具面板。LayoutPanel 载入内置房间；Run 捕获失败并保留草稿；Click 处理格子命令；
+ * Mode 是唯一的界面模式源（布局、检查、试玩、单独编辑），检查页返回只回上一模式，宿主与界面只读它，不再各自保存模式布尔量；
+ * DialogTitle、DialogNote、DialogWarning 给出文件对话框的原型标题、说明与警告条文字，EntryNote 与 EntryIcon 给出列表行的类型图标与右侧说明，RefreshDirectory 供浏览按钮重读当前目录；
  * Tools 绘制放置与选择选项；Properties 显示当前实体资料；Files 绘制交换及历史操作；ChooseFile 打开文件面板；
  * Dialog 绘制目录、文件名和确认操作；Browse 加载目录内容；ConfirmFile 分派读写；ImportModel 通过尺寸检查后才登记模型；Guard 保护未保存的变动。
  */
@@ -14,9 +16,11 @@ namespace Sokoban
 {
     public sealed partial class LayoutPanel
     {
+        public readonly Sokoban.Core.UiModeMachine Mode = new Sokoban.Core.UiModeMachine();
         public readonly RoomDraft Draft;
         public event Action DocumentOpened;
         public string Status = "选择工具后点击格子";
+        public void ReportIssue(string message) { Status = message; }
         public bool Modal => operation != null || pending != null;
         string operation, filename, directory;
         int fileDialogVersion;
@@ -29,6 +33,27 @@ namespace Sokoban
         public bool Confirming => pending != null;
         public bool CanKeepDraft => exitAction != null;
         public bool Overwrite => overwrite;
+        public string DialogTitle => operation == "发布" ? "发布世界" : operation;
+        public string DialogNote => operation switch {
+            "打开" => "选择房间文件或世界文件，打开后与该文件建立关联。",
+            "导入" => "读取交换文件成为独立草稿，不会改动原文件。",
+            "导出" or "导出单房" => "把当前设计和所需资源写到交换目的地，当前工作文件保持不变。",
+            "发布" => "发布前会检查整图，通过后写出世界清单和全部房间。",
+            "导入模型" => "选择 GLB 文件，两个方向的实际尺寸都需为 1 格。",
+            "保存" => "选择保存位置，保存后与该文件建立关联。",
+            _ => "选择要处理的文件。" };
+        public string DialogWarning => overwrite ? "目标已存在，请确认覆盖" : (operation == "发布" || operation == "导出") ? StructuralIssue : null;
+        public string EntryNote(string path)
+        {
+            if (Directory.Exists(path)) return "文件夹";
+            var info = new FileInfo(path);
+            string size = info.Exists ? (info.Length < 1024 ? info.Length + " B" : info.Length / 1024 + " KB") : "";
+            string name = Path.GetFileName(path).ToLowerInvariant();
+            string kind = name.EndsWith(".world.json") ? "世界" : name.EndsWith(".room.json") ? "房间" : name.EndsWith(".glb") ? "模型" : "文件";
+            return kind + " · " + size;
+        }
+        public static string EntryIcon(string path) => Directory.Exists(path) ? "▸" : path.ToLowerInvariant().EndsWith(".world.json") ? "▦" : path.ToLowerInvariant().EndsWith(".glb") ? "◆" : "▤";
+        public void RefreshDirectory() => Run(() => Browse(directory ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)), "请选择文件");
         public string Filename { get => filename; set { if (value != filename) overwrite=false; filename=value; } }
         public void ParentDirectory() => Run(()=>Browse(Directory.GetParent(directory)?.FullName ?? directory),"请选择文件");
         public void PickEntry(string path)
@@ -66,14 +91,14 @@ namespace Sokoban
             leave();
         }
         Vector2 scroll;
-        public LayoutPanel(string slot=null,string recoveryDirectory=null) { Draft = new RoomDraft(Resources.Load<TextAsset>("DefaultRoom").text); InitSlot(slot,recoveryDirectory); }
+        public LayoutPanel(string slot=null,string recoveryDirectory=null) { Draft = new RoomDraft(Sokoban.Core.RoomCodec.Decode(Resources.Load<TextAsset>("DefaultRoom").text)); InitSlot(slot,recoveryDirectory); }
         public void Run(Action action, string success)
         {
             try { action(); Status=success; }
             catch(UnauthorizedAccessException) { Status="文件只读或没有读写权限，请检查文件权限。"; }
             catch(Exception ex) { Status=ex.Message; }
         }
-        public void Click(Vector2Int cell) => Run(()=>Draft.Click(cell),"当前格 " + cell);
+        public void Click(Sokoban.Core.Cell cell) => Run(()=>Draft.Click(cell),"当前格 " + cell);
         public void Tools()
         {
             GUILayout.Label("布局工具");
@@ -82,13 +107,12 @@ namespace Sokoban
         }
         public void Properties()
         {
-            GUILayout.Label((string)Draft.Room["name"]); GUILayout.Label((string)Draft.Room["levelId"] + "  ·  " + RoomFile.Size(Draft.Room));
-            GUILayout.Label("主题  " + Draft.Room["themeId"]); GUILayout.Space(8);
+            GUILayout.Label(Draft.Model.Meta.Name); GUILayout.Label(Draft.ActiveId + "  ·  " + Draft.Room.Width + "×" + Draft.Room.Height);
+            GUILayout.Label("主题  " + Draft.Theme); GUILayout.Space(8);
             var obj=Draft.Find(Draft.Selected);
             if(obj==null) { GUILayout.Label("尚未选择对象"); return; }
-            GUILayout.Label("对象 ID"); GUILayout.TextArea((string)obj["id"]);
-            GUILayout.Label("位置  " + RoomFile.At(obj));
-            if(obj["recoveryCell"]!=null) GUILayout.Label("恢复格  " + RoomFile.Cell(obj["recoveryCell"]));
+            GUILayout.Label("对象 ID"); GUILayout.TextArea(obj.Id);
+            GUILayout.Label("位置  " + obj.Cell);
         }
         public void Files()
         {
@@ -145,7 +169,7 @@ namespace Sokoban
             if(op=="加入房间") {Draft.Attach(path); operation=null;Status="已加入房间目录"; return;}
             if(op=="打开" || op=="导入")
             {
-                var candidate=new RoomDraft(Resources.Load<TextAsset>("DefaultRoom").text); candidate.Open(path,op=="导入"); operation=null;
+                var candidate=new RoomDraft(Sokoban.Core.RoomCodec.Decode(Resources.Load<TextAsset>("DefaultRoom").text)); candidate.Open(path,op=="导入"); operation=null;
                 Guard(()=>{ Draft.Recover(candidate.Snapshot()); DocumentOpened?.Invoke(); Flush(); Status="已"+op+"  "+Path.GetFileName(path); });
             }
             else
@@ -174,7 +198,7 @@ namespace Sokoban
                 await ImportedAppearance.InspectModel(asset);
                 if (version != fileDialogVersion || input != filename || room != Draft.Room || kind != Draft.Tool) return;
                 string id = Draft.RegisterAsset(asset);
-                if (RoomDraft.IsAppearanceTool(kind) || kind == RoomTool.Decoration) Draft.SelectAsset(id, kind);
+                if (kind == RoomTool.Decoration) Draft.SelectAsset(id, AppearanceLibrary.Decoration);
                 operation = null;
                 Status = "已导入素材 " + Path.GetFileName(path);
             }

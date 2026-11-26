@@ -15,11 +15,11 @@ namespace Sokoban.Core.Tests
         {
             var data = new SaveData { WorldId = "w", RoomId = "r1", PlayerX = 1, PlayerY = 2 };
             data.Boxes["r1"] = new Dictionary<string, int[]> { ["box-1"] = new[] { 2, 1 } };
-            data.Hashes["r1"] = ContentHash.Of(room);
+            data.Hashes["r1"] = ContentHash.Of(new RoomDraftModel(room));
             return data;
         }
 
-        static Dictionary<string, string> Hashes(Room room) => new Dictionary<string, string> { ["r1"] = ContentHash.Of(room) };
+        static Dictionary<string, string> Hashes(Room room) => new Dictionary<string, string> { ["r1"] = ContentHash.Of(new RoomDraftModel(room)) };
 
         [Fact]
         public void RoundTripIsOk()
@@ -87,11 +87,11 @@ namespace Sokoban.Core.Tests
         [Fact]
         public void HashIgnoresNothingButGameplayAndIsStable()
         {
-            var a = ContentHash.Of(MakeRoom());
-            var b = ContentHash.Of(MakeRoom());
+            var a = ContentHash.Of(new RoomDraftModel(MakeRoom()));
+            var b = ContentHash.Of(new RoomDraftModel(MakeRoom()));
             Assert.Equal(a, b);
             var moved = Blueprint.Parse("r1", new[] { "#####", "#P.T#", "#..B#", "#####" }).Room;
-            Assert.NotEqual(a, ContentHash.Of(moved));
+            Assert.NotEqual(a, ContentHash.Of(new RoomDraftModel(moved)));
         }
 
         [Fact]

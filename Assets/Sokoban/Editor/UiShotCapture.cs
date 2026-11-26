@@ -1,6 +1,6 @@
 /**
  * @file UiShotCapture.cs
- * @brief Run 打开主菜单场景并进入 Play Mode；Tick 逐帧推进协程，Capture 用临时相机把界面离屏渲染到 1100x720 并依次截取主菜单、暂停、设置三页，保存到 Logs/UiShots 后退出批处理。
+ * @brief Run 打开主菜单场景并进入 Play Mode；Tick 逐帧推进协程，Capture 用临时相机把界面离屏渲染到 1100x720 并依次截取游戏页 game-01 到 game-08（主菜单、HUD、暂停、设置、操作说明、确认覆盖、获得道具、错误提示），文件名与页面截图目录一致，保存到 Logs/UiShots 后退出批处理。编辑器页 game-09 到 15 与 editor-01 到 05 属 RuntimeEditor 场景，尚未接入。
  * Shot 渲染到 RenderTexture 后读像素存 PNG。只在运行时临时把 Canvas 切到相机渲染，退出 Play Mode 即丢弃，不修改任何场景、预制件或资源。
  */
 using System;
@@ -103,6 +103,12 @@ namespace Sokoban.Editor
 
             var board = panels.menu && panels.menu.continueButton ? panels.menu.continueButton.transform.parent.gameObject : null;
             if (board) board.transform.parent.gameObject.SetActive(false);
+
+            panels.ShowPlay(false);
+            panels.hud.SetActive(true);
+            for (int i = 0; i < 5; i++) yield return null;
+            Shot(cam, "game-02-游玩HUD");
+
             panels.Pause();
             for (int i = 0; i < 5; i++) yield return null;
             Shot(cam, "game-03-暂停");
@@ -110,6 +116,37 @@ namespace Sokoban.Editor
             panels.Settings();
             for (int i = 0; i < 5; i++) yield return null;
             Shot(cam, "game-04-设置");
+
+            panels.Help();
+            for (int i = 0; i < 5; i++) yield return null;
+            Shot(cam, "game-05-操作说明");
+
+            panels.Confirm();
+            for (int i = 0; i < 5; i++) yield return null;
+            Shot(cam, "game-06-确认覆盖");
+
+            panels.ShowPlay(false);
+            panels.hud.SetActive(false);
+            var session = UnityEngine.Object.Instantiate(Resources.Load<GameObject>("PuzzleSession"));
+            for (int i = 0; i < 5; i++) yield return null;
+            var sessionPanels = session.GetComponentInChildren<PlayPanels>(true);
+            if (!sessionPanels || !sessionPanels.discovery) throw new InvalidOperationException("PuzzleSession 预制件里的 PlayPanels 没有绑定获得道具页");
+            foreach (var canvas in session.GetComponentsInChildren<Canvas>(true))
+            {
+                if (!canvas.isRootCanvas || canvas.renderMode != RenderMode.ScreenSpaceOverlay) continue;
+                canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                canvas.worldCamera = cam;
+                canvas.planeDistance = 1;
+            }
+            sessionPanels.ShowDiscovery("获得：仓库恢复装置", "按 R 让当前房间的箱子回到初始位置。");
+            for (int i = 0; i < 5; i++) yield return null;
+            Shot(cam, "game-07-获得道具");
+            UnityEngine.Object.Destroy(session);
+            for (int i = 0; i < 2; i++) yield return null;
+
+            panels.ShowError("请从主菜单开始游戏，或从编辑器试玩房间。");
+            for (int i = 0; i < 5; i++) yield return null;
+            Shot(cam, "game-08-错误提示");
         }
     }
 }

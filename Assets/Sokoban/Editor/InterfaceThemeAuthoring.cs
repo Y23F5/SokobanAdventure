@@ -3,6 +3,7 @@
  * @brief Install creates the shared theme and eight uGUI prefab templates, then links the production pages to the theme.
  * CreateTemplate uses native controls and retains the existing material card and list entry as editable layout sources.
  * RefreshPaletteTabs replaces the scene's mixed button sources with instances of Bookmark.prefab.
+ * ApplyUiPackage 是 UI 交付包的批处理入口：给主菜单场景与 PuzzleSession 预制件标记 ThemeRole，调整页面宽度，换主菜单图标，补错误面板警告图标，重新 Capture 并套用主题。
  * Verify checks page and prefab references, live theme propagation, control states and unchanged authored baselines.
  */
 using System;
@@ -357,6 +358,285 @@ namespace Sokoban.Editor
         {
             if (!condition) throw new InvalidOperationException("UIV-001 " + label);
             Debug.Log("UIV-001 PASS " + label);
+        }
+
+        public static void ApplyUiPackage()
+        {
+            var theme = AssetDatabase.LoadAssetAtPath<InterfaceTheme>(ThemePath);
+            if (!theme) throw new InvalidOperationException("主题资源缺失");
+            var menu = EditorSceneManager.OpenScene(MenuPath);
+            foreach (var canvas in menu.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<Canvas>(true)).Where(canvas => canvas.isRootCanvas))
+            {
+                MarkRoles(canvas.gameObject, canvas.GetComponentInChildren<PlayPanels>(true));
+                LayoutMainMenu(canvas.gameObject, theme);
+                LayoutPlayPages(canvas.gameObject, theme);
+                LinkPage(canvas.gameObject, theme);
+                StyleErrorPanel(canvas.gameObject, theme);
+                canvas.GetComponent<InterfaceThemeScope>().Capture();
+                canvas.GetComponent<InterfaceThemeScope>().Apply();
+            }
+            EditorSceneManager.SaveScene(menu);
+            EditPrefab(PuzzlePath, prefab =>
+            {
+                var page = prefab.GetComponentInChildren<Canvas>(true).gameObject;
+                MarkRoles(page, page.GetComponentInChildren<PlayPanels>(true));
+                LayoutPlayPages(page, theme);
+                LinkPage(page, theme);
+                StyleErrorPanel(page, theme);
+                var scope = page.GetComponent<InterfaceThemeScope>();
+                scope.Capture();
+                scope.Apply();
+            });
+            PrepareTemplateRoles(theme);
+            AssetDatabase.SaveAssets();
+            Debug.Log("UIPACK applied");
+        }
+
+        static void PrepareTemplateRoles(InterfaceTheme theme)
+        {
+            var kinds = new System.Collections.Generic.Dictionary<string, ThemeRoleKind>
+            {
+                ["Button"] = ThemeRoleKind.Body, ["Bookmark"] = ThemeRoleKind.Bookmark, ["MaterialCard"] = ThemeRoleKind.Card
+            };
+            foreach (var pair in kinds)
+                EditPrefab(Root + pair.Key + ".prefab", root =>
+                {
+                    var role = root.GetComponent<ThemeRole>() ?? root.AddComponent<ThemeRole>();
+                    role.kind = pair.Value;
+                    var scope = Link(root, theme);
+                    scope.Capture();
+                    scope.Apply();
+                });
+        }
+
+        static Text TitleOf(GameObject page) =>
+            page ? page.GetComponentsInChildren<Text>(true).Where(text => !text.GetComponentInParent<Button>(true)).OrderByDescending(text => text.fontSize).FirstOrDefault() : null;
+
+        static void SetTitle(GameObject page, string value)
+        {
+            var title = TitleOf(page);
+            if (!title) return;
+            title.text = value;
+            (title.GetComponent<ThemeRole>() ?? title.gameObject.AddComponent<ThemeRole>()).kind = ThemeRoleKind.Title;
+            title.raycastTarget = false;
+        }
+
+        static void MarkRoles(GameObject root, PlayPanels panels)
+        {
+            foreach (var button in root.GetComponentsInChildren<Button>(true))
+            {
+                var role = button.GetComponent<ThemeRole>() ?? button.gameObject.AddComponent<ThemeRole>();
+                string title = button.name;
+                bool inPage = panels && (Under(button, panels.pause) || Under(button, panels.settings) || Under(button, panels.help) || Under(button, panels.discovery) || Under(button, panels.error));
+                role.kind = title == "退出游戏" ? ThemeRoleKind.Danger : inPage || title == "覆盖并开始" ? ThemeRoleKind.Primary : ThemeRoleKind.Body;
+            }
+            foreach (var text in root.GetComponentsInChildren<Text>(true))
+                if (text.name == "标题" || text.name == "暂停" || text.name == "设置" && text.rectTransform.sizeDelta.y > 40 || text.name == "主菜单")
+                    (text.GetComponent<ThemeRole>() ?? text.gameObject.AddComponent<ThemeRole>()).kind = ThemeRoleKind.Title;
+        }
+
+        static bool Under(Component item, GameObject page) => page && item.transform.IsChildOf(page.transform);
+
+        static void LayoutMainMenu(GameObject root, InterfaceTheme theme)
+        {
+            var panels = root.GetComponentInChildren<PlayPanels>(true);
+            if (!panels || !panels.menu || !panels.menu.continueButton) return;
+            var board = (RectTransform)panels.menu.continueButton.transform.parent;
+            var shell = board.parent as RectTransform;
+            var panel = board.Find("面板") as RectTransform ?? shell;
+            foreach (var node in root.GetComponentsInChildren<RectTransform>(true))
+            {
+                if (node.name == "面板" && node.sizeDelta.y >= 480) node.sizeDelta = new Vector2(380 * PixelScale, node.sizeDelta.y);
+                else if (node.name == "面板阴影" && node.sizeDelta.y >= 480) node.sizeDelta = new Vector2(388 * PixelScale, node.sizeDelta.y);
+            }
+            foreach (var button in board.GetComponentsInChildren<Button>(true))
+            {
+                var rect = (RectTransform)button.transform;
+                bool pair = button.name == "设置" || button.name == "操作说明";
+                rect.sizeDelta = new Vector2(pair ? 115 : 240, rect.sizeDelta.y);
+                if (pair) rect.anchoredPosition = new Vector2(button.name == "设置" ? -62.5f : 62.5f, rect.anchoredPosition.y);
+            }
+            foreach (var old in board.GetComponentsInChildren<Image>(true).Where(image => image.name == "纸箱")) old.gameObject.SetActive(false);
+            if (board.Find("徽标")) return;
+            var logo = new GameObject("徽标", typeof(RectTransform)).GetComponent<RectTransform>();
+            logo.SetParent(board, false);
+            logo.anchorMin = logo.anchorMax = new Vector2(.5f, 1);
+            logo.sizeDelta = new Vector2(64, 64);
+            logo.anchoredPosition = new Vector2(0, -52);
+            var colors = new[] { new Color32(176, 123, 74, 255), new Color32(231, 197, 139, 255), new Color32(176, 123, 74, 255) };
+            for (int i = 0; i < 3; i++)
+            {
+                var bar = new GameObject("竖条" + i, typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+                bar.transform.SetParent(logo, false);
+                bar.sprite = theme.thumbSprite;
+                bar.type = Image.Type.Sliced;
+                bar.color = colors[i];
+                bar.raycastTarget = false;
+                var rect = bar.rectTransform;
+                rect.anchorMin = rect.anchorMax = new Vector2(.5f, .5f);
+                rect.sizeDelta = new Vector2(18, 64);
+                rect.anchoredPosition = new Vector2((i - 1) * 24, 0);
+            }
+        }
+
+        static void LayoutPlayPages(GameObject root, InterfaceTheme theme)
+        {
+            var panels = root.GetComponentInChildren<PlayPanels>(true);
+            if (!panels) return;
+            SetWidth(panels.pause, 420);
+            SetWidth(panels.settings, 410);
+            SetWidth(panels.help, 420);
+            SetWidth(panels.confirm, 420);
+            SetWidth(panels.discovery, 440);
+            SetWidth(panels.error, 420);
+            SetTitle(panels.pause, "暂停");
+            SetTitle(panels.settings, "设置");
+            SetTitle(panels.help, "操作说明");
+            SetTitle(panels.confirm, "开始新游戏？");
+            SetTitle(panels.error, "无法开始");
+            SetTitle(panels.discovery, "获得道具");
+            if (panels.discovery && !panels.discoveryTitle) panels.discoveryTitle = TitleOf(panels.discovery);
+            if (panels.confirm)
+            {
+                var body = panels.confirm.GetComponentsInChildren<Text>(true).FirstOrDefault(text => text.text.Contains("覆盖") && !text.GetComponentInParent<Button>(true));
+                if (body) body.text = "已有游戏进度，开始新游戏会覆盖它。";
+            }
+            if (panels.error)
+            {
+                var detail = panels.error.GetComponentsInChildren<Text>(true).Where(text => !text.GetComponentInParent<Button>(true) && text != TitleOf(panels.error)).FirstOrDefault();
+                if (detail && string.IsNullOrWhiteSpace(detail.text)) detail.text = "请从主菜单开始游戏，或从编辑器试玩房间。";
+            }
+            if (panels.hud)
+            {
+                var seal = panels.hud.GetComponentsInChildren<Image>(true).FirstOrDefault(image => image.name == "封条");
+                if (seal)
+                {
+                    seal.sprite = theme.panelSmallSprite;
+                    seal.type = Image.Type.Sliced;
+                    seal.color = Color.white;
+                    var rect = seal.rectTransform;
+                    rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0, 1);
+                    rect.anchoredPosition = new Vector2(20, -20);
+                }
+            }
+            BuildHelpRows(panels.help);
+            if (panels.confirm)
+            {
+                var confirmPanel = panels.confirm.transform.Find("面板") as RectTransform;
+                if (confirmPanel) confirmPanel.sizeDelta = new Vector2(confirmPanel.sizeDelta.x, 230);
+                var copy = panels.confirm.GetComponentsInChildren<Text>(true).FirstOrDefault(text => !text.GetComponentInParent<Button>(true) && text != TitleOf(panels.confirm));
+                if (copy) Anchor(copy.rectTransform, 1, -105);
+                var confirmTitle = TitleOf(panels.confirm);
+                if (confirmTitle) Anchor(confirmTitle.rectTransform, 1, -50);
+                foreach (var button in panels.confirm.GetComponentsInChildren<Button>(true))
+                {
+                    bool accept = button.name == "覆盖并开始";
+                    var label = button.GetComponentInChildren<Text>(true);
+                    if (label) label.text = accept ? "确认" : "取消";
+                    var rect = (RectTransform)button.transform;
+                    Anchor(rect, 0, 42);
+                    rect.sizeDelta = new Vector2(115, 44);
+                    rect.anchoredPosition = new Vector2(accept ? -62.5f : 62.5f, 42);
+                }
+            }
+            if (panels.error)
+            {
+                var errorPanel = panels.error.transform.Find("面板") as RectTransform;
+                if (errorPanel)
+                {
+                    var icon = panels.error.GetComponentsInChildren<RectTransform>(true).FirstOrDefault(item => item.name == "警告图标") ?? ThemeWidgets.WarningIcon(errorPanel);
+                    icon.SetParent(errorPanel, false);
+                    icon.SetAsFirstSibling();
+                    Anchor(icon, 1, -50);
+                    if (icon.sizeDelta.x < 1) icon.sizeDelta = new Vector2(64, 64);
+                    errorPanel.sizeDelta = new Vector2(errorPanel.sizeDelta.x, 290);
+                    Anchor(TitleOf(panels.error).rectTransform, 1, -118);
+                    var lead = panels.error.GetComponentsInChildren<Text>(true).FirstOrDefault(text => !text.GetComponentInParent<Button>(true) && text != TitleOf(panels.error));
+                    if (lead) Anchor(lead.rectTransform, 1, -165);
+                    var back = panels.error.GetComponentInChildren<Button>(true);
+                    if (back) Anchor((RectTransform)back.transform, 0, 40);
+                }
+            }
+        }
+
+        const float PixelScale = 1.083f;
+
+        static void SetWidth(GameObject page, float width)
+        {
+            if (!page) return;
+            var panel = page.transform.Find("面板") as RectTransform;
+            if (panel) panel.sizeDelta = new Vector2(width * PixelScale, panel.sizeDelta.y);
+        }
+
+        static void Anchor(RectTransform rect, float edge, float y)
+        {
+            var size = rect.rect.size;
+            rect.anchorMin = rect.anchorMax = new Vector2(.5f, edge);
+            rect.sizeDelta = size;
+            rect.anchoredPosition = new Vector2(0, y);
+        }
+
+        static void BuildHelpRows(GameObject help)
+        {
+            if (!help) return;
+            var panel = help.transform.Find("面板") as RectTransform;
+            if (!panel || panel.Find("按键列表")) return;
+            var title = TitleOf(help);
+            var body = help.GetComponentsInChildren<Text>(true).FirstOrDefault(text => !text.GetComponentInParent<Button>(true) && text != title);
+            if (!body) return;
+            body.gameObject.SetActive(false);
+            panel.sizeDelta = new Vector2(panel.sizeDelta.x, 340);
+            var list = new GameObject("按键列表", typeof(RectTransform), typeof(VerticalLayoutGroup)).GetComponent<RectTransform>();
+            list.SetParent(panel, false);
+            list.anchorMin = list.anchorMax = new Vector2(.5f, 1);
+            list.sizeDelta = new Vector2(320, 170);
+            list.anchoredPosition = new Vector2(0, -180);
+            var stack = list.GetComponent<VerticalLayoutGroup>();
+            stack.childControlWidth = stack.childControlHeight = true;
+            stack.childForceExpandWidth = stack.childForceExpandHeight = true;
+            stack.spacing = 4;
+            foreach (var pair in new[] { ("WASD", "移动，始终对应屏幕方向"), ("Q / E", "90° 转向镜头"), ("滚轮", "切换已获得的道具"), ("R", "使用选中的道具"), ("Esc", "暂停") })
+            {
+                var row = new GameObject(pair.Item1, typeof(RectTransform), typeof(HorizontalLayoutGroup)).GetComponent<RectTransform>();
+                row.SetParent(list, false);
+                var line = row.GetComponent<HorizontalLayoutGroup>();
+                line.childControlWidth = line.childControlHeight = true;
+                line.childForceExpandWidth = line.childForceExpandHeight = true;
+                line.spacing = 16;
+                AddHelpText(row, pair.Item1, body, true, 90);
+                AddHelpText(row, pair.Item2, body, false, 230);
+            }
+            var back = help.GetComponentInChildren<Button>(true);
+            if (back) Anchor((RectTransform)back.transform, 0, 40);
+        }
+
+        static void AddHelpText(Transform row, string value, Text model, bool key, float width)
+        {
+            var text = new GameObject(key ? "按键" : "说明", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
+            text.transform.SetParent(row, false);
+            text.font = model.font;
+            text.fontSize = model.fontSize;
+            text.alignment = TextAnchor.MiddleLeft;
+            text.text = value;
+            text.raycastTarget = false;
+            text.color = model.color;
+            var element = text.gameObject.AddComponent<LayoutElement>();
+            element.preferredWidth = width;
+            element.flexibleWidth = key ? 0 : 1;
+            if (key) text.gameObject.AddComponent<ThemeRole>().kind = ThemeRoleKind.Title;
+        }
+
+        static void StyleErrorPanel(GameObject root, InterfaceTheme theme)
+        {
+            var panels = root.GetComponentInChildren<PlayPanels>(true);
+            var errorPanel = panels && panels.error ? panels.error.transform.Find("面板") : null;
+            var image = errorPanel ? errorPanel.GetComponent<Image>() : null;
+            if (!image || !theme.panelErrorSprite) return;
+            image.sprite = theme.panelErrorSprite;
+            image.type = Image.Type.Sliced;
+            image.color = Color.white;
+            var style = root.GetComponent<InterfaceThemeScope>();
+            style.panels = style.panels.Where(item => item != image).ToArray();
         }
 
         public static void BuildReview()

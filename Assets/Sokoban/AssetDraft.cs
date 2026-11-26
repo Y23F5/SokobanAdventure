@@ -1,127 +1,184 @@
 /**
  * @file AssetDraft.cs
- * @brief ImportAsset registers a verified payload as one undoable change. BindAsset assigns a typed reference to an object or room HUD.
- * SelectAsset chooses a model brush without changing the design. PlaceAsset adds a one-cell decoration with a stable identity.
- * CanBindAsset guards the two palettes; AssetBindingTarget reports the bound room or selected cell. Uses Commit for history, dirty tracking and both editor projections.
+ * @brief 资源登记、资源绑定与墙外装饰、自定义物件的放置入口，全部经 Core.RoomDraftModel 与 Commit 工作，不再读写 JObject。
+ * ModelEdit(apply, revert)：把一对闭包包成 ICommand，让草稿上的组合修改作为一条可撤销命令提交。
+ * AssetHold(asset)：把资源描述符并入草稿资源表，Apply 只在尚未登记时加入，Revert 只撤销自己加入的那一份，内置外观没有描述符时为空操作。
+ * ObjectTemplates.Find(model, id)：按模板 ID 取草稿里的对象模板，没有时返回空。
+ * RoomDraft.AssetDefinition(id)、AssetCopy(id)、BrushAsset：按 ID 取本房资源描述符；AssetCopy 生成对应的 AssetHold；BrushAsset 是画刷外观为本房资源时的资源 ID。
+ * RoomDraft.ImportAsset(path, kind)、RegisterAsset(asset)：经 RoomAssets 导入文件，再以一条可撤销命令登记描述符，已登记时不提交。
+ * RoomDraft.CanBindAsset(id, categoryId)、AssetBindingTarget(id)、BindAsset(id, categoryId)：界面图绑定到房间，模型经 ReplaceAppearance 绑定到所选对象或地形格，类别必须与所选内容一致。
+ * RoomDraft.SelectAsset(id, categoryId)：选择模型作为装饰或自定义物件画刷，不修改房间。
+ * RoomDraft.PlaceAsset(cell)：装饰画刷只能放在房间外并登记装饰，不占房内格；自定义画刷放自定义对象，模板画刷同时登记只含模板 ID 的实例，占房内格并先经 PlacementRules 预检。
+ * RoomDraft.BoxSelected、BindBuiltinBox(model)：所选是箱子时把外观换成内置箱体。
  */
 using System;
-using Newtonsoft.Json.Linq;
-using UnityEngine;
+using System.Linq;
+using Sokoban.Core;
 
 namespace Sokoban
 {
+    public sealed class ModelEdit : ICommand
+    {
+        readonly Action apply, revert;
+
+        public ModelEdit(Action apply, Action revert)
+        {
+            this.apply = apply;
+            this.revert = revert;
+        }
+
+        public void Apply() => apply();
+
+        public void Revert() => revert();
+    }
+
+    public sealed class AssetHold
+    {
+        readonly AssetDescriptor asset;
+        bool added;
+
+        public AssetHold(AssetDescriptor asset) { this.asset = asset; }
+
+        public void Apply(RoomDraftModel model)
+        {
+            if (asset == null || model.Assets.Any(a => a.Id == asset.Id)) return;
+            model.Assets.Add(asset);
+            added = true;
+        }
+
+        public void Revert(RoomDraftModel model)
+        {
+            if (!added) return;
+            model.Assets.Remove(asset);
+            added = false;
+        }
+    }
+
+    public static class ObjectTemplates
+    {
+        public static ObjectTemplate Find(RoomDraftModel model, string id) =>
+            id != null && model.Templates.TryGetValue(id, out var template) ? template : null;
+    }
+
     public sealed partial class RoomDraft
     {
-        public int PlacementRevision { get; private set; } = -1;
-        public string PlacedObject { get; private set; }
-        void NotifyPlacement(string id) { PlacedObject=id; PlacementRevision=Revision; }
-        public string BrushAsset { get; private set; }
-        public string ImportAsset(string path,string kind)
-        {
-            return RegisterAsset(RoomAssets.Import(path,kind));
-        }
-        internal string RegisterAsset(JObject asset)
-        {
-            string kind = (string)asset["kind"];
-            string id=(string)asset["id"];
-            var next=(JObject)Room.DeepClone();
-            if(next["assets"]==null) next["assets"]=new JObject();
-            if (next["assets"][id] == null) next["assets"][id] = asset;
-            if (kind == "model") RegisterCategory(next, Tool, id);
-            if (JToken.DeepEquals(Room, next)) return id;
-            Commit(next,Selected);
-            return id;
-        }
-        static void RegisterCategory(JObject room, RoomTool tool, string id)
-        {
-            if (!IsAppearanceTool(tool) && tool != RoomTool.Decoration) return;
-            string category = tool.ToString().ToLowerInvariant();
-            var catalog = room["appearanceCatalog"] ??= new JObject();
-            var entries = catalog[category] ??= new JObject();
-            entries[id] = new JObject { ["model"] = id };
-        }
-        public static bool IsAppearanceTool(RoomTool tool) => tool == RoomTool.Box || tool == RoomTool.Target || tool == RoomTool.Wall || tool == RoomTool.Floor;
-        JObject RequireAsset(string id)
-        {
-            var asset = AssetDefinition(id);
-            RoomFile.Check(asset!=null,"当前房间没有所选素材");
-            return asset;
-        }
         public static readonly string[] BuiltinBoxes = { "Cargo", "Machinery", "Logs" };
         public static readonly string[] BuiltinBoxNames = { "仓库木箱", "工厂货箱", "森林原木" };
-        public bool BoxSelected => Selected != null && Find(Selected)?.Parent == Room["boxes"];
-        public void BindBuiltinBox(string model)
-        {
-            RoomFile.Check(BoxSelected && Array.IndexOf(BuiltinBoxes,model) >= 0,"请选择箱子和内置箱体模型");
-            ReplaceAppearance(model);
-        }
-        public bool CanBindAsset(string id) => AssetDefinition(id) is JObject asset &&
-            ((string)asset["kind"] == "uiImage" || SelectedCell is Vector2Int cell && RoomFile.Terrain(Room, cell) != RoomFile.Void);
 
-        public bool CanBindAsset(string id, RoomTool category) => CanBindAsset(id) && (category == RoomTool.Select ||
-            (category == RoomTool.Wall || category == RoomTool.Floor ? SelectedCell is Vector2Int cell &&
-                RoomFile.Terrain(Room, cell) == (category == RoomTool.Wall ? '#' : '.') : SelectedAppearanceType == category));
+        public int PlacementRevision { get; private set; } = -1;
+        public string PlacedObject { get; private set; }
+
+        void NotifyPlacement(string id) { PlacedObject = id; PlacementRevision = Revision; }
+
+        public AssetDescriptor AssetDefinition(string id) => id == null ? null : Model.Assets.FirstOrDefault(a => a.Id == id);
+
+        AssetHold AssetCopy(string id) => new AssetHold(AssetDefinition(id));
+
+        public string BrushAsset => BrushAppearance != null && AssetDefinition(BrushAppearance.Id) != null ? BrushAppearance.Id : null;
+
+        public string ImportAsset(string path, string kind) => RegisterAsset(RoomAssets.Import(path, kind));
+
+        internal string RegisterAsset(AssetDescriptor asset)
+        {
+            var model = Model;
+            if (model.Assets.Any(a => a.Id == asset.Id)) return asset.Id;
+            Commit(new ModelEdit(() => model.Assets.Add(asset), () => model.Assets.Remove(asset)));
+            return asset.Id;
+        }
+
+        public bool CanBindAsset(string id, string categoryId = null)
+        {
+            var asset = AssetDefinition(id);
+            if (asset == null) return false;
+            if (asset.Kind == AssetKinds.UiImage) return true;
+            if (asset.Kind != AssetKinds.Model || !SelectedCell.HasValue) return false;
+            return categoryId == null || categoryId == SelectedCategory;
+        }
 
         public string AssetBindingTarget(string id)
         {
             if (!CanBindAsset(id)) return "选择地图上的物件或地形格后，可为它绑定素材";
-            if ((string)AssetDefinition(id)["kind"] == "uiImage") return "绑定位置：当前房间界面";
+            if (AssetDefinition(id).Kind == AssetKinds.UiImage) return "绑定位置：当前房间界面";
             var cell = SelectedCell.Value;
-            string target = Selected ?? (RoomFile.Terrain(Room, cell) == '#' ? "墙壁" : "地板");
-            return "绑定位置：" + target + " " + cell;
+            return "绑定位置：" + AppearanceLibrary.TypeName(SelectedCategory) + " " + cell;
         }
 
-        public void BindAsset(string id, RoomTool category = RoomTool.Select)
+        public void BindAsset(string id, string categoryId = null)
         {
-            var kind=(string)RequireAsset(id)["kind"];
-            RoomFile.Check(CanBindAsset(id, category), "请选择同类型的对象或地形格");
-            var next=(JObject)Room.DeepClone();
-            CopyAssetInto(next, id);
-            if(kind=="uiImage") next["uiImage"]=id;
-            else
+            var asset = AssetDefinition(id) ?? throw new InvalidOperationException("当前房间没有所选素材");
+            if (!CanBindAsset(id, categoryId)) throw new InvalidOperationException("请选择同类型的对象或地形格");
+            if (asset.Kind != AssetKinds.UiImage)
             {
-                var point = SelectedCell.Value;
-                bool terrain = category == RoomTool.Wall || category == RoomTool.Floor;
-                var item = terrain ? TerrainRecord(next, point) : PropertyObject(next, point);
-                if (item == null)
-                {
-                    if (next["terrainObjects"] == null) next["terrainObjects"] = new JArray();
-                    item = new JObject { ["id"] = "tile-" + Guid.NewGuid().ToString("N"), ["cell"] = RoomFile.Point(point) };
-                    ((JArray)next["terrainObjects"]).Add(item);
-                }
-                if (item["visual"] == null) item["visual"] = new JObject();
-                if (kind == "model") ((JObject)item).Remove("builtinModel");
-                item["visual"][kind] = id;
-                if (kind == "model") RegisterCategory(next, category, id);
+                ReplaceAppearance(id);
+                return;
             }
-            if (JToken.DeepEquals(Room, next)) return;
-            var selectedCell = SelectedCell;
-            Commit(next, Selected);
-            if (selectedCell.HasValue) Select(selectedCell.Value);
+            var model = Model;
+            string before = model.UiImageAssetId;
+            if (before == id) return;
+            Commit(new ModelEdit(() => model.UiImageAssetId = id, () => model.UiImageAssetId = before));
         }
-        public void SelectAsset(string id) => SelectAsset(id, RoomTool.Decoration);
 
-        public void SelectAsset(string id, RoomTool category)
+        public void SelectAsset(string id, string categoryId = AppearanceLibrary.Decoration)
         {
-            RoomFile.Check((string)RequireAsset(id)["kind"]=="model","放置工具需要模型素材");
-            RoomFile.Check(category == RoomTool.Box || category == RoomTool.Target || category == RoomTool.Wall || category == RoomTool.Floor || category == RoomTool.Decoration, "此工具不支持模型素材");
-            Tool = category;
-            BrushAsset = id;
+            if (AssetDefinition(id)?.Kind != AssetKinds.Model) throw new InvalidOperationException("放置工具需要模型素材");
+            if (categoryId != AppearanceLibrary.Decoration && categoryId != ObjectCategories.Custom)
+                throw new InvalidOperationException("此页签不支持模型素材");
+            ChooseAppearance(id, categoryId);
         }
-        public void PlaceAsset(Vector2Int cell)
+
+        public void PlaceAsset(Cell cell)
         {
-            if (BrushBuiltin == null) RequireAsset(BrushAsset);
-            string error=PlacementError(false,cell);
-            RoomFile.Check(error==null,error);
-            var next=(JObject)Room.DeepClone();
-            if(next["decorations"]==null) next["decorations"]=new JArray();
-            string id="decor-"+Guid.NewGuid().ToString("N");
-            var instance = new JObject { ["id"]=id,["cell"]=RoomFile.Point(cell) };
-            ApplyBrush(next, instance, RoomTool.Decoration, cell);
-            AddDefinedObject(next, instance, id);
-            ((JArray)next["decorations"]).Add(instance);
-            Commit(next,id);
+            var model = Model;
+            var room = model.Room;
+            if (BrushCategory == null || BrushAppearance == null && BrushTemplate == null) throw new InvalidOperationException("请先选择素材");
+            if (BrushCategory == AppearanceLibrary.Decoration)
+            {
+                if (room.Inside(cell)) throw new InvalidOperationException("装饰只能放在房间外");
+                string decorId = "decor-" + Guid.NewGuid().ToString("N");
+                var decoration = new Decoration(decorId, cell, BrushAppearance);
+                var decorHold = AssetCopy(BrushAppearance.Id);
+                Commit(new ModelEdit(() =>
+                {
+                    decorHold.Apply(model);
+                    room.Ids.Add(decorId, "decoration");
+                    model.Decorations.Add(decoration);
+                }, () =>
+                {
+                    model.Decorations.Remove(decoration);
+                    room.Ids.Remove(decorId);
+                    decorHold.Revert(model);
+                }));
+                NotifyPlacement(decorId);
+                return;
+            }
+            string error = PlacementRules.Error(model, ObjectCategories.Custom, cell, null);
+            if (error != null) throw new InvalidOperationException("格子 " + cell + " 不能放置：" + error);
+            var template = ObjectTemplates.Find(model, BrushTemplate);
+            if (BrushTemplate != null && template == null) throw new InvalidOperationException("当前房间没有所选对象模板");
+            string id = "custom-" + Guid.NewGuid().ToString("N");
+            var look = template?.Appearance ?? BrushAppearance;
+            var hold = AssetCopy(look?.Id);
+            var instance = template == null ? null : new TemplateInstance(id, template.Id);
+            Commit(new ModelEdit(() =>
+            {
+                hold.Apply(model);
+                room.AddObject(id, ObjectCategories.Custom, cell, look);
+                if (instance != null) model.Instances.Add(instance);
+            }, () =>
+            {
+                if (instance != null) model.Instances.Remove(instance);
+                room.RemoveObject(id);
+                hold.Revert(model);
+            }), id);
             NotifyPlacement(id);
+        }
+
+        public bool BoxSelected => SelectedCategory == ObjectCategories.Box;
+
+        public void BindBuiltinBox(string builtin)
+        {
+            if (!BoxSelected || Array.IndexOf(BuiltinBoxes, builtin) < 0) throw new InvalidOperationException("请选择箱子和内置箱体模型");
+            ReplaceAppearance(builtin);
         }
     }
 }

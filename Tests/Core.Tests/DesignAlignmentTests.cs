@@ -12,7 +12,7 @@ namespace Sokoban.Core.Tests
         public void PlacedObjectHasOnlyIdCategoryAndCell()
         {
             var names = typeof(PlacedObject).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name).OrderBy(n => n).ToArray();
-            Assert.Equal(new[] { "CategoryId", "Cell", "Id" }, names);
+            Assert.Equal(new[] { "Appearance", "CategoryId", "Cell", "Id" }, names);
         }
 
         [Fact]
@@ -29,7 +29,7 @@ namespace Sokoban.Core.Tests
             var room = new Room("r", 3, 3);
             room.SetTerrain(new Cell(1, 1), TerrainCategories.Floor);
             room.AddObject("box-1", ObjectCategories.Box, new Cell(1, 1));
-            string text = RoomCodec.Encode(new RoomDocument(room, null, null, null));
+            string text = RoomCodec.Encode(new RoomDraftModel(room));
             Assert.DoesNotContain("recovery\"", text.Replace("\"recovery\":[]", ""));
             Assert.DoesNotContain("decorationKind", text);
             Assert.DoesNotContain("appearanceRef", text);
@@ -38,7 +38,7 @@ namespace Sokoban.Core.Tests
         [Fact]
         public void WorldStartIsReadFromSpawnIdOnly()
         {
-            var doc = new WorldDocument("w", 1, new Cell(0, 0), new Cell(19, 9),
+            var doc = new WorldDocument("w", new Cell(0, 0), new Cell(19, 9),
                 new[] { new WorldRoomRef("a", "a.json", new Cell(0, 0), new string[0]) },
                 new WorldConnection[0], new WorldEndpoint("a", "spawn"), new WorldEndpoint("a", "exit"), new[] { "a" });
             string text = WorldCodec.Encode(doc).Replace("\"spawnId\"", "\"doorId\"");
@@ -48,7 +48,7 @@ namespace Sokoban.Core.Tests
         [Fact]
         public void WorldAllowReturnMustBeBoolean()
         {
-            var doc = new WorldDocument("w", 1, new Cell(0, 0), new Cell(19, 9),
+            var doc = new WorldDocument("w", new Cell(0, 0), new Cell(19, 9),
                 new[] { new WorldRoomRef("a", "a.json", new Cell(0, 0), new string[0]), new WorldRoomRef("b", "b.json", new Cell(6, 0), new string[0]) },
                 new[] { new WorldConnection("l", "direct", new WorldEndpoint("a", "exit"), new WorldEndpoint("b", "entry"), true) },
                 new WorldEndpoint("a", "spawn"), new WorldEndpoint("b", "exit"), new[] { "a" });
