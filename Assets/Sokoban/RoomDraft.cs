@@ -427,6 +427,21 @@ namespace Sokoban
             Commit(new RoomMetaCommand(Model, Model.Meta.WithIdentity(name, Model.Meta.ThemeId)), Selected);
         }
 
+        public void SetPrimaryEntrance(string id)
+        {
+            var model = Model;
+            var door = model.Doors.FirstOrDefault(candidate => candidate.Id == id && candidate.Role == "entry");
+            RoomFile.Check(door != null, "请选择入口门");
+            if (model.PrimaryEntranceId == id) return;
+            var inward = door.Cell + new Cell(-door.Outward.X, -door.Outward.Y);
+            RoomFile.Check(model.Room.TerrainAt(inward).CategoryId == TerrainCategories.Floor, "入口内侧须为地板");
+            var occupant = model.Room.ObjectAt(inward);
+            RoomFile.Check(occupant == null || occupant.CategoryId == ObjectCategories.Spawn, "入口内侧被对象占用 " + inward);
+            string oldId = model.PrimaryEntranceId;
+            Commit(new DelegateCommand(() => model.PrimaryEntranceId = id, () => model.PrimaryEntranceId = oldId));
+            Select(door.Cell);
+        }
+
         public void SetRoomText(string description, string entryHint, string playHint)
         {
             var meta = Model.Meta;

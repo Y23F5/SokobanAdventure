@@ -371,6 +371,11 @@ namespace Sokoban.Editor
                 {
                     Line(area, "ID · " + door.Id + " · " + door.Role);
                     Line(area, "朝向 · " + door.Outward);
+                    if (door.Role == "entry")
+                    {
+                        if (draft.Model.PrimaryEntranceId == door.Id) Line(area, "主入口");
+                        else AddButton(area, "设为主入口", () => Panel.Run(() => draft.SetPrimaryEntrance(door.Id), "已设置主入口"));
+                    }
                     if (draft.World != null)
                         foreach (var link in draft.World.Connections.Where(link =>
                             (link.From.LevelId == draft.ActiveId && link.From.DoorId == door.Id) ||
