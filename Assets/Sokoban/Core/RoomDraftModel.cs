@@ -6,6 +6,7 @@
  * Meta：房间显示名与主题，赋空时回到空名称，显示名与 ID 分开保存。
  * Decorations、Assets、Graphs、Templates、Instances、ObjectStates、UiImageAssetId：墙外装饰、资源描述符、行为图、对象模板（键为模板 ID）、模板实例、对象状态表（键为对象 ID）与界面图资源 ID。
  * Extras：string 到 string 的透传字段包，Core 不解释，默认为空。
+ * ReplaceDoor(index, door)：原位更新门记录，保留门表顺序。
  * Register(id, kind)：内部使用，ID 非空且尚未登记时登记到 ID 空间，已存在时静默跳过，供复制与平移草稿时在带错误的草稿上也不抛异常。
  */
 using System;
@@ -50,6 +51,8 @@ namespace Sokoban.Core
         }
 
         internal List<RecoveryItem> ItemList => items;
+
+        internal void ReplaceDoor(int index, DoorInfo door) => doors[index] = door;
 
         internal void Register(string id, string kind)
         {

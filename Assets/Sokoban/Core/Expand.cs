@@ -34,7 +34,7 @@ namespace Sokoban.Core
                     var t = source.TerrainAt(from);
                     var to = new Cell(x + shiftX, y + shiftY);
                     if (!next.Inside(to)) continue;
-                    next.SetTerrain(to, t.CategoryId, t.EntityId, t.State);
+                    next.SetTerrain(to, t.CategoryId, t.EntityId, t.State, t.Rotation);
                     var look = source.AppearanceAt(from);
                     if (look != null) next.SetAppearance(to, look);
                 }
@@ -42,7 +42,7 @@ namespace Sokoban.Core
             {
                 var to = new Cell(o.Cell.X + shiftX, o.Cell.Y + shiftY);
                 if (!next.Inside(to)) continue;
-                next.AddObject(o.Id, o.CategoryId, to, o.Appearance);
+                next.AddObject(o.Id, o.CategoryId, to, o.Appearance, o.Rotation);
             }
             return next;
         }
@@ -88,7 +88,7 @@ namespace Sokoban.Core
             foreach (var d in source.Decorations)
             {
                 next.Register(d.Id, "decoration");
-                next.Decorations.Add(new Decoration(d.Id, new Cell(d.Cell.X + shiftX, d.Cell.Y + shiftY), d.Appearance));
+                next.Decorations.Add(new Decoration(d.Id, new Cell(d.Cell.X + shiftX, d.Cell.Y + shiftY), d.Appearance, d.Rotation));
             }
             next.Assets.AddRange(source.Assets);
             foreach (var g in source.Graphs)

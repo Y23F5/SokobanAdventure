@@ -3,8 +3,11 @@
  * @brief 资源类型注册表与房间资源描述符：Core 只持有描述符，字节内容缓存留在表现层。
  * AssetKindInfo(id, extensions)：资源类型描述，声明可接受的扩展名。
  * AssetKinds：model、animation、texture、uiImage、script 五种资源类型 ID，CreateDefault 登记全部五种及各自扩展名。
- * AssetDescriptor(id, kind, name, sha256, extension)：一份资源的描述符，ID 由类型与摘要组成，房间文件只引用它。
+ * AssetDescriptor(id, kind, name, sha256, extension, heightOffset)：将房间内素材偏移量化为千分之一格，ID 仍由类型与摘要组成。
+ * ToMilligrid(heightOffset)：有限范围内四舍五入到千分之一格，非法值抛异常。
+ * WithHeightMilligrid(milligrid)：保留描述符标识及来源，更新房间内偏移。
  */
+using System;
 using System.Collections.Generic;
 
 namespace Sokoban.Core
@@ -49,13 +52,31 @@ namespace Sokoban.Core
         public string Sha256 { get; }
         public string Extension { get; }
 
-        public AssetDescriptor(string id, string kind, string name, string sha256, string extension)
+        internal int HeightMilligrid { get; }
+        public float HeightOffset => HeightMilligrid / 1000f;
+
+        public AssetDescriptor(string id, string kind, string name, string sha256, string extension, float heightOffset = 0)
+            : this(ToMilligrid(heightOffset), id, kind, name, sha256, extension) { }
+
+        internal AssetDescriptor(int heightMilligrid, string id, string kind, string name, string sha256, string extension)
         {
+            HeightMilligrid = heightMilligrid;
             Id = id;
             Kind = kind;
             Name = name;
             Sha256 = sha256;
             Extension = extension;
+        }
+
+        internal AssetDescriptor WithHeightMilligrid(int milligrid) =>
+            new AssetDescriptor(milligrid, Id, Kind, Name, Sha256, Extension);
+
+        internal static int ToMilligrid(float heightOffset)
+        {
+            double scaled = Math.Round(heightOffset * 1000.0, MidpointRounding.AwayFromZero);
+            if (double.IsNaN(scaled) || scaled < int.MinValue || scaled > int.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(heightOffset), "高度偏移超出有效范围");
+            return (int)scaled;
         }
     }
 }

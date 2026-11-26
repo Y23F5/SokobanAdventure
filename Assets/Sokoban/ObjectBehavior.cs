@@ -65,7 +65,7 @@ namespace Sokoban
             {
                 foreach (var e in entities)
                 {
-                    room.SetTerrain(e.cell, e.before.CategoryId, e.id, e.before.State);
+                    room.SetTerrain(e.cell, e.before.CategoryId, e.id, e.before.State, e.before.Rotation);
                     room.SetAppearance(e.cell, e.look);
                 }
                 foreach (var w in writes)
@@ -89,7 +89,7 @@ namespace Sokoban
                 }
                 foreach (var e in entities)
                 {
-                    room.SetTerrain(e.cell, e.before.CategoryId, e.before.EntityId, e.before.State);
+                    room.SetTerrain(e.cell, e.before.CategoryId, e.before.EntityId, e.before.State, e.before.Rotation);
                     room.SetAppearance(e.cell, e.look);
                 }
             }));

@@ -1,5 +1,6 @@
 /**
  * @file Blueprint.cs
+ * DoorInfo.Rotation：从朝外方向推导门模型朝内的旋转档位，非法方向返回 -1。
  * @brief 关卡图纸转换器：把字符画设计草图转成类型化 Room，记号只是转换器输入，不进入文件格式。
  * BlueprintResult：转换结果，含房间、主入口内侧的入口缓冲格、门列表。
  * DoorInfo：门的 ID、格子、朝向（向外方向）与角色。
@@ -19,6 +20,14 @@ namespace Sokoban.Core
         public Cell Cell { get; }
         public Cell Outward { get; }
         public string Role { get; }
+        public int Rotation
+        {
+            get
+            {
+                int outward = RotationSteps.DirectionIndex(Outward);
+                return outward < 0 ? -1 : RotationSteps.Turn(outward, 2);
+            }
+        }
 
         public DoorInfo(string id, Cell cell, Cell outward, string role)
         {

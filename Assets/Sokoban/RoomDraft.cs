@@ -7,6 +7,7 @@
  * Undo/Redo：经 CommandHistory 后退与重做，随后同步房间目录并清除选择。
  * Find/FindDecoration：按稳定 ID 取对象或装饰；Select/SelectRectangle/Click：按格选择，Click 把当前工具翻译为放置或移动。
  * Place/Move/PlacementError：经 PlacementRules 预检后提交 PlaceObjectCommand、MoveObjectCommand；SetRoomMarker：出生点用 SetSpawnCommand，门写门地形与 DoorInfo，朝向取 DoorPlacement.Outward；
+ * RotateSelection 将所选对象或格的旋转归并到一次可撤销提交；SetAssetHeight 按房内素材 ID 提交高度偏移。
  * MarkerOccupied/DoorDirection：设置门与出生点前的占用与朝向判定；RemoveObject/Rename：经命令删除对象（连带行为图）与改名；
  * Open/Save/ExportRoom：读入世界或单房，保存时用 Core 编解码并以 CommandHistory.MarkSaved 更新保存基线，导出前要求发布级无错误。
  */
@@ -134,7 +135,7 @@ namespace Sokoban
             RoomFile.Check(error == null, error);
             RoomFile.Check(!string.IsNullOrWhiteSpace(id) && !Room.Ids.Contains(id), "对象 ID 为空或已占用");
             var look = BrushCategory == (box ? ObjectCategories.Box : ObjectCategories.Target) ? BrushAppearance : null;
-            Commit(new PlaceObjectCommand(Model, id, box ? ObjectCategories.Box : ObjectCategories.Target, cell, look), id);
+            Commit(new PlaceObjectCommand(holders[ActiveId], id, box ? ObjectCategories.Box : ObjectCategories.Target, cell, look), id);
             NotifyPlacement(id);
         }
 
@@ -147,6 +148,56 @@ namespace Sokoban
             var error = PlacementError(item.CategoryId == ObjectCategories.Box, cell, Selected);
             RoomFile.Check(error == null, error);
             Commit(new MoveObjectCommand(Model, Selected, cell), Selected);
+        }
+
+        public void RotateSelection(int quarterTurns)
+        {
+            if (quarterTurns % 4 == 0) return;
+            var holder = holders[ActiveId];
+            var selectedId = Selected;
+            var selectedCell = SelectedCell;
+            var points = Selection.ToArray();
+            var targets = points.Length != 0 ? points : selectedCell.HasValue ? new[] { selectedCell.Value } : Array.Empty<Cell>();
+            var commands = new List<ICommand>(targets.Length);
+            foreach (var cell in targets)
+            {
+                string id = IdAt(cell);
+                if (id != null) commands.Add(new RotateCommand(holder, id, quarterTurns));
+                else if (Room.TerrainAt(cell).CategoryId != TerrainCategories.Void) commands.Add(new RotateCommand(holder, cell, quarterTurns));
+            }
+            if (targets.Length == 0 && selectedId != null) commands.Add(new RotateCommand(holder, selectedId, quarterTurns));
+            RoomFile.Check(commands.Count > 0, "请选择可旋转的地形、门或物件");
+            Commit(new DelegateCommand(
+                () =>
+                {
+                    int applied = 0;
+                    try
+                    {
+                        for (; applied < commands.Count; applied++) commands[applied].Apply();
+                    }
+                    catch
+                    {
+                        while (applied > 0) commands[--applied].Revert();
+                        throw;
+                    }
+                },
+                () =>
+                {
+                    for (int i = commands.Count - 1; i >= 0; i--) commands[i].Revert();
+                }), selectedId);
+            SelectedCell = selectedCell;
+            Selection.UnionWith(points);
+        }
+
+        public void SetAssetHeight(string assetId, float heightOffset)
+        {
+            int milligrid = AssetDescriptor.ToMilligrid(heightOffset);
+            if (Model.Assets.Any(asset => asset.Id == assetId && asset.HeightMilligrid == milligrid)) return;
+            var points = Selection.ToArray();
+            var cell = SelectedCell;
+            Commit(new SetAssetHeightCommand(holders[ActiveId], assetId, heightOffset), Selected);
+            SelectedCell = cell;
+            Selection.UnionWith(points);
         }
 
         public bool MarkerOccupied(Cell cell) => PlacementRules.Occupied(Model, cell, null) || Model.Doors.Any(d => d.Cell == cell);
@@ -164,7 +215,7 @@ namespace Sokoban
         public void SetRoomMarker(Cell cell, string role)
         {
             RoomFile.Check(role == "spawn" || role == "entry" || role == "exit", "未知房间标记");
-            if (role == "spawn") { Commit(new SetSpawnCommand(Model), "spawn"); return; }
+            if (role == "spawn") { Commit(new SetSpawnCommand(holders[ActiveId]), "spawn"); return; }
             RoomFile.Check(Room.TerrainAt(cell).CategoryId == TerrainCategories.Floor, "请在地板格上设置出生点或门");
             RoomFile.Check(!MarkerOccupied(cell), "格子已占用");
             var outward = DoorPlacement.Outward(Room, cell);
@@ -245,7 +296,7 @@ namespace Sokoban
                 int index = draft.Decorations.FindIndex(d => d.Id == id);
                 if (index < 0) throw new InvalidOperationException("找不到装饰：" + id);
                 before = draft.Decorations[index];
-                draft.Decorations[index] = new Decoration(id, cell, before.Appearance);
+                draft.Decorations[index] = new Decoration(id, cell, before.Appearance, before.Rotation);
             }
 
             public void Revert()
@@ -279,7 +330,7 @@ namespace Sokoban
 
             public void Revert()
             {
-                if (placed != null) draft.Room.AddObject(placed.Id, placed.CategoryId, placed.Cell, placed.Appearance);
+                if (placed != null) draft.Room.AddObject(placed.Id, placed.CategoryId, placed.Cell, placed.Appearance, placed.Rotation);
                 else draft.Decorations.Insert(decorationIndex, decoration);
                 draft.Graphs.AddRange(graphs);
             }

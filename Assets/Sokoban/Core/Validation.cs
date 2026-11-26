@@ -248,10 +248,11 @@ namespace Sokoban.Core
         {
             foreach (var door in draft.Doors)
             {
-                bool valid = draft.Room.TerrainAt(door.Cell).CategoryId == TerrainCategories.Door
+                bool valid = RotationSteps.DirectionIndex(door.Outward) >= 0
+                    && draft.Room.TerrainAt(door.Cell).CategoryId == TerrainCategories.Door
                     && draft.Room.TerrainAt(door.Cell + door.Outward).CategoryId == TerrainCategories.Void
                     && draft.Room.TerrainAt(door.Cell - door.Outward).CategoryId == TerrainCategories.Floor;
-                if (!valid) yield return (door.Id, "门需要朝外且内侧可通行");
+                if (!valid) yield return (door.Id, "门朝向不可通行");
             }
         }
 

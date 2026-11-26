@@ -1,5 +1,6 @@
 /**
  * @file RoomPreview.cs
+ * CellRotation 将房间的四档顺时针旋转映射到 Unity 的世界 Y 轴。
  * @brief Sync 按草稿版本与查看范围同步房间，修复外部 Transform 变更；BuildRoom 按房间数据的地形网格、对象表与外观引用生成实例，不追加任何主题藤蔓或主题模型。
  * CreateRoot 和 Model 建立临时层级，Track 缓存模型的设计姿态，Marker 生成选择轮廓；AppearanceIssue 向两个编辑界面提供当前场景的资源诊断。
  * BoxModel、BrushModel：按外观引用与主题给出内置预制件路径。
@@ -125,6 +126,8 @@ namespace Sokoban
             return model.transform;
         }
 
+        internal static Quaternion CellRotation(int quarterTurns) => Quaternion.Euler(0, quarterTurns * 90f, 0);
+
         public static string BoxModel(string theme, AppearanceRef look = null) =>
             AppearanceLibrary.Prefab(AppearanceLibrary.Resolve(ObjectCategories.Box, theme, look));
 
@@ -165,7 +168,9 @@ namespace Sokoban
                 for (int x = 0; x < room.Width; x++)
                 {
                     var cell = new Cell(x, y);
-                    string category = room.TerrainAt(cell).CategoryId;
+                    var terrain = room.TerrainAt(cell);
+                    string category = terrain.CategoryId;
+                    var rotation = category == TerrainCategories.Door ? Quaternion.identity : CellRotation(terrain.Rotation);
                     if (category == TerrainCategories.Void) continue;
                     if (!solid)
                     {
@@ -179,12 +184,12 @@ namespace Sokoban
                     if (category == TerrainCategories.Wall)
                     {
                         look = look ?? AppearanceLibrary.Default(TerrainCategories.Wall, theme);
-                        var wall = Place(look, "Wall " + cell, cell, Quaternion.identity);
+                        var wall = Place(look, "Wall " + cell, cell, rotation);
                         if (AppearanceLibrary.Prefab(look) == "LayoutModels/Wall") { wall.localScale = new Vector3(1, 2.6f, 1); Retrack(wall); }
                     }
                     else if (category == TerrainCategories.Openable)
-                        Place(look ?? AppearanceLibrary.Default(TerrainCategories.Openable, theme), "Vine " + cell, cell, Quaternion.identity);
-                    else Place(look ?? AppearanceLibrary.Default(TerrainCategories.Floor, theme), "Floor " + cell, cell, Quaternion.identity);
+                        Place(look ?? AppearanceLibrary.Default(TerrainCategories.Openable, theme), "Vine " + cell, cell, rotation);
+                    else Place(look ?? AppearanceLibrary.Default(TerrainCategories.Floor, theme), "Floor " + cell, cell, rotation);
                 }
             foreach (var door in model.Doors)
             {
@@ -202,10 +207,12 @@ namespace Sokoban
                 if (model.ObjectStates.TryGetValue(item.Id, out var table))
                 {
                     var anchor = CreateRoot(item.Id, group, new Vector3(cell.X, 0, cell.Y));
+                    anchor.transform.localRotation = CellRotation(item.Rotation);
+                    Retrack(anchor.transform);
                     string fallback = AppearanceLibrary.Prefab(look) ?? AppearanceLibrary.Prefab(AppearanceLibrary.Default(ObjectCategories.Box, theme));
                     anchor.AddComponent<ObjectStateView>().Configure(table, new Vector3(origin.X + cell.X, 0, origin.Y + cell.Y), look, fallback, model.Assets);
                 }
-                else Place(look, item.Id, cell, Quaternion.identity);
+                else Place(look, item.Id, cell, CellRotation(item.Rotation));
                 if (selected == item.Id) Marker(group, cell);
             }
             foreach (var decoration in model.Decorations)

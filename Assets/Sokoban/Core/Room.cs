@@ -1,14 +1,15 @@
 /**
  * @file Room.cs
  * @brief Room 是房间的类型化编辑模型：每格一条地形记录的网格与每格可选的外观引用，加每格最多一个对象的对象表，对象与地形实体共用每房唯一的 ID 空间。
- * TerrainCell：一格地形的数据（类别 ID、可选实体 ID、初始状态）。
- * PlacedObject：一个对象（ID、类别 ID、格子、可选外观引用）。
+ * TerrainCell：一格地形的数据（类别 ID、可选实体 ID、初始状态、旋转档位）。
+ * PlacedObject：一个对象（ID、类别 ID、格子、可选外观引用、旋转档位）。
  * Room(id, width, height)：构造全空格（void）的房间，外观网格全空。
  * TerrainAt(cell)、Inside(cell)：读取地形与判断是否在房间矩形内，越界读取返回 void 记录。
- * SetTerrain(cell, categoryId, entityId, state)：写入一格地形，实体 ID 非空时登记到 ID 空间，不改动该格外观。
+ * SetTerrain(cell, categoryId, entityId, state, rotation)：写入一格地形，实体 ID 非空时登记到 ID 空间，不改动该格外观。
  * AppearanceAt(cell)、SetAppearance(cell, appearance)：读写一格地形的外观引用，越界读取返回空，越界写入抛 ArgumentOutOfRangeException，外观不参与任何规则。
- * AddObject(id, categoryId, cell, appearance)：登记对象并可附外观引用，ID 重复抛 ArgumentException。
+ * AddObject(id, categoryId, cell, appearance, rotation)：登记对象并可附外观引用，ID 重复抛 ArgumentException。
  * SetObjectAppearance(id, appearance)：原位替换对象的外观引用并保持对象表顺序，找不到对象返回 false。
+ * RotateObject(id, quarterTurns)：原位替换对象的旋转档位，找不到对象时返回 false。
  * RemoveObject(id)：移除对象并释放 ID。
  * ObjectAt(cell)、ObjectsOf(categoryId)：按格子与类别查询对象。
  */
@@ -24,8 +25,13 @@ namespace Sokoban.Core
         public string EntityId { get; }
         public string State { get; }
 
-        public TerrainCell(string categoryId, string entityId = null, string state = null)
+        public int Rotation { get; }
+
+        public TerrainCell(string categoryId, string entityId = null, string state = null, int rotation = 0)
         {
+            if (rotation != 0 && (categoryId == TerrainCategories.Door || categoryId == TerrainCategories.Void))
+                throw new ArgumentException("门格朝向由门端点决定，空格无旋转", nameof(rotation));
+            Rotation = RotationSteps.Validate(rotation);
             CategoryId = categoryId;
             EntityId = entityId;
             State = state;
@@ -39,8 +45,11 @@ namespace Sokoban.Core
         public Cell Cell { get; }
         public AppearanceRef Appearance { get; }
 
-        public PlacedObject(string id, string categoryId, Cell cell, AppearanceRef appearance = null)
+        public int Rotation { get; }
+
+        public PlacedObject(string id, string categoryId, Cell cell, AppearanceRef appearance = null, int rotation = 0)
         {
+            Rotation = RotationSteps.Validate(rotation);
             Id = id;
             CategoryId = categoryId;
             Cell = cell;
@@ -88,19 +97,20 @@ namespace Sokoban.Core
             appearances[cell.X, cell.Y] = appearance;
         }
 
-        public void SetTerrain(Cell cell, string categoryId, string entityId = null, string state = null)
+        public void SetTerrain(Cell cell, string categoryId, string entityId = null, string state = null, int rotation = 0)
         {
             if (!Inside(cell)) throw new ArgumentOutOfRangeException(nameof(cell), $"格子 {cell} 超出房间");
+            var replacement = new TerrainCell(categoryId, entityId, state, rotation);
             var previous = grid[cell.X, cell.Y];
             if (previous.EntityId != null && previous.EntityId != entityId) Ids.Remove(previous.EntityId);
             if (entityId != null && previous.EntityId != entityId) Ids.Add(entityId, "terrain");
-            grid[cell.X, cell.Y] = new TerrainCell(categoryId, entityId, state);
+            grid[cell.X, cell.Y] = replacement;
         }
 
-        public PlacedObject AddObject(string id, string categoryId, Cell cell, AppearanceRef appearance = null)
+        public PlacedObject AddObject(string id, string categoryId, Cell cell, AppearanceRef appearance = null, int rotation = 0)
         {
+            var placed = new PlacedObject(id, categoryId, cell, appearance, rotation);
             Ids.Add(id, categoryId);
-            var placed = new PlacedObject(id, categoryId, cell, appearance);
             objects.Add(placed);
             return placed;
         }
@@ -110,7 +120,16 @@ namespace Sokoban.Core
             int index = objects.FindIndex(o => o.Id == id);
             if (index < 0) return false;
             var old = objects[index];
-            objects[index] = new PlacedObject(old.Id, old.CategoryId, old.Cell, appearance);
+            objects[index] = new PlacedObject(old.Id, old.CategoryId, old.Cell, appearance, old.Rotation);
+            return true;
+        }
+
+        internal bool RotateObject(string id, int quarterTurns)
+        {
+            int index = objects.FindIndex(o => o.Id == id);
+            if (index < 0) return false;
+            var old = objects[index];
+            objects[index] = new PlacedObject(old.Id, old.CategoryId, old.Cell, old.Appearance, RotationSteps.Turn(old.Rotation, quarterTurns));
             return true;
         }
 

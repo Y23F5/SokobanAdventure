@@ -1,5 +1,6 @@
 /**
  * @file RoomCodec.cs
+ * rotation、heightOffset：v1 可选整数字段，零值省略，缺省为零；高度单位为千分之一格，门只写 outX/outY。
  * @brief 房间文件的编解码：把 RoomDraftModel 的全部可保存字段写成 JSON 并读回，用 MiniJson，不依赖外部库。
  * RecoveryItem：恢复道具（道具 ID、脚本引用、时长秒、数值参数表），ID 与房内对象共用同一份 ID 空间。
  * RoomCodec.Encode(draft)：写出房间名与主题、类型化地形网格（类别、实体 ID、状态、外观引用与变体序号）、对象及其外观、门与主入口、恢复道具、装饰、资源描述符、行为图（节点带格坐标）、对象模板、模板实例、对象状态表、界面图资源 ID 与 Extras；
@@ -105,12 +106,14 @@ namespace Sokoban.Core
                     var rec = new Dictionary<string, object> { ["category"] = t.CategoryId };
                     if (t.EntityId != null) rec["entity"] = t.EntityId;
                     if (t.State != null) rec["state"] = t.State;
+                    if (t.Rotation != 0) rec["rotation"] = t.Rotation;
                     PutAppearance(rec, room.AppearanceAt(cell));
                     terrain.Add(rec);
                 }
             var objects = room.Objects.OrderBy(o => o.Id, StringComparer.Ordinal).Select(o =>
             {
                 var rec = new Dictionary<string, object> { ["id"] = o.Id, ["category"] = o.CategoryId, ["x"] = (long)o.Cell.X, ["y"] = (long)o.Cell.Y };
+                if (o.Rotation != 0) rec["rotation"] = o.Rotation;
                 PutAppearance(rec, o.Appearance);
                 return (object)rec;
             }).ToList();
@@ -131,12 +134,18 @@ namespace Sokoban.Core
             var decorations = draft.Decorations.Select(d =>
             {
                 var rec = new Dictionary<string, object> { ["id"] = d.Id, ["x"] = (long)d.Cell.X, ["y"] = (long)d.Cell.Y };
+                if (d.Rotation != 0) rec["rotation"] = d.Rotation;
                 PutAppearance(rec, d.Appearance);
                 return (object)rec;
             }).ToList();
-            var assets = draft.Assets.Select(a => (object)new Dictionary<string, object>
+            var assets = draft.Assets.Select(a =>
             {
-                ["id"] = a.Id, ["kind"] = a.Kind, ["name"] = a.Name, ["sha256"] = a.Sha256, ["extension"] = a.Extension
+                var rec = new Dictionary<string, object>
+                {
+                    ["id"] = a.Id, ["kind"] = a.Kind, ["name"] = a.Name, ["sha256"] = a.Sha256, ["extension"] = a.Extension
+                };
+                if (a.HeightMilligrid != 0) rec["heightOffset"] = a.HeightMilligrid;
+                return (object)rec;
             }).ToList();
             var graphs = draft.Graphs.Select(g => GraphOut(g)).ToList();
             var templates = draft.Templates.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p =>
@@ -209,6 +218,8 @@ namespace Sokoban.Core
             return (int)l;
         }
 
+        static int OptionalInt(Dictionary<string, object> rec, string key) => rec.ContainsKey(key) ? Int(rec, key) : 0;
+
         static Cell CellOf(Room room, Dictionary<string, object> d, string what)
         {
             var cell = new Cell(Int(d, "x"), Int(d, "y"));
@@ -248,7 +259,11 @@ namespace Sokoban.Core
                 string category = Str(rec, "category");
                 if (!Registries.Terrains.Contains(category)) throw new FormatException("未知地形类别 " + category);
                 var cell = new Cell(i % width, i / width);
-                if (category != TerrainCategories.Void) room.SetTerrain(cell, category, OptStr(rec, "entity"), OptStr(rec, "state"));
+                int rotation = OptionalInt(rec, "rotation");
+                if (category != TerrainCategories.Void)
+                    room.SetTerrain(cell, category, OptStr(rec, "entity"), OptStr(rec, "state"), rotation);
+                else if (rotation != 0)
+                    throw new FormatException("空格不能保存旋转");
                 var look = AppearanceOf(rec);
                 if (look != null) room.SetAppearance(cell, look);
             }
@@ -258,7 +273,7 @@ namespace Sokoban.Core
                 var rec = Obj(item, "对象记录");
                 string category = Str(rec, "category");
                 if (!Registries.Objects.Contains(category)) throw new FormatException("未知对象类别 " + category);
-                room.AddObject(Str(rec, "id"), category, CellOf(room, rec, "对象"), AppearanceOf(rec));
+                room.AddObject(Str(rec, "id"), category, CellOf(room, rec, "对象"), AppearanceOf(rec), OptionalInt(rec, "rotation"));
             }
 
             var doors = new List<DoorInfo>();
@@ -349,7 +364,7 @@ namespace Sokoban.Core
                 var rec = Obj(item, "装饰记录");
                 string id = Str(rec, "id");
                 room.Ids.Add(id, "decoration");
-                draft.Decorations.Add(new Decoration(id, new Cell(Int(rec, "x"), Int(rec, "y")), AppearanceOf(rec)));
+                draft.Decorations.Add(new Decoration(id, new Cell(Int(rec, "x"), Int(rec, "y")), AppearanceOf(rec), OptionalInt(rec, "rotation")));
             }
             var assetIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var item in Arr(root, "assets"))
@@ -358,7 +373,7 @@ namespace Sokoban.Core
                 string id = Str(rec, "id"), kind = Str(rec, "kind");
                 if (!Registries.AssetKinds.Contains(kind)) throw new FormatException("未知资源类型 " + kind);
                 if (!assetIds.Add(id)) throw new FormatException("资源 ID 重复：" + id);
-                draft.Assets.Add(new AssetDescriptor(id, kind, Str(rec, "name"), Str(rec, "sha256"), Str(rec, "extension")));
+                draft.Assets.Add(new AssetDescriptor(OptionalInt(rec, "heightOffset"), id, kind, Str(rec, "name"), Str(rec, "sha256"), Str(rec, "extension")));
             }
             foreach (var item in Arr(root, "graphs"))
             {

@@ -1,5 +1,6 @@
 /**
  * @file StructureVerification.cs
+ * CheckRecoverySource 验证无法读取的原草稿备份，以及相机视角读取错误不会丢弃可读草稿。
  * @brief Run 用实际房间和世界文件比较拒写前后的内容，再从草稿恢复并修复。
  * Require 检查逐项条件；Rule 统计 RoomValidator 发布级校验中指定规则的问题数；Same 逐房比较两个房间目录的 RoomCodec 文本。
  * With 改写快照中的某个房间或世界文档后新建草稿，用于构造门朝向错误与连接错误的样本，因为门与世界文档不可原地修改。
@@ -134,6 +135,26 @@ namespace Sokoban.Editor
             return RoomCodec.Encode(draft.Model);
         }
 
+        static void CheckRecoverySource(string evidence)
+        {
+            string directory = Path.Combine(evidence, "recovery-source");
+            Directory.CreateDirectory(directory);
+            string slot = Path.Combine(directory, "unreadable-ws02.json");
+            const string legacy = "{\"assetOffset\":0.125}";
+            File.WriteAllText(slot, legacy);
+            var panel = new LayoutPanel("unreadable", directory);
+            var backup = Directory.GetFiles(directory, "unreadable-ws02.json.unreadable-*").Single();
+            Require(panel.Flush() && File.ReadAllText(backup) == legacy && File.ReadAllText(slot) != legacy,
+                "旧草稿读失败后保存新恢复槽，原文件按字节保留");
+
+            string viewPath = slot + ".view";
+            File.WriteAllText(viewPath, "invalid");
+            string snapshot = File.ReadAllText(slot);
+            var reopened = new LayoutPanel("unreadable", directory);
+            Require(reopened.Draft.Snapshot() == snapshot && reopened.Status.Contains("视角读取失败"),
+                "异常视角文件不替换可读草稿");
+        }
+
         [MenuItem("Tools/Sokoban/验证/编辑体验结构检查")]
         public static void Run()
         {
@@ -141,6 +162,7 @@ namespace Sokoban.Editor
             Directory.CreateDirectory(evidence);
             using (log = new StreamWriter(Path.Combine(evidence, "结构检查.txt")) { AutoFlush = true })
             {
+                CheckRecoverySource(evidence);
                 source = Ready(Resources.Load<TextAsset>("DefaultRoom").text);
                 var draft = new RoomDraft(RoomCodec.Decode(source));
                 string path = Path.Combine(evidence, "sample.room.json");
@@ -180,7 +202,7 @@ namespace Sokoban.Editor
                 var flipped = draft.Model.Doors.Select(d => d.Id == "entry" ? new DoorInfo(d.Id, d.Cell, new Cell(-d.Outward.X, -d.Outward.Y), d.Role) : d).ToList();
                 var badDoor = With(draft, "factory", WithDoors(draft.Model, flipped), null);
                 Require(RoomFile.Issues(badDoor.Model, ValidationStage.Publish).Any(i => i.RuleId == "door.geometry" && i.Location == entry.Id), "门朝向反转触发 door.geometry");
-                Reject(badDoor, world, "需要朝外");
+                Reject(badDoor, world, "门朝向不可通行");
                 var first = draft.World.Connections[0];
                 var duplicate = new WorldConnection("duplicate-endpoint", first.Mode, first.From, first.To, first.AllowReturn);
                 var repeated = With(draft, null, null, WorldLayout.WithConnections(draft.World, draft.World.Connections.Concat(new[] { duplicate }).ToList()));

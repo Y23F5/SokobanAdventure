@@ -94,10 +94,12 @@ namespace Sokoban
             try
             {
                 var clipRoot = gameObject;
+                float heightOffset = 0;
                 if (modelId != null)
                 {
                     var asset = Need(library, modelId);
                     modelName = asset.Name;
+                    heightOffset = asset.HeightOffset;
                     var model = await Load(asset);
                     footprintRoot = new GameObject("单格外观").transform;
                     footprintRoot.SetParent(transform, false);
@@ -111,7 +113,7 @@ namespace Sokoban
                 {
                     footprint = new GridFootprint(footprintRoot);
                     var original = footprint.Measure();
-                    footprintRoot.localPosition = new Vector3(-original.center.x, 0, -original.center.z);
+                    footprintRoot.localPosition = new Vector3(-original.center.x, heightOffset, -original.center.z);
                     SizeReport = GridFootprint.Describe(original);
                     if (!GridFootprint.HasUnitSize(original))
                         FootprintIssue = $"模型「{modelName}」占地 {SizeReport}，需要 1 × 1 格（宽和深各允许 ±0.001 格）";

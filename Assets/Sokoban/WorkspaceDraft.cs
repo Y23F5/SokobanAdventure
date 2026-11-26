@@ -104,11 +104,11 @@ namespace Sokoban
                 {
                     var cell = new Cell(x, y);
                     var t = s.TerrainAt(cell);
-                    if (t.CategoryId != TerrainCategories.Void) room.SetTerrain(cell, t.CategoryId, t.EntityId, t.State);
+                    if (t.CategoryId != TerrainCategories.Void) room.SetTerrain(cell, t.CategoryId, t.EntityId, t.State, t.Rotation);
                     var look = s.AppearanceAt(cell);
                     if (look != null) room.SetAppearance(cell, look);
                 }
-            foreach (var o in s.Objects) room.AddObject(o.Id, o.CategoryId, o.Cell, o.Appearance);
+            foreach (var o in s.Objects) room.AddObject(o.Id, o.CategoryId, o.Cell, o.Appearance, o.Rotation);
             var next = new RoomDraftModel(room, src.Doors, src.PrimaryEntranceId, src.Extras, src.RecoveryItems);
             CopyRest(src, next);
             return next;

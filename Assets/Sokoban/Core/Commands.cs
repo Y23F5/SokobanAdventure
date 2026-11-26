@@ -44,8 +44,9 @@ namespace Sokoban.Core
         public bool Undo()
         {
             if (undo.Count == 0) return false;
-            var command = undo.Pop();
+            var command = undo.Peek();
             command.Revert();
+            undo.Pop();
             redo.Push(command);
             revision--;
             return true;
@@ -54,8 +55,9 @@ namespace Sokoban.Core
         public bool Redo()
         {
             if (redo.Count == 0) return false;
-            var command = redo.Pop();
+            var command = redo.Peek();
             command.Apply();
+            redo.Pop();
             undo.Push(command);
             revision++;
             return true;
@@ -104,7 +106,7 @@ namespace Sokoban.Core
             for (int i = 0; i < cells.Count; i++)
             {
                 var old = previous[i];
-                room.SetTerrain(cells[i], old.CategoryId, old.EntityId, old.State);
+                room.SetTerrain(cells[i], old.CategoryId, old.EntityId, old.State, old.Rotation);
             }
         }
     }

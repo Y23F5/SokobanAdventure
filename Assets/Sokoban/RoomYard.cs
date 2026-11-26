@@ -1,11 +1,12 @@
 /**
  * @file RoomYard.cs
  * @brief Build 铺设房间外围地绘并摆放房间数据里的墙外装饰，不按主题固定摆放任何外围陈设、标牌或设备。
- * Build(model, origin, group, world, catalog)：地绘尺寸按房间格数换算，相邻房间在间隙中点裁切；装饰逐个取 Model.Decorations，按外观引用取内置预制件放到墙外格位，导入模型外观由表现层其他路径处理，此处跳过。
+ * Build(model, origin, group, world, catalog)：地绘尺寸按房间格数换算，相邻房间在间隙中点裁切；装饰逐个取 Model.Decorations，按外观引用在墙外格位摆放内置或导入模型并应用旋转。
  * Ground：按主题取地绘贴图，主题只影响外观，没有对应贴图时不铺设。
  * Clip 对相邻房间在间隙中点裁切；Surface 建立无碰撞的贴图平面。
  */
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Sokoban.Core;
@@ -20,12 +21,14 @@ namespace Sokoban
             foreach (var decoration in model.Decorations)
             {
                 string path = AppearanceLibrary.Prefab(decoration.Appearance);
-                var prefab = path == null ? null : Resources.Load<GameObject>(path);
-                if (!prefab) continue;
-                var part = Object.Instantiate(prefab, group, false);
+                string imported = path == null && decoration.Appearance != null
+                    && model.Assets.Any(asset => asset.Id == decoration.Appearance.Id && asset.Kind == AssetKinds.Model)
+                    ? decoration.Appearance.Id : null;
+                if (path == null && imported == null) continue;
+                var part = ObjectStateView.Create(model.Assets, group, path, imported);
                 part.name = decoration.Id;
-                part.hideFlags = HideFlags.DontSave;
                 part.transform.localPosition = new Vector3(decoration.Cell.X, 0, decoration.Cell.Y);
+                part.transform.localRotation = RoomPreview.CellRotation(decoration.Rotation);
             }
         }
 

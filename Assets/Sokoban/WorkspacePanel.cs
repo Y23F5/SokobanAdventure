@@ -1,6 +1,6 @@
 /**
  * @file WorkspacePanel.cs
- * @brief InitSlot、Tick 与 Flush 读取恢复槽，按空闲和连续编辑时限原子写盘。
+ * @brief InitSlot 读取恢复槽，失败时先保留原始文件才启用默认房间的自动保存。LoadView 恢复视角，视角损坏时保留已读草稿。Tick 与 Flush 按空闲和连续编辑时限原子写盘。
  * SetView 和 RestoreView/TrackView 交换摄像机状态；NewRoom/Exit 保护工作文件。
  * WorkspaceControls 处理房间目录、原点、属性与检查。ClickWorld 选房并换算局部格。
  * Issues 按草稿修订号缓存 Core 的发布级校验结果与世界布局问题，独立于状态栏的操作反馈；StructuralIssue 取第一条错误，RuleOk 与 RuleHint 按规则 ID 查询必填项清单。
@@ -24,6 +24,7 @@ namespace Sokoban
         int observedRevision=-1;
         RoomTool observedTool;
         bool changed,discardSlot;
+        string slotProtectionError;
         double firstChange,lastChange;
         Action exitAction;
         readonly HashSet<Vector2Int> stroke=new HashSet<Vector2Int>();
@@ -103,27 +104,60 @@ namespace Sokoban
         public Quaternion Rotation {get;private set;}=Quaternion.identity;
         public float Zoom {get;private set;}=1;
         public bool Ortho {get;private set;}=true;
-        void InitSlot(string slot,string recoveryDirectory) {
-            if(slot==null || Application.isBatchMode && recoveryDirectory==null) return;
-            slotPath=Path.Combine(recoveryDirectory??Application.persistentDataPath,slot+"-ws02.json");
-            if(!File.Exists(slotPath))return;
-            try {
-                var viewPath=slotPath+".view";if(File.Exists(viewPath)){var f=File.ReadAllText(viewPath).Split(',').Select(p=>float.Parse(p,System.Globalization.CultureInfo.InvariantCulture)).ToArray();if(f.Length==9)SetView(new Vector3(f[0],f[1],f[2]),new Quaternion(f[3],f[4],f[5],f[6]),f[7],f[8]>0);}
-                                Draft.Recover(File.ReadAllText(slotPath));Status="已恢复上次编辑现场";
-            } catch(Exception ex) {Draft.NewDefaultRoom();HasView=false;Status="草稿恢复失败，已打开默认房间："+ex.Message;}
+        void InitSlot(string slot, string recoveryDirectory)
+        {
+            if (slot == null || Application.isBatchMode && recoveryDirectory == null) return;
+            slotPath = Path.Combine(recoveryDirectory ?? Application.persistentDataPath, slot + "-ws02.json");
+            if (!File.Exists(slotPath)) return;
+            try
+            {
+                Draft.Recover(File.ReadAllText(slotPath));
+            }
+            catch (Exception error)
+            {
+                Draft.NewDefaultRoom();
+                string backup = slotPath + ".unreadable-" + Guid.NewGuid().ToString("N");
+                try
+                {
+                    File.Copy(slotPath, backup);
+                    Status = "草稿恢复失败，原文件已保留为 " + Path.GetFileName(backup) + "：" + error.Message;
+                }
+                catch (Exception backupError)
+                {
+                    slotProtectionError = "无法备份原草稿，已关闭自动保存：" + backupError.Message;
+                    Status = slotProtectionError;
+                }
+                return;
+            }
+            Status = "已恢复上次编辑现场";
+            try { LoadView(); }
+            catch (Exception error) { Status = "草稿已恢复，视角读取失败：" + error.Message; }
         }
+
+        void LoadView()
+        {
+            var viewPath = slotPath + ".view";
+            if (!File.Exists(viewPath)) return;
+            var fields = File.ReadAllText(viewPath).Split(',')
+                .Select(value => float.Parse(value, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            if (fields.Length == 9)
+                SetView(new Vector3(fields[0], fields[1], fields[2]),
+                    new Quaternion(fields[3], fields[4], fields[5], fields[6]), fields[7], fields[8] > 0);
+        }
+
         void Changed() {double now=Time.realtimeSinceStartupAsDouble;if(!changed)firstChange=now;changed=true;lastChange=now;}
         public void Tick() {
-            if(slotPath==null || discardSlot)return;
+            if(slotPath==null || discardSlot || slotProtectionError!=null)return;
             if(observedRevision!=Draft.Revision || observedTool!=Draft.Tool) {Changed();observedRevision=Draft.Revision;observedTool=Draft.Tool;}
             double now=Time.realtimeSinceStartupAsDouble;
             if(changed && (now-lastChange>=1 || now-firstChange>=10)) Flush();
         }
         public bool Flush() {
             if(slotPath==null || discardSlot)return true;
+            if (slotProtectionError != null) { Status = slotProtectionError; return false; }
             try {Directory.CreateDirectory(Path.GetDirectoryName(slotPath));string data=Draft.Snapshot();
                 if(HasView) File.WriteAllText(slotPath+".view",string.Join(",",new[]{Pivot.x,Pivot.y,Pivot.z,Rotation.x,Rotation.y,Rotation.z,Rotation.w,Zoom,Ortho?1f:0f}.Select(v=>v.ToString("R",System.Globalization.CultureInfo.InvariantCulture))));
-                File.WriteAllText(slotPath,data);changed=false; return true;
+                Sokoban.Core.AtomicFile.Write(slotPath, data, null);changed=false; return true;
             } catch(Exception ex) {Status="草稿保存失败："+ex.Message;firstChange=lastChange=Time.realtimeSinceStartupAsDouble;return false;}
         }
         public void SetView(Vector3 pivot,Quaternion rotation,float zoom,bool ortho) {
@@ -149,13 +183,13 @@ namespace Sokoban
             Exit(exit);
         }
         public void Exit(Action exit) {
-            if(!Draft.Dirty) {if(Flush()) exit();return;}
+            if(!Draft.Dirty) {if(slotProtectionError!=null || Flush()) exit();return;}
             exitAction=exit;
             Guard(()=>{
                 if(Draft.Dirty) {
-                    if(slotPath!=null && File.Exists(slotPath))File.Delete(slotPath);
+                    if(slotProtectionError==null && slotPath!=null && File.Exists(slotPath))File.Delete(slotPath);
                     discardSlot=true;
-                } else if(!Flush()) return;
+                } else if(slotProtectionError==null && !Flush()) return;
                 exitAction=null;exit();
             });
         }

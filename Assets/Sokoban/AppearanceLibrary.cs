@@ -202,7 +202,7 @@ namespace Sokoban
             else if (decoration != null)
             {
                 if (Equals(decoration.Appearance, look)) return;
-                var after = new Decoration(decoration.Id, decoration.Cell, look);
+                var after = new Decoration(decoration.Id, decoration.Cell, look, decoration.Rotation);
                 Commit(new ModelEdit(() => { copy.Apply(model); Swap(model.Decorations, decoration, after); },
                     () => { Swap(model.Decorations, after, decoration); copy.Revert(model); }));
             }
@@ -227,7 +227,7 @@ namespace Sokoban
             var placed = model.Room.Objects.First(o => o.Id == id);
             model.ObjectStates.TryGetValue(id, out var states);
             model.Room.RemoveObject(id);
-            model.Room.AddObject(id, placed.CategoryId, placed.Cell, look);
+            model.Room.AddObject(id, placed.CategoryId, placed.Cell, look, placed.Rotation);
             if (states != null) model.ObjectStates[id] = states;
         }
 

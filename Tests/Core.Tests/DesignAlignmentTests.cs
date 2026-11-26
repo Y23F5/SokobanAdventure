@@ -9,10 +9,10 @@ namespace Sokoban.Core.Tests
     public class DesignAlignmentTests
     {
         [Fact]
-        public void PlacedObjectHasOnlyIdCategoryAndCell()
+        public void PlacedObjectStoresIdentityPlacementAndAppearance()
         {
             var names = typeof(PlacedObject).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name).OrderBy(n => n).ToArray();
-            Assert.Equal(new[] { "Appearance", "CategoryId", "Cell", "Id" }, names);
+            Assert.Equal(new[] { "Appearance", "CategoryId", "Cell", "Id", "Rotation" }, names);
         }
 
         [Fact]
