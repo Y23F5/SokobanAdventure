@@ -124,7 +124,7 @@ namespace Sokoban
         Sprite ButtonSprite(Selectable control)
         {
             if (theme.bookmarkSprite && control.name != null && (control.name == "Bookmark" || control.name == "物件" || control.name == "地形" || control.name == "自定义")) return theme.bookmarkSprite;
-            var panels = GetComponentInParent<PlayPanels>(true);
+            var panels = GetComponentInParent<PlayPanels>(true) ?? GetComponentInChildren<PlayPanels>(true);
             bool inPlayPage = panels && (InPage(control, panels.pause) || InPage(control, panels.settings) || InPage(control, panels.confirm) || InPage(control, panels.error));
             if (!inPlayPage) return theme.buttonSprite;
             var label = control.GetComponentInChildren<Text>(true);
