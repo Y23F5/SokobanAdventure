@@ -4,6 +4,7 @@
  * Check 验证必需条件，Cell 解出整数格，Point 编码格，Objects 枚举有位置的实体，
  * Size/At 分别读取尺寸及实体格，Inside/Floor 按北到南行序检查格子，Inward 计算门内侧位置，
  * Validate 检查字段、地形与身份；StructureIssues 定位边界缺口、门及入口预留错误。
+ * ToLegacyData 把旧 JObject 房间抽成 Core 的 LegacyRoomData，供 Core 校验器与转换适配器使用；
  * RequireStructure 在正式文件入口拒绝这些错误；Write 转调 Core 的 AtomicFile.Write，先写同目录临时文件再替换目标。
  */
 using System;
@@ -155,6 +156,27 @@ namespace Sokoban
             foreach (var issue in RoomDraft.DefinitionIssues(room)) yield return issue;
             foreach (var cell in BoundaryGaps(room))
                 yield return $"{level} {cell} 边界缺墙，请补墙或设置朝外的门";
+        }
+
+        static Sokoban.Core.Cell ToCore(Vector2Int cell) => new Sokoban.Core.Cell(cell.x, cell.y);
+
+        public static Sokoban.Core.LegacyRoomData ToLegacyData(JObject room)
+        {
+            var size = Size(room);
+            Sokoban.Core.LegacyEntity Entity(JToken token) =>
+                token == null ? null : new Sokoban.Core.LegacyEntity((string)token["id"], ToCore(At(token)));
+            return new Sokoban.Core.LegacyRoomData
+            {
+                LevelId = (string)room["levelId"],
+                Width = size.x,
+                Height = size.y,
+                RowsNorthToSouth = ((JArray)room["terrainRowsNorthToSouth"]).Select(row => (string)row).ToArray(),
+                Doors = room["doors"].Select(door => new Sokoban.Core.LegacyDoor((string)door["id"], ToCore(At(door)), (string)door["direction"], (string)door["role"])).ToArray(),
+                PrimaryEntranceId = (string)room["primaryEntranceId"],
+                Boxes = room["boxes"].Select(Entity).ToArray(),
+                Targets = room["targets"].Select(Entity).ToArray(),
+                Spawn = Entity(room["spawn"]),
+            };
         }
 
         public static IEnumerable<Vector2Int> BoundaryGaps(JObject room)
