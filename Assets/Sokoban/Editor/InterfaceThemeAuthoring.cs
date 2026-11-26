@@ -100,9 +100,8 @@ namespace Sokoban.Editor
         static void ConfigureBookmark(GameObject root)
         {
             ((RectTransform)root.transform).sizeDelta = new Vector2(68, 38);
-            var outline = root.GetComponent<Outline>() ?? root.AddComponent<Outline>();
-            outline.effectColor = new Color32(146, 107, 80, 255);
-            outline.effectDistance = new Vector2(2, -2);
+            var outline = root.GetComponent<Outline>();
+            if (outline) UnityEngine.Object.DestroyImmediate(outline, true);
             var label = root.GetComponentInChildren<Text>();
             label.fontSize = 18;
             label.alignment = TextAnchor.MiddleCenter;
