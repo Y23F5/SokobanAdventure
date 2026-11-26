@@ -132,7 +132,7 @@ namespace Sokoban
             if (!string.IsNullOrEmpty(text))
             {
                 if (text.Contains("退出") && theme.buttonDangerSprite) return theme.buttonDangerSprite;
-                if ((text == "继续游玩" || text.Contains("保存并返回") || text.Contains("覆盖并开始")) && theme.buttonPrimarySprite) return theme.buttonPrimarySprite;
+                if ((InPage(control, panels.pause) || InPage(control, panels.settings) || text.Contains("覆盖并开始")) && theme.buttonPrimarySprite) return theme.buttonPrimarySprite;
             }
             return theme.buttonSprite;
         }
