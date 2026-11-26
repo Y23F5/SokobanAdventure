@@ -23,13 +23,11 @@ namespace Sokoban
         float targetSize, reveal;
         bool framed;
         MeshRenderer clearing;
-        Material translucent;
         DioramaLighting lighting;
         Color theme;
         void InitAtmosphere()
         {
             surface = new MaterialPropertyBlock();
-            translucent = Resources.Load<Material>("LayoutModels/GhostSurface");
             lighting = new DioramaLighting(lens);
             foreach (var pair in groups)
             {
@@ -66,7 +64,6 @@ namespace Sokoban
                 {
                     if (!originals.TryGetValue(r, out var mat)) originals[r] = mat = r.sharedMaterial;
                     if (!mat) continue;
-                    if (r.sharedMaterial == translucent) r.sharedMaterial = mat;
                     var materials = r.sharedMaterials;
                     for (int slot = 0; slot < materials.Length; slot++)
                     {
@@ -106,23 +103,8 @@ namespace Sokoban
         }
         void UpdateOcclusion()
         {
-            var loads = Run.Boxes.Keys.Select(key => objects[key].position);
-            if (Run.Recovering) loads = loads.Concat(Run.Boxes.Keys.Select(key => Position(Run.HomeOf(key))));
-            var points = loads.Concat(Run.Targets.Select(Position)).Append(actor.position).Select(p => p + Vector3.up * .24f).ToArray();
-            foreach (var wall in boundaryWalls)
-            {
-                var bounds = new Bounds(wall.position + Vector3.up * .58f, new Vector3(.97f, 1.16f, .97f));
-                bool occludes = points.Any(point => bounds.IntersectRay(new Ray(point, -lens.transform.forward)));
-                foreach (var r in wall.GetComponentsInChildren<Renderer>())
-                {
-                    if (!originals.TryGetValue(r, out var mat)) originals[r] = mat = r.sharedMaterial;
-                    if (!mat) continue;
-                    r.sharedMaterial = occludes ? translucent : mat;
-                    surface.Clear();
-                    if (occludes) { var color = mat.GetColor("_BaseColor"); color.a = .23f; surface.SetColor("_BaseColor", color); }
-                    r.SetPropertyBlock(surface);
-                }
-            }
+            var room = Run.Room.Room;
+            CameraRig.ClipWalls(groups[Run.ActiveId], room.Width, room.Height, CameraRig.Side(angle));
         }
         string ItemName => Run.SelectedItem == null ? "" : Run.ItemRoomName(Run.SelectedItem) + "恢复装置";
         void ShowInventory()

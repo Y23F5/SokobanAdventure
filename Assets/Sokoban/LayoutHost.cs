@@ -32,7 +32,7 @@ namespace Sokoban
         DioramaLighting lighting;
         string litTheme;
         Vector3 pan, lastPointer, downPointer;
-        float zoom = 1, yaw = DioramaLighting.Yaw, pitch = DioramaLighting.Pitch;
+        float zoom = 1, yaw, orbitDrag;
         int gesture = -1;
         bool dragged, quitting;
         Vector2Int hoveredCell;
@@ -125,7 +125,8 @@ namespace Sokoban
             Interface.gameObject.SetActive(true);
             if (overlay == null) overlay = new LayoutOverlay();
             UpdateCamera();
-            preview.Sync(Panel.Draft,solo);
+            preview.Sync(Panel.Draft, solo);
+            preview.ClipWalls(Panel.Draft, CameraRig.Side(yaw));
         }
 
         void Awake()
@@ -140,8 +141,7 @@ namespace Sokoban
                 zoom = Panel.Zoom;
                 if (Panel.Rotation != Quaternion.identity)
                 {
-                    yaw = Panel.Rotation.eulerAngles.y;
-                    pitch = Mathf.Clamp(Panel.Rotation.eulerAngles.x, 20, 89);
+                    yaw = CameraRig.Side(Panel.Rotation.eulerAngles.y) * 90f;
                 }
             }
             overlay = new LayoutOverlay();
@@ -151,13 +151,13 @@ namespace Sokoban
 
         string solo;
         Vector3 savedPan;
-        float savedZoom, savedPitch, savedYaw;
+        float savedZoom, savedYaw;
         public void ToggleRoomView()
         {
             var d=Panel.Draft;
             if(d.World==null || d.Placement==null) { Panel.Status="当前是独立房间"; return; }
-            if(solo==null) {savedPan=pan;savedZoom=zoom;savedPitch=pitch;savedYaw=yaw;solo=d.ActiveId;pan=Vector3.zero;zoom=1;}
-            else {solo=null;pan=savedPan;zoom=savedZoom;pitch=savedPitch;yaw=savedYaw;}
+            if(solo==null) {savedPan=pan;savedZoom=zoom;savedYaw=yaw;solo=d.ActiveId;pan=Vector3.zero;zoom=1;}
+            else {solo=null;pan=savedPan;zoom=savedZoom;yaw=savedYaw;}
             UpdateCamera();
         }
         void FrameDocument()
@@ -165,8 +165,8 @@ namespace Sokoban
             solo=null;
             pan = Vector3.zero;
             zoom = 1;
-            yaw = DioramaLighting.Yaw;
-            pitch = DioramaLighting.Pitch;
+            yaw = 0;
+            orbitDrag = 0;
             gesture = -1;
             Panel.CancelTool();
             var draft = Panel.Draft;
@@ -198,7 +198,7 @@ namespace Sokoban
         {
             float diagonal = span.magnitude;
             float halfWidth = diagonal * .5f + 1.3f;
-            float halfHeight = diagonal * .5f * Mathf.Sin(pitch * Mathf.Deg2Rad) + 1.1f;
+            float halfHeight = diagonal * .5f * Mathf.Sin(CameraRig.Pitch * Mathf.Deg2Rad) + 1.1f;
             return Mathf.Max(halfHeight, halfWidth / Mathf.Max(.1f, lens.aspect * .74f));
         }
 
@@ -231,11 +231,9 @@ namespace Sokoban
                 span = new Vector2Int(draft.World.Max.X, draft.World.Max.Y) - min + Vector2Int.one;
             }
             lens.orthographic = true;
-            lens.transform.rotation = Quaternion.Euler(pitch, yaw, 0);
             lens.orthographicSize = ViewSize(span) * zoom;
             var target = pan + new Vector3(min.x+(span.x-1)*.5f,0,min.y+(span.y-1)*.5f);
-            lens.transform.position = target - lens.transform.forward * (span.magnitude + 12)
-                + lens.transform.right * (.26f * lens.orthographicSize * lens.aspect);
+            CameraRig.Place(lens, target, yaw, span.magnitude + 12, .26f * lens.orthographicSize * lens.aspect);
             Panel.SetView(pan,lens.transform.rotation,zoom,true);
         }
 
@@ -243,14 +241,16 @@ namespace Sokoban
         {
             if (gesture == 1)
             {
-                yaw += delta.x * .36f;
-                pitch = Mathf.Clamp(pitch - delta.y * .25f, 20, 89);
+                orbitDrag += delta.x;
+                int turns = (int)(orbitDrag / 100f);
+                yaw += turns * 90f;
+                orbitDrag -= turns * 100f;
             }
             else
             {
                 var forward = Vector3.Cross(lens.transform.right, Vector3.up);
                 float units = 2 * lens.orthographicSize / Mathf.Max(1, Screen.height);
-                pan -= (lens.transform.right * delta.x + forward * delta.y / Mathf.Sin(pitch * Mathf.Deg2Rad)) * units;
+                pan -= (lens.transform.right * delta.x + forward * delta.y / Mathf.Sin(CameraRig.Pitch * Mathf.Deg2Rad)) * units;
             }
             UpdateCamera();
         }
@@ -263,6 +263,11 @@ namespace Sokoban
             hovering = !modal && !OverUI(pointer) && new Rect(0,0,Screen.width,Screen.height).Contains(pointer)
                 && RoomPreview.CellFromRay(lens.ScreenPointToRay(pointer), out hoveredCell);
             if (modal) { gesture = -1; return; }
+            if (Input.GetKeyDown(KeyCode.Q) || Input.GetKeyDown(KeyCode.E))
+            {
+                yaw += Input.GetKeyDown(KeyCode.Q) ? -90 : 90;
+                UpdateCamera();
+            }
             if (Input.GetKeyDown(KeyCode.Escape)) { rectangleStart=null; Panel.CancelTool(); gesture = -1; }
             if (hovering && Input.mouseScrollDelta.y != 0)
             {
@@ -276,6 +281,7 @@ namespace Sokoban
                 for (int i=0;i<=2;i++)
                 {
                     if (!Input.GetMouseButtonDown(i)) continue;
+                    orbitDrag = 0;
                     gesture=i; downPointer=lastPointer=pointer; dragged=false;
                     if (i==0)
                     {
@@ -316,7 +322,8 @@ namespace Sokoban
             var theme = Panel.Draft.Model.Meta.ThemeId ?? "warehouse";
             if (theme != litTheme) { lighting.Apply(DioramaLighting.Theme(theme),1); litTheme = theme; }
             UpdateCamera();
-            preview.Sync(Panel.Draft,solo);
+            preview.Sync(Panel.Draft, solo);
+            preview.ClipWalls(Panel.Draft, CameraRig.Side(yaw));
             HoverFeedback = null;
             if (hovering && Panel.PlacingRoom && Panel.Draft.World != null)
             {

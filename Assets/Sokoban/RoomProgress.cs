@@ -33,6 +33,10 @@ namespace Sokoban
         internal bool Solved => PushRules.Solved(Validated.Room, Session.Boxes);
         internal RecoveryItem Item => Validated.RecoveryItems.FirstOrDefault();
         internal void RecordSolved() { if (Solved) EverSolved = true; }
-        internal RecoverySession Rebuild(Cell player) => Session = new RecoverySession(Validated.Room, Session.Boxes, player, Validated.EntryBuffer);
+        internal RecoverySession Rebuild(Cell player)
+        {
+            Session.Place(player);
+            return Session;
+        }
     }
 }

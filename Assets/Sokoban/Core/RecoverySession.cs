@@ -7,6 +7,7 @@
  * Advance(seconds)：推进剩余时间，归零时自动完成，返回本次是否完成。
  * Complete()：箱子一次性回到初始格，可开合地形封闭，玩家按完成时刻的禁入集（各箱初始格、封闭地形格）再移位；重复调用不重复提交。
  * CanPush()：恢复期间一律为 false。CanEnter(cell)：占用区内不可进入。
+ * RequestGate、RetryGateClosures：覆盖门格状态，必要时安全移位，门被占用时延迟关合。
  * IsWalkable(cell)：地形通行性，可开合地形随恢复状态变化。
  */
 using System;
@@ -21,6 +22,8 @@ namespace Sokoban.Core
         readonly Registry<TerrainCategory> terrain = TerrainCategories.CreateDefault();
         readonly Cell? entryBuffer;
         readonly Dictionary<string, Cell> initial = new Dictionary<string, Cell>();
+        readonly Dictionary<Cell, bool> gateStates = new Dictionary<Cell, bool>();
+        readonly HashSet<Cell> pendingClosures = new HashSet<Cell>();
         bool openablesOpen;
 
         public Dictionary<string, Cell> Boxes { get; }
@@ -51,8 +54,58 @@ namespace Sokoban.Core
             var t = room.TerrainAt(cell);
             var category = terrain.Get(t.CategoryId);
             if (category.HasStates)
+            {
+                if (gateStates.TryGetValue(cell, out bool open)) return open;
                 return category.IsWalkable(Recovering && openablesOpen ? TerrainCategories.Open : t.State ?? category.InitialState);
+            }
             return category.IsWalkable(null);
+        }
+
+        public bool RequestGate(Cell cell, bool open, bool allowPlayerRelocation)
+        {
+            if (room.TerrainAt(cell).CategoryId != TerrainCategories.Openable) return false;
+            if (open)
+            {
+                pendingClosures.Remove(cell);
+                gateStates[cell] = true;
+            }
+            else
+            {
+                if (IsWalkable(cell)) gateStates[cell] = true;
+                pendingClosures.Add(cell);
+                RetryGateClosures(allowPlayerRelocation);
+            }
+            return true;
+        }
+
+        public void RetryGateClosures(bool allowPlayerRelocation)
+        {
+            foreach (var cell in pendingClosures.OrderBy(c => c.Y).ThenBy(c => c.X).ToArray())
+            {
+                if (Boxes.ContainsValue(cell)) continue;
+                if (Player == cell)
+                {
+                    if (!allowPlayerRelocation) continue;
+                    var occupied = new HashSet<Cell>(Boxes.Values);
+                    var blocked = new HashSet<Cell>(Zone) { cell };
+                    var safe = RecoveryRules.SafeCell(cell, IsWalkable, blocked, occupied, entryBuffer);
+                    if (blocked.Contains(safe) || occupied.Contains(safe) || !IsWalkable(safe)) continue;
+                    Player = safe;
+                }
+                gateStates[cell] = false;
+                pendingClosures.Remove(cell);
+            }
+        }
+
+        public IReadOnlyDictionary<Cell, bool> GateStates => gateStates;
+        public IReadOnlyCollection<Cell> PendingGateClosures => pendingClosures;
+
+        public void RestoreGate(Cell cell, bool open, bool pending)
+        {
+            if (room.TerrainAt(cell).CategoryId != TerrainCategories.Openable)
+                throw new FormatException("存档包含未知开合地形");
+            gateStates[cell] = open;
+            if (pending) pendingClosures.Add(cell);
         }
 
         public void Start(float duration)

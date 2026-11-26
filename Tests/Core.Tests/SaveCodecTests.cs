@@ -21,6 +21,20 @@ namespace Sokoban.Core.Tests
 
         static Dictionary<string, string> Hashes(Room room) => new Dictionary<string, string> { ["r1"] = ContentHash.Of(new RoomDraftModel(room)) };
 
+        [Theory]
+        [InlineData(null, SaveStatus.Ok)]
+        [InlineData(3, SaveStatus.Ok)]
+        [InlineData(4, SaveStatus.Corrupt)]
+        public void FacingIsAnOptionalFourWayField(int? facing, SaveStatus status)
+        {
+            var room = MakeRoom();
+            var data = MakeData(room);
+            data.Facing = facing;
+            var load = SaveCodec.Decode(SaveCodec.ToJson(data), "w", Hashes(room));
+            Assert.Equal(status, load.Status);
+            if (status == SaveStatus.Ok) Assert.Equal(facing, load.Data.Facing);
+        }
+
         [Fact]
         public void RoundTripIsOk()
         {

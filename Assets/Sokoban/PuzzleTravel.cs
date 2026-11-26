@@ -103,17 +103,51 @@ namespace Sokoban
             if (dest.Boxes.ContainsValue(target.Cell)) return false;
             ActiveId = end.LevelId;
             local = target.Cell;
+            dest.Session.Place(local);
+            Facing = RotationSteps.DirectionIndex(new Cell(-target.Outward.X, -target.Outward.Y));
             Enter();
             return true;
         }
 
+        internal bool SetTerrainState(string roomId, string id, bool open)
+        {
+            if (string.IsNullOrEmpty(id) || !states.TryGetValue(roomId, out var progress)) return false;
+            var room = progress.Validated.Room;
+            bool active = roomId == ActiveId;
+            if (active) progress.Session.Place(local);
+            for (int y = 0; y < room.Height; y++)
+                for (int x = 0; x < room.Width; x++)
+                {
+                    var cell = new Cell(x, y);
+                    if (room.TerrainAt(cell).EntityId != id) continue;
+                    if (!progress.Session.RequestGate(cell, open, active)) return false;
+                    if (active) local = progress.Session.Player;
+                    return true;
+                }
+            return false;
+        }
+
+        internal bool TerrainGateOpen(string roomId, Cell cell) => states[roomId].Session.IsWalkable(cell);
+
         public bool BeginRecovery()
         {
-            var item = ActiveItem;
+            return BeginRecovery(ActiveItem);
+        }
+
+        internal bool BeginScriptedRecovery(string id)
+        {
+            var items = Current.Validated.RecoveryItems;
+            var item = string.IsNullOrWhiteSpace(id) ? items.FirstOrDefault() : items.FirstOrDefault(i => i.Id == id);
+            return BeginRecovery(item);
+        }
+
+        bool BeginRecovery(RecoveryItem item)
+        {
             if (item == null || Recovering || Motion != null) return false;
             var session = Current.Rebuild(local);
             session.Start(item.Duration);
             local = session.Player;
+            Fire(ActiveId, TriggerIds.RecoveryStart);
             return true;
         }
 
@@ -123,6 +157,7 @@ namespace Sokoban
             if (!session.Recovering) return false;
             session.Place(local);
             if (!session.Advance(seconds)) return false;
+            session.RetryGateClosures(true);
             local = session.Player;
             Current.RecordSolved();
             Fire(ActiveId, TriggerIds.RecoveryEnd);

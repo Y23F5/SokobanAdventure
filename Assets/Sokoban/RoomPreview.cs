@@ -88,6 +88,16 @@ namespace Sokoban
             }
         }
 
+        internal void ClipWalls(RoomDraft draft, int side)
+        {
+            if (!root) return;
+            foreach (Transform group in root.transform)
+            {
+                var room = draft.Catalog.TryGetValue(group.name, out var model) ? model.Room : draft.Room;
+                CameraRig.ClipWalls(group, room.Width, room.Height, side);
+            }
+        }
+
         void Track(Transform t)
         {
             t.gameObject.hideFlags = HideFlags.DontSave;

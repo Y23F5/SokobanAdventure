@@ -5,6 +5,8 @@
  * Campaign()：读取正式世界文件及其房间文件，逐房校验后装配，起点取世界起点房间的出生点。
  * Step(delta, out pushed)：经 PushRules.TryPush 提交一步或一次单箱推动，门框外一步交给 CrossDoor 换房。
  * CanLeaveWorld(direction)：玩家站在终点门上朝外，且终点要求的房间均已解开时为真。
+ * Interact()：按朝向查找前格实体，触发其对象状态迁移并返回关联行为图。
+ * Facing：按出生点旋转初始化，成功移动后更新。
  * Origin、Player、Boxes、Targets、HomeOf：活动房间的世界格视图，规则状态始终保存在房内坐标。
  * Models、Hashes：各房草稿模型与内容哈希，供表现层读取装饰、供存档比对。
  * PuzzleMotion：进行中的一次移动或转向的演出进度，只进演出段，不进规则状态。
@@ -51,6 +53,7 @@ namespace Sokoban
         public bool EverSolved => Current.EverSolved;
         public bool SolvedIn(string roomId) => states[roomId].Solved;
         public int Heading;
+        public int Facing { get; private set; }
         public PuzzleMotion Motion { get; set; }
 
         internal static Vector2Int ToVector(Cell cell) => new Vector2Int(cell.X, cell.Y);
@@ -72,6 +75,7 @@ namespace Sokoban
             if (!states.ContainsKey(active)) throw new InvalidOperationException("请先将选中的房间放入世界");
             ActiveId = active;
             local = Current.Validated.Spawn.Cell;
+            Facing = Current.Validated.Spawn.Rotation;
             Enter();
         }
 
@@ -124,6 +128,30 @@ namespace Sokoban
                 && World.FinishRequiresSolved.All(id => states[id].Solved);
         }
 
+        internal IReadOnlyList<BehaviorGraph> Interact(out bool transitioned)
+        {
+            transitioned = false;
+            if (Recovering || Motion != null) return Array.Empty<BehaviorGraph>();
+            var room = Current.Validated.Room;
+            var cell = local + Cell.SearchOrder[Facing];
+            var model = Models[ActiveId];
+            var owners = Current.Boxes.Where(box => box.Value == cell).Select(box => box.Key)
+                .Concat(room.Objects.Where(item => item.Cell == cell && item.CategoryId != ObjectCategories.Box).Select(item => item.Id))
+                .Append(room.TerrainAt(cell).EntityId)
+                .Where(id => !string.IsNullOrEmpty(id)).Distinct(StringComparer.Ordinal);
+            var graphs = new List<BehaviorGraph>();
+            foreach (var owner in owners)
+            {
+                var states = Current.ObjectStates;
+                states.TryGetValue(owner, out var before);
+                Fire(ActiveId, TriggerIds.OnInteract, owner);
+                states.TryGetValue(owner, out var after);
+                transitioned |= before != after;
+                graphs.AddRange(ObjectBehavior.GraphsOf(model, owner));
+            }
+            return graphs;
+        }
+
         public bool Step(Vector2Int delta, out string pushed)
         {
             pushed = null;
@@ -137,6 +165,9 @@ namespace Sokoban
             var result = PushRules.TryPush(Current.Session, local, direction);
             if (!result.Moved) return false;
             local = result.Player;
+            Facing = RotationSteps.DirectionIndex(direction);
+            Current.Session.Place(local);
+            Current.Session.RetryGateClosures(false);
             pushed = result.PushedBoxId;
             Current.RecordSolved();
             if (pushed != null) Fire(ActiveId, TriggerIds.FirstPush, pushed);

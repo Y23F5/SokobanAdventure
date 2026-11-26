@@ -30,6 +30,30 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
+        public void ClosingGateWaitsUntilBoxMoves()
+        {
+            var cell = new Cell(3, 1);
+            var session = Make(cell, new Cell(1, 1));
+            Assert.True(session.RequestGate(cell, true, true));
+            Assert.True(session.RequestGate(cell, false, true));
+            Assert.True(session.IsWalkable(cell));
+            session.Boxes["box-1"] = new Cell(4, 1);
+            session.RetryGateClosures(true);
+            Assert.False(session.IsWalkable(cell));
+        }
+
+        [Fact]
+        public void ClosingGateRelocatesPlayerToUnoccupiedWalkableCell()
+        {
+            var cell = new Cell(3, 1);
+            var session = Make(new Cell(4, 1), cell);
+            session.RequestGate(cell, true, true);
+            session.RequestGate(cell, false, true);
+            Assert.Equal(new Cell(2, 1), session.Player);
+            Assert.False(session.IsWalkable(cell));
+        }
+
+        [Fact]
         public void StartRejectsNonPositiveDuration()
         {
             Assert.Throws<ArgumentException>(() => Make(new Cell(2, 1), new Cell(0, 0)).Start(0));

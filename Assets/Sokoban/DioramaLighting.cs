@@ -10,7 +10,6 @@ namespace Sokoban
 {
     internal sealed class DioramaLighting : IDisposable
     {
-        internal const float Pitch = 55, Yaw = 32;
         readonly Camera camera;
         readonly Light sun;
         readonly Material sky, originalSky;

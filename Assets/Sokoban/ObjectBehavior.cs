@@ -267,6 +267,10 @@ namespace Sokoban
                         break;
                     case SetState:
                     case SetVisible:
+                    case BehaviorNodeKinds.StartRecovery:
+                    case BehaviorNodeKinds.SetTerrainState:
+                    case BehaviorNodeKinds.ShowText:
+                    case BehaviorNodeKinds.PlaySound:
                         yield return node;
                         port = Out;
                         break;

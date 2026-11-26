@@ -39,6 +39,7 @@ namespace Sokoban
             {
                 WorldId = WorldId,
                 RoomId = ActiveId,
+                Facing = Facing,
                 PlayerX = local.X,
                 PlayerY = local.Y,
                 SelectedItem = bag.Selected,
@@ -50,6 +51,17 @@ namespace Sokoban
                 data.Boxes[pair.Key] = pair.Value.Boxes.ToDictionary(b => b.Key, b => new[] { b.Value.X, b.Value.Y });
                 data.EverSolved[pair.Key] = pair.Value.EverSolved;
                 data.ObjectStates[pair.Key] = new Dictionary<string, string>(pair.Value.ObjectStates);
+                var session = pair.Value.Session;
+                var room = pair.Value.Validated.Room;
+                var gates = new Dictionary<string, string>();
+                foreach (var gate in session.GateStates)
+                {
+                    var id = room.TerrainAt(gate.Key).EntityId;
+                    gates[id] = gate.Value ? "on" : "off";
+                }
+                foreach (var cell in session.PendingGateClosures)
+                    gates[room.TerrainAt(cell).EntityId] = "pending";
+                if (gates.Count > 0) data.TerrainStates.Add(pair.Key, gates);
                 data.Hashes[pair.Key] = Hashes[pair.Key];
             }
             data.Explored.UnionWith(exploration.Rooms);
@@ -69,15 +81,30 @@ namespace Sokoban
             exploration = candidate.exploration;
             bag = candidate.bag;
             Heading = candidate.Heading;
+            Facing = candidate.Facing;
             Motion = candidate.Motion;
         }
 
         void ApplySave(SaveData data)
         {
             var segment = data.Presentation ?? new PresentationSegment();
+            Check(data.TerrainStates.Keys.All(states.ContainsKey), "存档地形状态房间无效");
             foreach (var pair in states)
             {
                 var progress = pair.Value;
+                if (data.TerrainStates.TryGetValue(pair.Key, out var gates))
+                {
+                    var room = progress.Validated.Room;
+                    for (int y = 0; y < room.Height; y++)
+                        for (int x = 0; x < room.Width; x++)
+                        {
+                            var cell = new Cell(x, y);
+                            var id = room.TerrainAt(cell).EntityId;
+                            if (id != null && gates.TryGetValue(id, out var state))
+                                progress.Session.RestoreGate(cell, state != "off", state == "pending");
+                        }
+                    Check(progress.Session.GateStates.Count == gates.Count, "存档包含未知地形实体");
+                }
                 Check(data.Boxes.TryGetValue(pair.Key, out var saved) && saved.Count == progress.Boxes.Count
                     && saved.Keys.All(progress.Boxes.ContainsKey) && saved.Values.All(v => v != null && v.Length == 2), "箱子记录与房间不符：" + pair.Key);
                 var cells = saved.ToDictionary(b => b.Key, b => new Cell(b.Value[0], b.Value[1]));
@@ -96,6 +123,11 @@ namespace Sokoban
             bag = ItemBag.Restore(data.Items, data.SelectedItem, data.PendingItem);
             Check(segment.Heading >= 0 && segment.Heading <= 3, "视角无效");
             Heading = (int)segment.Heading;
+            if (data.Facing.HasValue)
+            {
+                Check(data.Facing.Value >= 0 && data.Facing.Value <= 3, "玩家朝向无效");
+                Facing = data.Facing.Value;
+            }
             var player = new Cell(data.PlayerX, data.PlayerY);
             local = player;
             var current = Current;

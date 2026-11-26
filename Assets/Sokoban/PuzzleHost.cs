@@ -23,11 +23,11 @@ namespace Sokoban
         public bool IsTrial { get; private set; }
         public bool Busy => duration > 0;
         readonly Dictionary<string, Transform> objects = new Dictionary<string, Transform>();
-        readonly List<Transform> boundaryWalls = new List<Transform>();
         readonly RecoveryPresenter presenter = new RecoveryPresenter();
         Camera lens;
         Transform actor, movingBox;
         Vector3 playerStart, boxStart, focus;
+        Quaternion playerStartRotation;
         float elapsed, duration, startAngle, angle, endAngle;
         bool turning, leaving;
         Action returnToEditor;
@@ -83,6 +83,7 @@ namespace Sokoban
             {
                 Vector3 delta = Position(motion.Delta);
                 playerStart = actor.position - delta;
+                playerStartRotation = actor.rotation;
                 movingBox = motion.Pushed == null ? null : objects[motion.Pushed];
                 if (movingBox) boxStart = movingBox.position - delta;
             }
@@ -103,6 +104,7 @@ namespace Sokoban
                 group.Find(run.Rooms[pair.Key].Spawn.Id).gameObject.SetActive(false);
                 foreach (var box in run.BoxesIn(pair.Key)) group.Find(box.Key).position = Position(box.Value);
                 SyncObjectStates(pair.Key, group);
+                if (pair.Key != run.ActiveId || !run.Recovering) SyncTerrainGates(pair.Key, group);
             }
             InitAtmosphere();
         }
@@ -113,14 +115,13 @@ namespace Sokoban
             if (actor) actor.gameObject.SetActive(false);
             var current = groups[run.ActiveId];
             objects.Clear();
-            boundaryWalls.Clear();
             foreach (Transform part in current)
             {
                 objects[part.name] = part;
-                if (part.name.StartsWith("Wall ", StringComparison.Ordinal)) boundaryWalls.Add(part);
             }
             actor = objects[run.Room.Spawn.Id];
             actor.gameObject.SetActive(true);
+            actor.rotation = RoomPreview.CellRotation(run.Facing);
             actor.localScale = Vector3.one;
             actor.position = Position(run.Player);
             var room = run.Room.Room;
@@ -154,7 +155,8 @@ namespace Sokoban
             if (Busy) { Animate(Time.deltaTime); return; }
             float wheel = Input.mouseScrollDelta.y;
             if (wheel != 0) SelectItem((int)Mathf.Sign(wheel));
-            if (Input.GetKeyDown(KeyCode.R)) UseItem();
+            if (Input.GetKeyDown(KeyCode.R)) { UseItem(); return; }
+            if (Input.GetKeyDown(KeyCode.F)) { Interact(); return; }
 
             if (Input.GetKeyDown(KeyCode.Q)) Turn(-1);
             else if (Input.GetKeyDown(KeyCode.E)) Turn(1);
@@ -201,6 +203,7 @@ namespace Sokoban
             }
             SyncObjectStates(Run.ActiveId, groups[Run.ActiveId]);
             playerStart = actor.position;
+            playerStartRotation = actor.rotation;
             movingBox = pushed == null ? null : objects[pushed];
             if (movingBox) boxStart = movingBox.position;
             elapsed = 0;
@@ -234,6 +237,7 @@ namespace Sokoban
             else
             {
                 actor.position = Vector3.Lerp(playerStart, Position(Run.Player), t);
+                actor.rotation = Quaternion.Slerp(playerStartRotation, RoomPreview.CellRotation(Run.Facing), t);
                 if (movingBox) movingBox.position = Vector3.Lerp(boxStart, boxStart + Position(Run.Player) - playerStart, t);
             }
             UpdateOcclusion();
@@ -253,12 +257,12 @@ namespace Sokoban
 
         void SetCamera()
         {
-            lens.transform.rotation = Quaternion.Euler(DioramaLighting.Pitch, angle + DioramaLighting.Yaw, 0);
-            lens.transform.position = focus - lens.transform.forward * (lens.orthographicSize * 3 + 10);
+            CameraRig.Place(lens, focus, angle, lens.orthographicSize * 3 + 10);
         }
 
         void RefreshFeedback()
         {
+            if (!Run.Recovering) SyncTerrainGates(Run.ActiveId, groups[Run.ActiveId]);
             UpdateOcclusion();
             foreach (var door in Run.Room.Doors)
                 if (door.Role == "exit" && objects.TryGetValue(door.Id, out var gate)) gate.gameObject.SetActive(!Run.CanApproach(door));
