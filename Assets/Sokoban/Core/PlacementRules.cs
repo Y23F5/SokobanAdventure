@@ -5,7 +5,8 @@
  * 依次判定：超出房间边界、空格需先铺地板、墙上无法放置、门格或主入口预留格（主入口内侧格为门格减外侧偏移）、格子已被其他对象占用；
  * ignoreId 指定移动时被忽略的对象，使对象能留在原格；
  * 出生点类别不受主入口预留格限制（出生点固定在主入口内侧格）；
- * PlacementRules.Occupied(draft, cell, ignoreId)：只判定格子是否被其他对象占用，不含门格与主入口预留格，供设置出生点与门时使用；装饰物以 custom 类别对象存放在对象表中，与箱、目标一样参与占用判定。
+ * PlacementRules.Occupied(draft, cell, ignoreId)：只判定格子是否被其他对象占用，不含门格与主入口预留格，供设置出生点与门时使用；装饰物以 custom 类别对象存放在对象表中，与箱、目标一样参与占用判定；
+ * PlacementRules.NeedsFloor(draft, cell)：判定格子是否必须保留地板，即格子上有任意对象，或格子是任一扇门的内侧格（门格减外侧偏移），供改墙与擦除地形前检查；只看对象表与门表，不涉及已删除的恢复格。
  */
 using System.Linq;
 
@@ -15,6 +16,10 @@ namespace Sokoban.Core
     {
         public static bool Occupied(RoomDraftModel draft, Cell cell, string ignoreId) =>
             draft.Room.Objects.Any(o => o.Id != ignoreId && o.Cell == cell);
+
+        public static bool NeedsFloor(RoomDraftModel draft, Cell cell) =>
+            draft.Room.Objects.Any(o => o.Cell == cell) ||
+            draft.Doors.Any(d => cell == new Cell(d.Cell.X - d.Outward.X, d.Cell.Y - d.Outward.Y));
 
         public static string Error(RoomDraftModel draft, string categoryId, Cell cell, string ignoreId)
         {

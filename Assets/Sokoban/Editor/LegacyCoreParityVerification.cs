@@ -70,6 +70,14 @@ namespace Sokoban.Editor
                             string newError = PlacementRules.Error(draft, ObjectCategories.Box, new Sokoban.Core.Cell(px, py), null);
                             if (oldError != newError) failures.Add(name + " 放置预检不一致 (" + px + "," + py + ")：旧=" + oldError + " 新=" + newError);
                         }
+                    for (int ny = 0; ny < original.Height; ny++)
+                        for (int nx = 0; nx < original.Width; nx++)
+                        {
+                            var ncell = new Vector2Int(nx, ny);
+                            bool oldFloor = RoomDraft.LegacyNeedsFloor(legacyDraft.Room, ncell);
+                            bool routedFloor = legacyDraft.NeedsFloor(legacyDraft.Room, ncell);
+                            if (oldFloor != routedFloor) failures.Add(name + " NeedsFloor 转调与旧判定不一致 " + ncell + "：旧=" + oldFloor + " 转调=" + routedFloor);
+                        }
                     for (int dy = 0; dy < original.Height; dy++)
                         for (int dx = 0; dx < original.Width; dx++)
                         {

@@ -146,10 +146,21 @@ namespace Sokoban
             Commit(next, Selected);
         }
         public void Rename(string name) { RoomFile.Check(!string.IsNullOrWhiteSpace(name),"房间名称不能为空"); var next=(JObject)Room.DeepClone();next["name"]=name;Commit(next,Selected); }
-        static bool NeedsFloor(JObject room, Vector2Int cell) =>
+        public static bool LegacyNeedsFloor(JObject room, Vector2Int cell) =>
             RoomFile.Objects(room).Any(item => RoomFile.At(item) == cell) ||
             room["doors"].Any(door => RoomFile.At(door) + RoomFile.Inward(door) == cell) ||
             room["boxes"].Any(box => RoomFile.Cell(box["recoveryCell"]) == cell);
+        public bool NeedsFloor(JObject room, Vector2Int cell)
+        {
+            Sokoban.Core.RoomDraftModel core;
+            try { core = ReferenceEquals(room, Room) ? TryCoreDraft() : Sokoban.Core.LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(room)); }
+            catch (System.FormatException) { core = null; }
+            if (core == null) return LegacyNeedsFloor(room, cell);
+            return Sokoban.Core.PlacementRules.NeedsFloor(core, new Sokoban.Core.Cell(cell.x, cell.y)) ||
+                (room["decorations"] as JArray ?? new JArray()).Any(item => RoomFile.At(item) == cell) ||
+                room["doors"].Any(door => RoomFile.At(door) == cell) ||
+                room["boxes"].Any(box => RoomFile.Cell(box["recoveryCell"]) == cell);
+        }
         public string TerrainPlacementError(Vector2Int cell, RoomTool tool)
         {
             if (World != null && Placement == null) return "房间尚未放置";
