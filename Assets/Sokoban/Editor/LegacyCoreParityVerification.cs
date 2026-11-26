@@ -65,6 +65,22 @@ namespace Sokoban.Editor
                             string newDirection = legacyDraft.DoorDirection(dcell);
                             if (oldDirection != newDirection) failures.Add(name + " 门朝向不一致 " + dcell + "：旧=" + oldDirection + " 新=" + newDirection);
                         }
+                    int markerDiffs = 0;
+                    for (int my = 0; my < original.Height; my++)
+                        for (int mx = 0; mx < original.Width; mx++)
+                        {
+                            var mcell = new Vector2Int(mx, my);
+                            if (!RoomFile.Floor(legacyDraft.Room, mcell)) continue;
+                            var spawnItem = legacyDraft.Room["spawn"];
+                            bool oldOccupied = legacyDraft.LegacyMarkerOccupied(mcell, spawnItem);
+                            bool coreOccupied = legacyDraft.MarkerOccupied(mcell, spawnItem);
+                            if (oldOccupied != coreOccupied)
+                            {
+                                markerDiffs++;
+                                failures.Add(name + " 标记占用判定不一致 " + mcell + "：旧=" + oldOccupied + " 新=" + coreOccupied);
+                            }
+                        }
+                    Debug.Log("PARITY MARKER-PROBE " + name + " 差异格数=" + markerDiffs);
                     var freeCell = Enumerable.Range(0, original.Width * original.Height).Select(i => new Vector2Int(i % original.Width, i / original.Width)).First(p => legacyDraft.PlacementError(true, p) == null);
                     legacyDraft.Place(true, freeCell, "parity-cache-probe");
                     string afterPlace = legacyDraft.PlacementError(true, freeCell);

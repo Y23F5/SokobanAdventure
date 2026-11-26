@@ -2,6 +2,7 @@
  * @file RoomDraft.cs
  * @brief 两端共用单房编辑会话。RoomDraft 解析初始数据；Open 预读候选文件再替换现场，Save 区分工作文件与交换副本；
  * Find/Select 按稳定 ID 或格定位，Click 将当前工具翻译为编辑命令，Place/Move 校验并提交，
+ * MarkerOccupied 经 Core 的 PlacementRules.Occupied 判定设置出生点与门时的占用，再补判门格（旧侧把门当对象）与装饰物（Core 没有），LegacyMarkerOccupied 保留旧判定供比对；
  * DoorDirection 经 Core 的 DoorPlacement 为地板格选门朝向，LegacyDoorDirection 保留旧逐向判定供比对；
  * PlacementError 把旧房间转成的 Core 草稿按 Room 引用与 Revision 缓存，悬停时不再每帧整房转换，并经 Core 的 PlacementRules 判定越界、墙、门预留与对象占用，再补判 Core 没有的装饰物占格；LegacyPlacementError 保留旧逐项判定供比对，旧房间数据无法转换时也回退到它；Commit 记修改前后选择与数据，Undo/Redo 经 Restore 在历史栈之间移动快照。
  */
@@ -146,7 +147,7 @@ namespace Sokoban
             bool spawn = role == "spawn";
             var previous = spawn ? Room["spawn"] : null;
             if (previous != null && RoomFile.At(previous) == cell) return;
-            RoomFile.Check(!RoomFile.Objects(Room).Any(item => item != previous && RoomFile.At(item) == cell), "格子已占用");
+            RoomFile.Check(!MarkerOccupied(cell, previous), "格子已占用");
             var next = (JObject)Room.DeepClone();
             var marker = new JObject { ["cell"] = RoomFile.Point(cell) };
             if (spawn)
@@ -166,6 +167,16 @@ namespace Sokoban
             }
             Commit(next, (string)marker["id"]);
         }
+        public bool MarkerOccupied(Vector2Int cell, JToken previous)
+        {
+            var core = Sokoban.Core.LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(Room));
+            if (Sokoban.Core.PlacementRules.Occupied(core, new Sokoban.Core.Cell(cell.x, cell.y), (string)previous?["id"])) return true;
+            if (core.Doors.Any(d => d.Cell.X == cell.x && d.Cell.Y == cell.y)) return true;
+            var decorations = Room["decorations"] as JArray;
+            return decorations != null && decorations.Any(o => RoomFile.At(o) == cell);
+        }
+        public bool LegacyMarkerOccupied(Vector2Int cell, JToken previous) =>
+            RoomFile.Objects(Room).Any(item => item != previous && RoomFile.At(item) == cell);
         public string DoorDirection(Vector2Int cell)
         {
             var core = Sokoban.Core.LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(Room));
