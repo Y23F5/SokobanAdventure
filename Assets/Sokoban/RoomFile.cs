@@ -7,6 +7,7 @@
  * ToLegacyData 把旧 JObject 房间抽成 Core 的 LegacyRoomData，供 Core 校验器与转换适配器使用；
  * BoundaryGaps 经 LegacyRoomAdapter.ToDraft 与 Core 的 boundary.open 规则取边界缺口，ParseCoreCell 把规则定位文本还原成格坐标；
  * LegacyBoundaryGaps 保留旧的逐格判定，仅供新旧比对脚本对照；
+ * DoorGeometryIssueIds 经 Core 的 door.geometry 规则取几何错误的门 ID，朝向字母非法时先由 StructureIssues 自行报错；
  * RequireStructure 在正式文件入口拒绝这些错误；Write 转调 Core 的 AtomicFile.Write，先写同目录临时文件再替换目标。
  */
 using System;
@@ -138,12 +139,12 @@ namespace Sokoban
                 var cell = Cell(box["recoveryCell"]);
                 if (!recovery.Add(cell)) yield return $"{level} {box["id"]} 恢复位置重复 {cell}";
             }
+            var badGeometry = DoorGeometryIssueIds(room);
             foreach (var door in doors)
             {
                 var cell = At(door);
                 string direction = (string)door["direction"];
-                if (direction == null || direction.Length != 1 || !"NESW".Contains(direction)
-                    || Terrain(room, cell - Inward(door)) != Void || !Floor(room, cell + Inward(door)) || !Floor(room, cell))
+                if (direction == null || direction.Length != 1 || !"NESW".Contains(direction) || badGeometry.Contains((string)door["id"]))
                 {
                     yield return $"{level} {cell} 门 {door["id"]} 需要朝外且内侧可通行";
                     continue;
@@ -158,6 +159,20 @@ namespace Sokoban
             foreach (var issue in RoomDraft.DefinitionIssues(room)) yield return issue;
             foreach (var cell in BoundaryGaps(room))
                 yield return $"{level} {cell} 边界缺墙，请补墙或设置朝外的门";
+        }
+
+        static HashSet<string> DoorGeometryIssueIds(JObject room)
+        {
+            bool badDirection = room["doors"].Any(door =>
+            {
+                string direction = (string)door["direction"];
+                return direction == null || direction.Length != 1 || !"NESW".Contains(direction);
+            });
+            if (badDirection) return new HashSet<string>();
+            var draft = Sokoban.Core.LegacyRoomAdapter.ToDraft(ToLegacyData(room));
+            return new HashSet<string>(Sokoban.Core.RoomValidator.ValidateDraft(draft, Sokoban.Core.ValidationStage.Publish)
+                .Where(issue => issue.RuleId == "door.geometry")
+                .Select(issue => issue.Location));
         }
 
         static Sokoban.Core.Cell ToCore(Vector2Int cell) => new Sokoban.Core.Cell(cell.x, cell.y);
