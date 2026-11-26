@@ -44,6 +44,20 @@ namespace Sokoban
         Color SelectedTint => interfaceStyle && interfaceStyle.theme ? interfaceStyle.theme.active : new Color32(255, 195, 104, 255);
         Color NormalTint => interfaceStyle && interfaceStyle.theme ? interfaceStyle.theme.parchment : new Color32(255, 228, 182, 255);
 
+        void Paint(Image image, bool on, Sprite normalSprite, Sprite selectedSprite)
+        {
+            var sprite = on ? selectedSprite : normalSprite;
+            if (sprite)
+            {
+                image.sprite = sprite;
+                image.type = Image.Type.Sliced;
+                image.color = Color.white;
+            }
+            else image.color = on ? SelectedTint : NormalTint;
+        }
+
+        InterfaceTheme Skin => interfaceStyle ? interfaceStyle.theme : null;
+
         void Start()
         {
             fileName.onValueChanged.AddListener(value => Panel.Filename=value);
@@ -146,8 +160,8 @@ namespace Sokoban
             else if (pickedAsset != null)
                 bindAsset.interactable = draft.CanBindAsset(pickedAsset, categoryOpen ? paletteCategory : RoomTool.Select) &&
                     thumbnails.ModelIssue(draft.AssetRoom(pickedAsset), pickedAsset) == null;
-            foreach (var card in cards) card.Value.image.color = card.Key == (draft.BrushDefinition ?? draft.BrushBuiltin ?? draft.BrushAsset ?? pickedBuiltin ?? pickedAsset)
-                ? SelectedTint : NormalTint;
+            foreach (var card in cards) Paint(card.Value.image, card.Key == (draft.BrushDefinition ?? draft.BrushBuiltin ?? draft.BrushAsset ?? pickedBuiltin ?? pickedAsset),
+                Skin ? Skin.cardSprite : null, Skin ? Skin.cardSelectedSprite : null);
         }
 
         void AddPaletteCard(string id, string title, string model, UnityEngine.Events.UnityAction action, bool builtin = false)
@@ -325,7 +339,7 @@ namespace Sokoban
             Color selected = SelectedTint, normal = NormalTint;
             objectTab.image.color=!custom && !terrain?selected:normal;terrainTab.image.color=!custom && terrain?selected:normal;assetTab.image.color=custom?selected:normal;
             for(int i=0;i<toolButtons.Length;i++)
-                if(toolButtons[i])toolButtons[i].image.color=(int)draft.Tool==i?selected:normal;
+                if(toolButtons[i])Paint(toolButtons[i].image, (int)draft.Tool==i, Skin ? Skin.buttonSprite : null, Skin ? Skin.buttonSelectedSprite : null);
             var obj=draft.Find(draft.Selected);
             if (custom && draft.BrushDefinition != null)
             {

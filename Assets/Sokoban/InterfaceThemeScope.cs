@@ -119,14 +119,19 @@ namespace Sokoban
             }
         }
 
+        static bool InPage(Selectable control, GameObject page) => page && control.transform.IsChildOf(page.transform);
+
         Sprite ButtonSprite(Selectable control)
         {
+            var panels = GetComponentInParent<PlayPanels>(true);
+            bool inPlayPage = panels && (InPage(control, panels.pause) || InPage(control, panels.settings) || InPage(control, panels.confirm) || InPage(control, panels.error));
+            if (!inPlayPage) return theme.buttonSprite;
             var label = control.GetComponentInChildren<Text>(true);
             string text = label ? label.text : null;
             if (!string.IsNullOrEmpty(text))
             {
                 if (text.Contains("退出") && theme.buttonDangerSprite) return theme.buttonDangerSprite;
-                if ((text.StartsWith("继续") || text.Contains("保存并返回") || text.Contains("覆盖并开始")) && theme.buttonPrimarySprite) return theme.buttonPrimarySprite;
+                if ((text == "继续游玩" || text.Contains("保存并返回") || text.Contains("覆盖并开始")) && theme.buttonPrimarySprite) return theme.buttonPrimarySprite;
             }
             return theme.buttonSprite;
         }
