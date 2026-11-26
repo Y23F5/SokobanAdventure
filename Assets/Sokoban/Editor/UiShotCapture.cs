@@ -102,7 +102,7 @@ namespace Sokoban.Editor
             Shot(cam, "game-01-主菜单");
 
             var board = panels.menu && panels.menu.continueButton ? panels.menu.continueButton.transform.parent.gameObject : null;
-            if (board) board.SetActive(false);
+            if (board) board.transform.parent.gameObject.SetActive(false);
             panels.Pause();
             for (int i = 0; i < 5; i++) yield return null;
             Shot(cam, "game-03-暂停");

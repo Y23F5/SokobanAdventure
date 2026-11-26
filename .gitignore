@@ -123,3 +123,8 @@ InitTestScene*.unity*
 /Tests/**/bin/
 /Tests/**/obj/
 !/Tests/Core.Tests/Core.Tests.csproj
+
+# Local tooling and reference files
+/.claude/
+/.vscode/
+/Ref.pur
