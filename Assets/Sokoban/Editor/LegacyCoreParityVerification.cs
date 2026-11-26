@@ -41,6 +41,19 @@ namespace Sokoban.Editor
                     foreach (var cell in legacy.Except(core)) failures.Add(name + " 旧实现有缺口而 Core 没有：" + cell);
                     foreach (var cell in core.Except(legacy)) failures.Add(name + " Core 有缺口而旧实现没有：" + cell);
                     var original = RoomFile.ToLegacyData(room);
+                    foreach (var property in room.Properties())
+                    {
+                        string text = property.Value.ToString(Newtonsoft.Json.Formatting.None);
+                        bool structural = new[] { "levelId", "size", "terrainRowsNorthToSouth", "doors", "primaryEntranceId", "boxes", "targets", "spawn", "decorations", "formatVersion", "kind" }.Contains(property.Name);
+                        if (!structural && (!original.Extras.TryGetValue(property.Name, out var kept) || kept != text)) failures.Add(name + " Extras 丢失顶层键 " + property.Name);
+                    }
+                    foreach (var box in room["boxes"])
+                        if (!original.Extras.TryGetValue("box:" + (string)box["id"], out var boxText) || boxText != box.ToString(Newtonsoft.Json.Formatting.None)) failures.Add(name + " Extras 丢失箱子原文 " + (string)box["id"]);
+                    foreach (var door in room["doors"])
+                        if (!original.Extras.TryGetValue("door:" + (string)door["id"], out var doorText) || doorText != door.ToString(Newtonsoft.Json.Formatting.None)) failures.Add(name + " Extras 丢失门原文 " + (string)door["id"]);
+                    var roundTrip = LegacyRoomWriter.FromDraft(LegacyRoomAdapter.ToDraft(original));
+                    if (roundTrip.Extras.Count != original.Extras.Count || original.Extras.Any(pair => !roundTrip.Extras.TryGetValue(pair.Key, out var value) || value != pair.Value)) failures.Add(name + " Extras 经 Core 往返后不一致");
+                    Debug.Log("PARITY EXTRAS " + name + " 键数=" + original.Extras.Count + " 装饰物=" + original.Decorations.Length);
                     var back = LegacyRoomWriter.FromDraft(LegacyRoomAdapter.ToDraft(original));
                     if (!original.RowsNorthToSouth.SequenceEqual(back.RowsNorthToSouth)) failures.Add(name + " 往返后地形行不一致");
                     if (!original.Doors.Select(d => d.Id + d.Cell + d.Direction + d.Role).OrderBy(s => s).SequenceEqual(back.Doors.Select(d => d.Id + d.Cell + d.Direction + d.Role).OrderBy(s => s))) failures.Add(name + " 往返后门不一致");
