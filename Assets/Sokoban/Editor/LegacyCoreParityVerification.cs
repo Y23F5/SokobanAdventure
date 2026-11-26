@@ -3,6 +3,10 @@
  * @brief Run 读取三个正式房间，用旧 RoomFile.BoundaryGaps 与 Core 的 boundary.open 比较缺口格集合，并要求 Core 的 door.geometry 不报错；不一致时逐条列出并以退出码 1 结束。
  * Run：批处理入口，-executeMethod Sokoban.Editor.LegacyCoreParityVerification.Run。
  * Gaps：把 Core 校验结果里的 boundary.open 定位还原成格集合，便于与旧实现逐格对照。
+ * BridgeChecks：对三个正式房间原样与七种破坏用例（出生点移除、两箱恢复格重复、两对象同格、对象在墙内、重复 ID、主入口内侧放箱子、门朝向非法），比较旧 RoomFile.StructureIssues 前半段与 RoomCoreBridge.StructureIssues 的条数和首条文本，并比较 RoomCoreBridge.LoadIssues 是否非空与旧 Parse 草稿读入是否抛 InvalidDataException。
+ * OldFront：枚举旧 StructureIssues 并只保留缺出生点、恢复位置重复、门朝外、主入口内侧留空、找不到主入口五类文案；这五类都在边界缺口等后半段之前产出，后半段抛出的异常（如门朝向非法时 ToDraft 抛 FormatException）被吞掉，只保留已产出的前半段。
+ * NewFront：对桥接层同样收集，异常类型名记为一条。
+ * OldThrows：以 RoomFile.Parse(json, true) 触发旧 Validate，捕获 InvalidDataException。
  */
 using System;
 using System.IO;
@@ -24,6 +28,99 @@ namespace Sokoban.Editor
                 var parts = i.Location.Trim('(', ')').Split(',');
                 return new Vector2Int(int.Parse(parts[0]), int.Parse(parts[1]));
             }));
+
+        static string RoomJson(string name) => File.ReadAllText(Path.Combine(Application.streamingAssetsPath, "World/" + name + ".room.json"));
+
+        static Newtonsoft.Json.Linq.JToken WallCell(Newtonsoft.Json.Linq.JObject r)
+        {
+            var rows = (Newtonsoft.Json.Linq.JArray)r["terrainRowsNorthToSouth"];
+            for (int row = 0; row < rows.Count; row++)
+            {
+                int x = ((string)rows[row]).IndexOf('#');
+                if (x >= 0) return RoomFile.Point(new Vector2Int(x, rows.Count - 1 - row));
+            }
+            return RoomFile.Point(new Vector2Int(-1, -1));
+        }
+
+        static List<string> OldFront(Newtonsoft.Json.Linq.JObject room)
+        {
+            var list = new List<string>();
+            try
+            {
+                foreach (var line in RoomFile.StructureIssues(room))
+                    if (line.Contains("需要放置玩家出生点") || line.Contains("恢复位置重复") || line.Contains("需要朝外且内侧可通行") || line.Contains("主入口内侧需要留空") || line.Contains("找不到主入口")) list.Add(line);
+            }
+            catch (Exception) { }
+            return list;
+        }
+
+        static List<string> NewFront(Newtonsoft.Json.Linq.JObject room)
+        {
+            var list = new List<string>();
+            try { list.AddRange(RoomCoreBridge.StructureIssues(room)); }
+            catch (Exception e) { list.Add("异常 " + e.GetType().Name); }
+            return list;
+        }
+
+        static string OldThrows(string json)
+        {
+            try { RoomFile.Parse(json, true); return null; }
+            catch (Exception e) { return e.GetType().Name; }
+        }
+
+        static void EnsureTwoBoxes(Newtonsoft.Json.Linq.JObject room)
+        {
+            var boxes = (Newtonsoft.Json.Linq.JArray)room["boxes"];
+            if (boxes.Count >= 2) return;
+            var taken = new HashSet<Vector2Int>(RoomFile.Objects(room).Select(RoomFile.At));
+            foreach (var box in boxes) taken.Add(RoomFile.Cell(box["recoveryCell"]));
+            var size = RoomFile.Size(room);
+            for (int y = 0; y < size.y; y++)
+                for (int x = 0; x < size.x; x++)
+                {
+                    var cell = new Vector2Int(x, y);
+                    if (!RoomFile.Floor(room, cell) || taken.Contains(cell)) continue;
+                    if (room["doors"].Any(d => RoomFile.At(d) + RoomFile.Inward(d) == cell)) continue;
+                    boxes.Add(new Newtonsoft.Json.Linq.JObject { ["id"] = "bridge-box-2", ["cell"] = RoomFile.Point(cell), ["recoveryCell"] = RoomFile.Point(cell) });
+                    return;
+                }
+        }
+
+        static void BridgeChecks(List<string> failures)
+        {
+            var cases = new List<(string, Action<Newtonsoft.Json.Linq.JObject>)>
+            {
+                ("原样", r => { }),
+                ("出生点移除", r => r.Remove("spawn")),
+                ("两箱恢复格重复", r => r["boxes"][1]["recoveryCell"] = r["boxes"][0]["recoveryCell"].DeepClone()),
+                ("两对象同格", r => r["boxes"][1]["cell"] = r["boxes"][0]["cell"].DeepClone()),
+                ("对象在墙内", r => r["boxes"][0]["cell"] = WallCell(r)),
+                ("重复ID", r => r["boxes"][1]["id"] = r["boxes"][0]["id"].DeepClone()),
+                ("主入口内侧放箱子", r => { var door = r["doors"].First(d => (string)d["id"] == (string)r["primaryEntranceId"]); r["boxes"][0]["cell"] = RoomFile.Point(RoomFile.At(door) + RoomFile.Inward(door)); }),
+                ("门朝向非法", r => r["doors"][0]["direction"] = "X"),
+            };
+            int compared = 0;
+            foreach (var name in Rooms)
+                foreach (var (label, mutate) in cases)
+                {
+                    string tag = "桥接比对 " + name + " " + label;
+                    var room = RoomFile.Parse(RoomJson(name), true);
+                    EnsureTwoBoxes(room);
+                    try { mutate(room); }
+                    catch (Exception e) { failures.Add(tag + " 构造破坏用例失败：" + e.Message); continue; }
+                    var oldList = OldFront(room);
+                    var newList = NewFront(room);
+                    if (oldList.Count != newList.Count) failures.Add(tag + " 结构问题条数不一致：旧=" + oldList.Count + " 桥接=" + newList.Count + " 旧首条=" + oldList.FirstOrDefault() + " 桥接首条=" + newList.FirstOrDefault());
+                    else if (oldList.Count > 0 && oldList[0] != newList[0]) failures.Add(tag + " 结构问题首条文本不一致：旧=" + oldList[0] + " 桥接=" + newList[0]);
+                    string thrown = OldThrows(room.ToString(Newtonsoft.Json.Formatting.None));
+                    var load = RoomCoreBridge.LoadIssues(room).ToList();
+                    if ((thrown != null) != (load.Count > 0)) failures.Add(tag + " LoadIssues 与旧 Validate 不一致：旧=" + (thrown ?? "不抛") + " 桥接=" + load.Count + " 条 " + load.FirstOrDefault());
+                    else if (thrown != null && thrown != "InvalidDataException") failures.Add(tag + " 旧 Parse 抛出了非 InvalidDataException：" + thrown);
+                    compared++;
+                    Debug.Log("PARITY BRIDGE " + tag + " 旧条数=" + oldList.Count + " 桥接条数=" + newList.Count + " 旧读入=" + (thrown ?? "不抛") + " 桥接读入条数=" + load.Count);
+                }
+            Debug.Log("PARITY BRIDGE 比对用例数=" + compared);
+        }
 
         public static void Run()
         {
@@ -135,6 +232,7 @@ namespace Sokoban.Editor
                         Debug.Log("PARITY BASELINE " + name + " 发布级错误 " + issue.RuleId + " " + issue.Location + " " + issue.Message);
                     Debug.Log("PARITY " + name + " legacyGaps=" + legacy.Count + " coreGaps=" + core.Count + " publishErrors=" + issues.Count(i => i.Severity == Severity.Error));
                 }
+                BridgeChecks(failures);
                 var worldPath = Path.Combine(Application.streamingAssetsPath, "World/main.world.json");
                 var catalog = new Newtonsoft.Json.Linq.JObject();
                 var legacyWorld = WorldLayout.Read(worldPath, catalog);
