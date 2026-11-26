@@ -27,13 +27,6 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void DecodeStillAcceptsDoorIdStart()
-        {
-            string text = WorldCodec.Encode(Doc()).Replace("\"spawnId\":\"spawn\"", "\"doorId\":\"spawn\"");
-            Assert.Equal("spawn", WorldCodec.Decode(text).Start.DoorId);
-        }
-
-        [Fact]
         public void StartWithoutAnyIdIsRejected()
         {
             string text = WorldCodec.Encode(Doc()).Replace("\"spawnId\":\"spawn\"", "\"other\":\"spawn\"");

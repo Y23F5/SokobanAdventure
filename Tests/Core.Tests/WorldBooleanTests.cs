@@ -32,15 +32,6 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void DecodeStillAcceptsIntegerAllowReturn()
-        {
-            string text = WorldCodec.Encode(Doc(true)).Replace("\"allowReturn\":true", "\"allowReturn\":1");
-            Assert.True(WorldCodec.Decode(text).Connections.Single().AllowReturn);
-            text = WorldCodec.Encode(Doc(false)).Replace("\"allowReturn\":false", "\"allowReturn\":0");
-            Assert.False(WorldCodec.Decode(text).Connections.Single().AllowReturn);
-        }
-
-        [Fact]
         public void DecodeRejectsNonBooleanAllowReturn()
         {
             string text = WorldCodec.Encode(Doc(true)).Replace("\"allowReturn\":true", "\"allowReturn\":\"yes\"");

@@ -5,7 +5,7 @@
  * LocateTool：建议进入的工具（无、选择、放置出生点、放置目标、画墙、设置门、添加恢复道具）。
  * LocateTarget：定位结果，含种类、对象或门或房间的 ID、格坐标（仅格类有效）与建议工具。
  * IssueLocator.Locate(issue)：按规则 ID 确定定位种类与建议工具；boundary.open 的 Location 解析为格坐标，door.geometry 与门相关规则定位到门 ID，
- * object.*、box.recovery*、entry.occupied 定位到对象 ID，其余及未知规则定位到房间且不建议工具；Location 无法解析为格坐标时退回房间定位。
+ * object.*、entry.occupied 定位到对象 ID，其余及未知规则定位到房间且不建议工具；Location 无法解析为格坐标时退回房间定位。
  */
 using System;
 
@@ -48,7 +48,7 @@ namespace Sokoban.Core
                         ? new LocateTarget(LocateKind.Cell, null, cell, LocateTool.PaintWall)
                         : new LocateTarget(LocateKind.Room, issue.Location, default(Cell), LocateTool.None);
             }
-            if (rule.StartsWith("object.", StringComparison.Ordinal) || rule.StartsWith("box.recovery", StringComparison.Ordinal) ||
+            if (rule.StartsWith("object.", StringComparison.Ordinal) ||
                 rule == "entry.occupied" || rule == "spawn.multiple")
                 return new LocateTarget(LocateKind.Object, issue.Location, default(Cell), LocateTool.Select);
             return new LocateTarget(LocateKind.Room, issue.Location, default(Cell), LocateTool.None);

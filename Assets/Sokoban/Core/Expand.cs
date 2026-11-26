@@ -1,7 +1,7 @@
 /**
  * @file Expand.cs
  * @brief 房间扩建的纯函数与命令，只在单独编辑房间时使用，世界不自动补偿。
- * Room.Resized(shiftX, shiftY, newWidth, newHeight)：返回平移后的新房间，地形、地形实体、对象格坐标与箱子恢复格整体平移，装饰类型与外观引用原样保留，越界内容丢弃前须由调用方预检。
+ * Room.Resized(shiftX, shiftY, newWidth, newHeight)：返回平移后的新房间，地形、地形实体与对象格坐标整体平移，越界内容丢弃前须由调用方预检。
  * ExpandCommand(holder, left, bottom, right, top)：带偏移量的复合命令，Apply 按四向扩建量生成新房间，Revert 按负偏移裁回旧尺寸并还原。
  * ExpandCommand.Precheck()：新尺寸必须为正，且扩建量不得为负，否则整条命令不提交。
  * RoomHolder：持有当前房间引用，使命令替换房间后外部仍能读到最新房间。
@@ -33,8 +33,7 @@ namespace Sokoban.Core
             {
                 var to = new Cell(o.Cell.X + shiftX, o.Cell.Y + shiftY);
                 if (!next.Inside(to)) continue;
-                Cell? recovery = o.RecoveryCell.HasValue ? new Cell(o.RecoveryCell.Value.X + shiftX, o.RecoveryCell.Value.Y + shiftY) : (Cell?)null;
-                next.AddObject(o.Id, o.CategoryId, to, recovery, o.DecorationKind, o.AppearanceRef);
+                next.AddObject(o.Id, o.CategoryId, to);
             }
             return next;
         }

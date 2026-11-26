@@ -5,7 +5,7 @@
  * WorldRoomRef：世界中的一个房间引用（房间 ID、相对世界文件的文件名、整数原点、前进所需已解开的房间 ID 列表）。
  * WorldConnection：一条门连接（唯一 ID、模式 direct 或 teleport、源端点、目标端点、是否允许回退）。
  * WorldDocument：世界文件的内存形态，含边界、房间引用、连接、起点、终点端点与终点所需已解开的房间。
- * 起点按 levelId 加 spawnId 读写（读入时也接受 doorId）；WorldCodec.Encode(doc)：写成 JSON 文本（allowReturn 写为布尔值，读入时布尔与 0、1 都接受），写完先调用 Decode 试读，失败抛 InvalidOperationException，调用方不应写入文件。
+ * 起点按 levelId 加 spawnId 读写，allowReturn 只读写布尔值，不兼容旧写法；WorldCodec.Encode(doc)：写成 JSON 文本，写完先调用 Decode 试读，失败抛 InvalidOperationException，调用方不应写入文件。
  * WorldCodec.Decode(text)：校验种类、格式号、边界方向、房间 ID 唯一、连接 ID 唯一、模式合法、连接与起终点引用的房间存在、前置房间存在，任何问题统一抛 FormatException。
  */
 using System;
@@ -152,11 +152,7 @@ namespace Sokoban.Core
 
         static bool Flag(Dictionary<string, object> d, string key)
         {
-            if (d.TryGetValue(key, out var v))
-            {
-                if (v is bool b) return b;
-                if (v is long l && (l == 0 || l == 1)) return l == 1;
-            }
+            if (d.TryGetValue(key, out var v) && v is bool b) return b;
             throw new FormatException("字段 " + key + " 不是布尔值");
         }
 
@@ -195,10 +191,7 @@ namespace Sokoban.Core
         static WorldEndpoint StartOf(Dictionary<string, object> root)
         {
             var o = Obj(root, "start");
-            string id = o.TryGetValue("spawnId", out var s) && s is string spawn ? spawn
-                : o.TryGetValue("doorId", out var d) && d is string door ? door
-                : throw new FormatException("起点缺少 spawnId");
-            return new WorldEndpoint(Str(o, "levelId"), id);
+            return new WorldEndpoint(Str(o, "levelId"), Str(o, "spawnId"));
         }
 
         static WorldDocument Build(Dictionary<string, object> root)

@@ -22,20 +22,15 @@ namespace Sokoban.Core.Tests
                 new LegacyDoor("exit", new Cell(8, 3), "E", "exit"),
             },
             PrimaryEntranceId = "entry",
-            Boxes = new[] { new LegacyEntity("box-1", new Cell(4, 2), new Cell(4, 2)) },
+            Boxes = new[] { new LegacyEntity("box-1", new Cell(4, 2)) },
             Targets = new[] { new LegacyEntity("target-1", new Cell(6, 2)) },
             Spawn = new LegacyEntity("spawn", new Cell(2, 2)),
-            Decorations = new[]
-            {
-                new LegacyDecoration("z-deco", new Cell(5, 4), "crate", "models/crate"),
-                new LegacyDecoration("a-deco", new Cell(3, 4)),
-            },
             Extras = new Dictionary<string, string>
             {
                 ["name"] = "\"仓库\"",
                 ["themeId"] = "\"warehouse\"",
                 ["events"] = "[{\"id\":\"e1\",\"on\":\"enter\"}]",
-                ["appearanceCatalog"] = "{\"a\":{\"x\":1.5}}",
+                ["decoration:z-deco"] = "{\"id\":\"z-deco\",\"cell\":[5,4]}",
                 ["stateProfile:box-1"] = Raw,
             },
         };
@@ -50,6 +45,15 @@ namespace Sokoban.Core.Tests
             Assert.Equal(5, draft.Extras.Count);
             Assert.Equal("[{\"id\":\"e1\",\"on\":\"enter\"}]", draft.Extras["events"]);
             Assert.Equal(Raw, draft.Extras["stateProfile:box-1"]);
+        }
+
+        [Fact]
+        public void DecorationTextStaysInExtrasAndTakesNoCell()
+        {
+            var draft = LegacyRoomAdapter.ToDraft(Sample());
+            Assert.Null(draft.Room.ObjectAt(new Cell(5, 4)));
+            Assert.Empty(draft.Room.ObjectsOf(ObjectCategories.Custom));
+            Assert.Equal("{\"id\":\"z-deco\",\"cell\":[5,4]}", draft.Extras["decoration:z-deco"]);
         }
 
         [Fact]
@@ -78,11 +82,9 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void LegacyDataDefaultsToNoDecorationsAndNoExtras()
+        public void LegacyDataDefaultsToNoExtras()
         {
-            var data = new LegacyRoomData();
-            Assert.Empty(data.Decorations);
-            Assert.Empty(data.Extras);
+            Assert.Empty(new LegacyRoomData().Extras);
         }
 
         [Fact]
@@ -104,37 +106,6 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void WriterKeepsDecorationsInOriginalOrderWithFields()
-        {
-            var back = LegacyRoomWriter.FromDraft(LegacyRoomAdapter.ToDraft(Sample()));
-            Assert.Equal(
-                new[] { ("z-deco", new Cell(5, 4), "crate", "models/crate"), ("a-deco", new Cell(3, 4), (string)null, (string)null) },
-                back.Decorations.Select(d => (d.Id, d.Cell, d.Kind, d.AppearanceRef)).ToArray());
-        }
-
-        [Fact]
-        public void WriterKeepsBoxesAndTargetsUnaffectedByDecorations()
-        {
-            var back = LegacyRoomWriter.FromDraft(LegacyRoomAdapter.ToDraft(Sample()));
-            Assert.Single(back.Boxes);
-            Assert.Single(back.Targets);
-            Assert.Equal("spawn", back.Spawn.Id);
-        }
-
-        [Fact]
-        public void CodecRoundTripKeepsDecorationFields()
-        {
-            var back = RoomCodec.Decode(RoomCodec.Encode(Document(LegacyRoomAdapter.ToDraft(Sample()))));
-            var deco = back.Room.ObjectAt(new Cell(5, 4));
-            Assert.Equal(ObjectCategories.Custom, deco.CategoryId);
-            Assert.Equal("crate", deco.DecorationKind);
-            Assert.Equal("models/crate", deco.AppearanceRef);
-            var plain = back.Room.ObjectAt(new Cell(3, 4));
-            Assert.Null(plain.DecorationKind);
-            Assert.Null(plain.AppearanceRef);
-        }
-
-        [Fact]
         public void CodecRoundTripKeepsExtrasVerbatim()
         {
             var back = RoomCodec.Decode(RoomCodec.Encode(Document(LegacyRoomAdapter.ToDraft(Sample()))));
@@ -142,15 +113,11 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void CodecOmitsNewFieldsWhenAbsent()
+        public void CodecOmitsExtrasWhenAbsent()
         {
             var data = Sample();
             data.Extras = null;
-            data.Decorations = new LegacyDecoration[0];
-            string text = RoomCodec.Encode(Document(LegacyRoomAdapter.ToDraft(data)));
-            Assert.DoesNotContain("extras", text);
-            Assert.DoesNotContain("decorationKind", text);
-            Assert.DoesNotContain("appearanceRef", text);
+            Assert.DoesNotContain("extras", RoomCodec.Encode(Document(LegacyRoomAdapter.ToDraft(data))));
         }
 
         [Fact]
@@ -165,20 +132,6 @@ namespace Sokoban.Core.Tests
         {
             var doc = new RoomDocument(new Room("r", 2, 2), null, null, null, new Dictionary<string, string> { ["k"] = "v" });
             string text = RoomCodec.Encode(doc).Replace("\"k\":\"v\"", "\"k\":5");
-            Assert.Throws<FormatException>(() => RoomCodec.Decode(text));
-        }
-
-        [Fact]
-        public void CodecRejectsNonStringDecorationKind()
-        {
-            string text = RoomCodec.Encode(Document(LegacyRoomAdapter.ToDraft(Sample()))).Replace("\"decorationKind\":\"crate\"", "\"decorationKind\":5");
-            Assert.Throws<FormatException>(() => RoomCodec.Decode(text));
-        }
-
-        [Fact]
-        public void CodecRejectsDuplicateDecorationId()
-        {
-            string text = RoomCodec.Encode(Document(LegacyRoomAdapter.ToDraft(Sample()))).Replace("\"a-deco\"", "\"z-deco\"");
             Assert.Throws<FormatException>(() => RoomCodec.Decode(text));
         }
     }

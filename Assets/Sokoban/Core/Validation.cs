@@ -88,14 +88,6 @@ namespace Sokoban.Core
                     ? new[] { (room.Id, "目标数多于箱数") }
                     : Enumerable.Empty<(string, string)>()),
 
-            new Rule("box.recoveryNotFloor", Severity.Error, Severity.Error, (room, entry) =>
-                room.Objects.Where(o => o.RecoveryCell.HasValue && room.TerrainAt(o.RecoveryCell.Value).CategoryId != TerrainCategories.Floor)
-                    .Select(o => (o.Id, "恢复格不是地板"))),
-
-            new Rule("box.recoveryDuplicate", Severity.Error, Severity.Error, (room, entry) =>
-                room.Objects.Where(o => o.RecoveryCell.HasValue).GroupBy(o => o.RecoveryCell.Value)
-                    .Where(g => g.Count() > 1).SelectMany(g => g.Skip(1).Select(o => (o.Id, "恢复格重复")))),
-
             new Rule("entry.missing", Severity.Hint, Severity.Error, (room, entry) =>
                 entry.HasValue ? Enumerable.Empty<(string, string)>() : new[] { (room.Id, "缺少主入口") }),
         };

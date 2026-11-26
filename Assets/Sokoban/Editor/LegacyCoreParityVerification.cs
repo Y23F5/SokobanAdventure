@@ -53,11 +53,11 @@ namespace Sokoban.Editor
                         if (!original.Extras.TryGetValue("door:" + (string)door["id"], out var doorText) || doorText != door.ToString(Newtonsoft.Json.Formatting.None)) failures.Add(name + " Extras 丢失门原文 " + (string)door["id"]);
                     var roundTrip = LegacyRoomWriter.FromDraft(LegacyRoomAdapter.ToDraft(original));
                     if (roundTrip.Extras.Count != original.Extras.Count || original.Extras.Any(pair => !roundTrip.Extras.TryGetValue(pair.Key, out var value) || value != pair.Value)) failures.Add(name + " Extras 经 Core 往返后不一致");
-                    Debug.Log("PARITY EXTRAS " + name + " 键数=" + original.Extras.Count + " 装饰物=" + original.Decorations.Length);
+                    Debug.Log("PARITY EXTRAS " + name + " 键数=" + original.Extras.Count);
                     var back = LegacyRoomWriter.FromDraft(LegacyRoomAdapter.ToDraft(original));
                     if (!original.RowsNorthToSouth.SequenceEqual(back.RowsNorthToSouth)) failures.Add(name + " 往返后地形行不一致");
                     if (!original.Doors.Select(d => d.Id + d.Cell + d.Direction + d.Role).OrderBy(s => s).SequenceEqual(back.Doors.Select(d => d.Id + d.Cell + d.Direction + d.Role).OrderBy(s => s))) failures.Add(name + " 往返后门不一致");
-                    if (!original.Boxes.Select(b => b.Id + b.Cell + b.RecoveryCell).OrderBy(s => s).SequenceEqual(back.Boxes.Select(b => b.Id + b.Cell + b.RecoveryCell).OrderBy(s => s))) failures.Add(name + " 往返后箱子或恢复格不一致");
+                    if (!original.Boxes.Select(b => b.Id + b.Cell).OrderBy(s => s).SequenceEqual(back.Boxes.Select(b => b.Id + b.Cell).OrderBy(s => s))) failures.Add(name + " 往返后箱子不一致");
                     if (!original.Targets.Select(t => t.Id + t.Cell).OrderBy(s => s).SequenceEqual(back.Targets.Select(t => t.Id + t.Cell).OrderBy(s => s))) failures.Add(name + " 往返后目标不一致");
                     if ((original.Spawn?.Id + original.Spawn?.Cell) != (back.Spawn?.Id + back.Spawn?.Cell)) failures.Add(name + " 往返后出生点不一致");
                     var legacyDraft = new RoomDraft(File.ReadAllText(Path.Combine(Application.streamingAssetsPath, "World/" + name + ".room.json")));
@@ -104,10 +104,10 @@ namespace Sokoban.Editor
                                 var vcell = new Vector2Int(vx, vy);
                                 if (legacyDraft.PlacementError(movingBox, vcell, movingId) != null) continue;
                                 var moveDraft = LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(legacyDraft.Room));
-                                new MoveObjectCommand(moveDraft, movingId, new Sokoban.Core.Cell(vx, vy), true).Apply();
+                                new MoveObjectCommand(moveDraft, movingId, new Sokoban.Core.Cell(vx, vy)).Apply();
                                 var moved = moveDraft.Room.Objects.First(o => o.Id == movingId);
-                                var viaCore = moved.Cell.ToString() + moved.RecoveryCell;
-                                var expected = new Sokoban.Core.Cell(vx, vy).ToString() + (movingBox ? (Sokoban.Core.Cell?)new Sokoban.Core.Cell(vx, vy) : null);
+                                var viaCore = moved.Cell.ToString();
+                                var expected = new Sokoban.Core.Cell(vx, vy).ToString();
                                 if (viaCore != expected) failures.Add(name + " 移动命令结果与旧 Move 不一致 " + movingId + " -> " + vcell + "：Core=" + viaCore + " 旧=" + expected);
                             }
                     }

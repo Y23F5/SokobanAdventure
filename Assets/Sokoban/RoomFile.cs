@@ -5,7 +5,7 @@
  * Size/At 分别读取尺寸及实体格，Inside/Floor 按北到南行序检查格子，Inward 计算门内侧位置，
  * Validate 检查字段、地形与身份；StructureIssues 定位边界缺口、门及入口预留错误。
  * ToLegacyData 把旧 JObject 房间抽成 Core 的 LegacyRoomData，供 Core 校验器与转换适配器使用；
- * ToLegacyData 还取出装饰物（id 与格）与 Extras：Core 不认识的顶层键按键名存 JSON 文本，箱、目标、出生点、门、装饰物的整条原文按 box:、target:、spawn:、door:、decoration: 加 ID 存放，保证旧字段经 Core 往返不丢；
+ * ToLegacyData 还取出 Extras：Core 不认识的顶层键按键名存 JSON 文本，箱、目标、出生点、门、装饰物的整条原文按 box:、target:、spawn:、door:、decoration: 加 ID 存放，保证旧字段经 Core 往返不丢；
  * BoundaryGaps 经 LegacyRoomAdapter.ToDraft 与 Core 的 boundary.open 规则取边界缺口，ParseCoreCell 把规则定位文本还原成格坐标；
  * LegacyBoundaryGaps 保留旧的逐格判定，仅供新旧比对脚本对照；
  * DoorGeometryIssueIds 经 Core 的 door.geometry 规则取几何错误的门 ID，朝向字母非法时先由 StructureIssues 自行报错；
@@ -182,8 +182,7 @@ namespace Sokoban
         {
             var size = Size(room);
             Sokoban.Core.LegacyEntity Entity(JToken token) =>
-                token == null ? null : new Sokoban.Core.LegacyEntity((string)token["id"], ToCore(At(token)),
-                    token["recoveryCell"] == null ? (Sokoban.Core.Cell?)null : ToCore(Cell(token["recoveryCell"])));
+                token == null ? null : new Sokoban.Core.LegacyEntity((string)token["id"], ToCore(At(token)));
             return new Sokoban.Core.LegacyRoomData
             {
                 LevelId = (string)room["levelId"],
@@ -195,7 +194,6 @@ namespace Sokoban
                 Boxes = room["boxes"].Select(Entity).ToArray(),
                 Targets = room["targets"].Select(Entity).ToArray(),
                 Spawn = Entity(room["spawn"]),
-                Decorations = (room["decorations"] as JArray ?? new JArray()).Select(item => new Sokoban.Core.LegacyDecoration((string)item["id"], ToCore(At(item)))).ToArray(),
                 Extras = ExtrasOf(room),
             };
         }

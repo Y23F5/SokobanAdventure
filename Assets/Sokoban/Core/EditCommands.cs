@@ -3,7 +3,7 @@
  * @brief 房间草稿模型与放置类编辑命令：草稿持有 Room、门、主入口与恢复道具，命令先预检再提交，非法则抛 InvalidOperationException、不压栈。
  * RoomDraftModel：编辑中的房间，允许缺出生点、缺主入口、没有恢复道具等中间态；恢复道具 ID 与房内对象共用 Room 的 ID 空间；Extras 是 string 到 string 的透传字段包，存放旧房间里 Core 不解释的字段原文，默认为空。
  * PlaceObjectCommand(draft, id, categoryId, cell)：先经 PlacementRules.Error 预检（越界、空格、墙、门格或主入口预留格、已占用），再放置对象，ID 不得重复；Revert 移除并释放 ID。
- * MoveObjectCommand(draft, id, cell, syncRecoveryCell)：按 ID 移动对象，经 PlacementRules.Error 预检（对象可留在原格），syncRecoveryCell 为真时箱子的恢复格同步到新格；找不到对象或预检失败抛 InvalidOperationException；装饰类型与外观引用随对象保留；Revert 还原原格与原恢复格。
+ * MoveObjectCommand(draft, id, cell)：按 ID 移动对象，经 PlacementRules.Error 预检（对象可留在原格）；找不到对象或预检失败抛 InvalidOperationException；Revert 还原原格。
  * SetSpawnCommand(draft)：出生点固定在主入口内侧格（门格减外侧偏移），没有主入口、该格不是地板或被其他对象占用时抛 InvalidOperationException；重复设置幂等；Revert 还原旧出生点或移除。
  * AddRecoveryItemCommand(draft, item)：添加恢复道具，时长必须大于 0、ID 不得重复；Revert 移除并释放 ID。
  * SetRecoveryDurationCommand(draft, itemId, duration)：修改恢复道具时长，必须大于 0；Revert 还原旧时长。
@@ -68,15 +68,13 @@ namespace Sokoban.Core
         readonly RoomDraftModel draft;
         readonly string id;
         readonly Cell cell;
-        readonly bool syncRecoveryCell;
         PlacedObject before;
 
-        public MoveObjectCommand(RoomDraftModel draft, string id, Cell cell, bool syncRecoveryCell)
+        public MoveObjectCommand(RoomDraftModel draft, string id, Cell cell)
         {
             this.draft = draft;
             this.id = id;
             this.cell = cell;
-            this.syncRecoveryCell = syncRecoveryCell;
         }
 
         public void Apply()
@@ -87,15 +85,14 @@ namespace Sokoban.Core
             string error = PlacementRules.Error(draft, old.CategoryId, cell, id);
             if (error != null) throw new InvalidOperationException("格子 " + cell + " 不能放置：" + error);
             before = old;
-            var recovery = syncRecoveryCell && old.CategoryId == ObjectCategories.Box ? cell : old.RecoveryCell;
             room.RemoveObject(id);
-            room.AddObject(id, old.CategoryId, cell, recovery, old.DecorationKind, old.AppearanceRef);
+            room.AddObject(id, old.CategoryId, cell);
         }
 
         public void Revert()
         {
             draft.Room.RemoveObject(id);
-            draft.Room.AddObject(before.Id, before.CategoryId, before.Cell, before.RecoveryCell, before.DecorationKind, before.AppearanceRef);
+            draft.Room.AddObject(before.Id, before.CategoryId, before.Cell);
         }
     }
 
