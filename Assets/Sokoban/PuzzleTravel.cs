@@ -42,6 +42,7 @@ namespace Sokoban
         public float RecoveryDuration => Current.Session.Duration;
         public float RecoveryFraction => Recovering ? 1 - Current.Session.Remaining / Current.Session.Duration : 0;
         public RecoveryItem ActiveItem => Current.Validated.RecoveryItems.FirstOrDefault(i => i.Id == bag.Selected);
+        internal RecoveryItem RunningRecoveryItem { get; private set; }
         public bool Visited(string roomId) => exploration.Contains(roomId);
         public void AcceptItem() => bag.Accept();
         public void CycleItem(int delta) { if (!Recovering) bag.Cycle(delta); }
@@ -146,6 +147,7 @@ namespace Sokoban
             if (item == null || Recovering || Motion != null) return false;
             var session = Current.Rebuild(local);
             session.Start(item.Duration);
+            RunningRecoveryItem = item;
             local = session.Player;
             Fire(ActiveId, TriggerIds.RecoveryStart);
             return true;
@@ -157,6 +159,7 @@ namespace Sokoban
             if (!session.Recovering) return false;
             session.Place(local);
             if (!session.Advance(seconds)) return false;
+            RunningRecoveryItem = null;
             session.RetryGateClosures(true);
             local = session.Player;
             Current.RecordSolved();

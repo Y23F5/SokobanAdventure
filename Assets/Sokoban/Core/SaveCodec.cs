@@ -3,7 +3,7 @@
  * @brief 正式存档的数据、内容哈希与编解码：房内坐标加对象 ID，规则状态与演出段分开保存，读档分无档、损坏、不兼容三态，保存前先试读。
  * SaveData：格式号、世界 ID、当前房间 ID、玩家的房内格及可选朝向、各房箱位（房内坐标，按箱 ID）、各房内容哈希；
  * 另含探索集合 Explored、道具背包 Items、SelectedItem、PendingItem（与探索集合是两份独立数据）、各房已解开过记录 EverSolved、对象状态 ObjectStates（房间到对象 ID 到状态）与演出段 Presentation。
- * PresentationSegment：演出段，存恢复进度 RecoveryT 与 RecoveryDuration、镜头朝向 Heading、进行中的移动种类 MotionKind、进度 MotionFraction、位移 MotionDelta 与是否推箱 MotionPushed，不进入规则层。
+ * PresentationSegment：演出段，存恢复进度 RecoveryT 与 RecoveryDuration、可选恢复项 RecoveryItemId、镜头朝向 Heading、进行中的移动种类 MotionKind、进度 MotionFraction、位移 MotionDelta 与是否推箱 MotionPushed，不进入规则层。
  * ContentHash.Of(draft)：只覆盖玩法字段（地形类别网格、对象的 ID 类别与格子含目标、恢复道具的脚本引用时长与参数、行为图含对象模板内的图），不含外观、显示名与装饰，先规范化排序再取 SHA-256。
  * SaveStatus：Ok、NoSave、Corrupt、Incompatible 四种读档结果。
  * SaveLoad：读档结果状态与数据；Incompatible 与 Corrupt 带原因文字。
@@ -25,6 +25,7 @@ namespace Sokoban.Core
     {
         public float RecoveryT { get; set; }
         public float RecoveryDuration { get; set; }
+        public string RecoveryItemId { get; set; }
         public float Heading { get; set; }
         public string MotionKind { get; set; } = "none";
         public float MotionFraction { get; set; }
@@ -155,6 +156,7 @@ namespace Sokoban.Core
                 ["motionDy"] = (long)p.MotionDelta.Y,
                 ["motionPushed"] = p.MotionPushed,
             };
+            if (p.RecoveryItemId != null) presentation["recoveryItemId"] = p.RecoveryItemId;
             var root = new Dictionary<string, object>
             {
                 ["formatVersion"] = (long)data.FormatVersion,
@@ -277,12 +279,15 @@ namespace Sokoban.Core
             {
                 RecoveryT = Float(p, "recoveryT"),
                 RecoveryDuration = Float(p, "recoveryDuration"),
+                RecoveryItemId = Str(p, "recoveryItemId"),
                 Heading = Float(p, "heading"),
                 MotionKind = Str(p, "motionKind") ?? throw new FormatException("缺少 motionKind"),
                 MotionFraction = Float(p, "motionFraction"),
                 MotionDelta = new Cell(Int(p, "motionDx"), Int(p, "motionDy")),
                 MotionPushed = Flag(p, "motionPushed"),
             };
+            if (p.ContainsKey("recoveryItemId") && (string.IsNullOrWhiteSpace(presentation.RecoveryItemId) || presentation.RecoveryDuration <= 0))
+                throw new FormatException("恢复项记录无效");
             if (presentation.RecoveryT < 0 || presentation.RecoveryDuration < 0 || presentation.RecoveryT > presentation.RecoveryDuration)
                 throw new FormatException("恢复进度无效");
             if (presentation.MotionFraction < 0 || presentation.MotionFraction > 1) throw new FormatException("移动进度无效");

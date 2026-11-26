@@ -43,7 +43,7 @@ namespace Sokoban
 
         internal void Sample(PuzzleRun run, Transform group, Func<string, Transform> boxOf, float t)
         {
-            var item = run.ActiveItem;
+            var item = run.RunningRecoveryItem;
             if (item == null) return;
             var method = Method(item.ScriptRef);
             foreach (var move in run.RecoveryMoves())

@@ -23,6 +23,7 @@ namespace Sokoban
             {
                 Heading = Heading,
                 RecoveryDuration = session.Recovering ? session.Duration : 0,
+                RecoveryItemId = RunningRecoveryItem?.Id,
                 RecoveryT = RecoveryFraction
             };
             if (Motion == null) return segment;
@@ -83,6 +84,7 @@ namespace Sokoban
             Heading = candidate.Heading;
             Facing = candidate.Facing;
             Motion = candidate.Motion;
+            RunningRecoveryItem = candidate.RunningRecoveryItem;
         }
 
         void ApplySave(SaveData data)
@@ -133,12 +135,17 @@ namespace Sokoban
             var current = Current;
             if (segment.RecoveryDuration > 0)
             {
-                var item = current.Validated.RecoveryItems.FirstOrDefault(i => Math.Abs(i.Duration - segment.RecoveryDuration) < 0.001f);
+                var items = current.Validated.RecoveryItems;
+                var item = segment.RecoveryItemId == null
+                    ? items.FirstOrDefault(i => i.Id == bag.Selected && Math.Abs(i.Duration - segment.RecoveryDuration) < 0.001f)
+                        ?? items.FirstOrDefault(i => Math.Abs(i.Duration - segment.RecoveryDuration) < 0.001f)
+                    : items.FirstOrDefault(i => i.Id == segment.RecoveryItemId && Math.Abs(i.Duration - segment.RecoveryDuration) < 0.001f);
                 Check(item != null && segment.RecoveryT >= 0 && segment.RecoveryT < 1, "恢复进度无效");
                 var session = current.Rebuild(player);
                 session.Start(item.Duration);
                 Check(session.Player == player && session.IsWalkable(player) && !session.Boxes.ContainsValue(player) && !session.Zone.Contains(player), "恢复期间玩家位置无效");
                 session.Advance((float)(item.Duration * segment.RecoveryT));
+                RunningRecoveryItem = item;
             }
             else Check(current.Session.IsWalkable(player) && !current.Boxes.ContainsValue(player), "玩家位置无效");
             Motion = null;
