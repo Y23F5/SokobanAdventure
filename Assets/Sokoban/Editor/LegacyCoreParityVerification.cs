@@ -47,7 +47,7 @@ namespace Sokoban.Editor
             var list = new List<string>();
             try
             {
-                foreach (var line in RoomFile.StructureIssues(room))
+                foreach (var line in RoomFile.LegacyStructureIssues(room))
                     if (line.Contains("需要放置玩家出生点") || line.Contains("恢复位置重复") || line.Contains("需要朝外且内侧可通行") || line.Contains("主入口内侧需要留空") || line.Contains("找不到主入口")) list.Add(line);
             }
             catch (Exception) { }

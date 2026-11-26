@@ -131,6 +131,16 @@ namespace Sokoban
 
         public static IEnumerable<string> StructureIssues(JObject room)
         {
+            string level = (string)room["levelId"];
+            foreach (var issue in RoomCoreBridge.StructureIssues(room)) yield return issue;
+            foreach (var issue in ObjectBehavior.Issues(room)) yield return issue;
+            foreach (var issue in RoomDraft.DefinitionIssues(room)) yield return issue;
+            foreach (var cell in BoundaryGaps(room))
+                yield return $"{level} {cell} 边界缺墙，请补墙或设置朝外的门";
+        }
+
+        public static IEnumerable<string> LegacyStructureIssues(JObject room)
+        {
             var doors = room["doors"];
             string level = (string)room["levelId"];
             if (room["spawn"] == null) yield return $"{level} 需要放置玩家出生点";
