@@ -40,6 +40,13 @@ namespace Sokoban.Editor
                     var core = Gaps(issues);
                     foreach (var cell in legacy.Except(core)) failures.Add(name + " 旧实现有缺口而 Core 没有：" + cell);
                     foreach (var cell in core.Except(legacy)) failures.Add(name + " Core 有缺口而旧实现没有：" + cell);
+                    var original = RoomFile.ToLegacyData(room);
+                    var back = LegacyRoomWriter.FromDraft(LegacyRoomAdapter.ToDraft(original));
+                    if (!original.RowsNorthToSouth.SequenceEqual(back.RowsNorthToSouth)) failures.Add(name + " 往返后地形行不一致");
+                    if (!original.Doors.Select(d => d.Id + d.Cell + d.Direction + d.Role).OrderBy(s => s).SequenceEqual(back.Doors.Select(d => d.Id + d.Cell + d.Direction + d.Role).OrderBy(s => s))) failures.Add(name + " 往返后门不一致");
+                    if (!original.Boxes.Select(b => b.Id + b.Cell + b.RecoveryCell).OrderBy(s => s).SequenceEqual(back.Boxes.Select(b => b.Id + b.Cell + b.RecoveryCell).OrderBy(s => s))) failures.Add(name + " 往返后箱子或恢复格不一致");
+                    if (!original.Targets.Select(t => t.Id + t.Cell).OrderBy(s => s).SequenceEqual(back.Targets.Select(t => t.Id + t.Cell).OrderBy(s => s))) failures.Add(name + " 往返后目标不一致");
+                    if ((original.Spawn?.Id + original.Spawn?.Cell) != (back.Spawn?.Id + back.Spawn?.Cell)) failures.Add(name + " 往返后出生点不一致");
                     foreach (var issue in issues.Where(i => i.Severity == Severity.Error))
                         failures.Add(name + " Core 发布级错误：" + issue.RuleId + " " + issue.Location + " " + issue.Message);
                     foreach (var issue in issues.Where(i => i.RuleId.StartsWith("box.recovery")))
