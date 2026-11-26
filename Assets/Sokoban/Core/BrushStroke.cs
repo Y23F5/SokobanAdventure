@@ -31,6 +31,7 @@ namespace Sokoban.Core
         readonly BrushTool tool;
         readonly int maxSide;
         readonly int rotation;
+        readonly Func<Cell, AppearanceRef> appearance;
 
         public string Error { get; }
         public int Left { get; }
@@ -41,7 +42,7 @@ namespace Sokoban.Core
         public bool Expands => Left + Bottom + Right + Top > 0;
         internal RoomDraftModel Result { get; }
 
-        internal BrushPlan(Cell[] cells, BrushTool tool, int maxSide, int rotation, string error, int left, int bottom, int right, int top, bool noChange, RoomDraftModel result)
+        internal BrushPlan(Cell[] cells, BrushTool tool, int maxSide, int rotation, string error, int left, int bottom, int right, int top, bool noChange, RoomDraftModel result, Func<Cell, AppearanceRef> appearance = null)
         {
             this.cells = cells;
             this.tool = tool;
@@ -54,18 +55,19 @@ namespace Sokoban.Core
             Top = top;
             NoChange = noChange;
             Result = result;
+            this.appearance = appearance;
         }
 
         public ICommand CreateCommand(DraftHolder holder)
         {
             if (Error != null) throw new InvalidOperationException(Error);
-            return NoChange ? null : new BrushCommand(holder, cells, tool, maxSide, rotation);
+            return NoChange ? null : new BrushCommand(holder, cells, tool, maxSide, rotation, appearance);
         }
     }
 
     public static class BrushPlanner
     {
-        public static BrushPlan Preflight(RoomDraftModel draft, IEnumerable<Cell> cells, BrushTool tool, int maxSide = int.MaxValue, int rotation = 0)
+        public static BrushPlan Preflight(RoomDraftModel draft, IEnumerable<Cell> cells, BrushTool tool, int maxSide = int.MaxValue, int rotation = 0, Func<Cell, AppearanceRef> appearance = null)
         {
             var points = cells.Distinct().ToArray();
             if (rotation < 0 || rotation > 3)
@@ -98,16 +100,18 @@ namespace Sokoban.Core
                     return Rejected(points, tool, maxSide, "格子 " + point + " 是门格，不能改写", left, bottom, right, top);
                 if (tool != BrushTool.Floor && PlacementRules.NeedsFloor(scratch, cell))
                     return Rejected(points, tool, maxSide, "对象或门内侧占用 " + point, left, bottom, right, top);
+                var look = tool == BrushTool.Erase ? null : appearance?.Invoke(cell);
                 if (current.CategoryId == target)
                 {
-                    if (current.Rotation == rotation) continue;
+                    if (current.Rotation == rotation && (look == null || look.Equals(scratch.Room.AppearanceAt(cell)))) continue;
                     scratch.Room.SetTerrain(cell, target, current.EntityId, current.State, rotation);
                 }
                 else scratch.Room.SetTerrain(cell, target, rotation: rotation);
+                if (look != null) scratch.Room.SetAppearance(cell, look);
                 writes++;
             }
             bool expands = left + bottom + right + top > 0;
-            return new BrushPlan(points, tool, maxSide, rotation, null, left, bottom, right, top, writes == 0 && !expands, scratch);
+            return new BrushPlan(points, tool, maxSide, rotation, null, left, bottom, right, top, writes == 0 && !expands, scratch, appearance);
         }
 
         static BrushPlan Rejected(Cell[] points, BrushTool tool, int maxSide, string error, int left, int bottom, int right, int top) =>
@@ -121,20 +125,22 @@ namespace Sokoban.Core
         readonly BrushTool tool;
         readonly int maxSide;
         readonly int rotation;
+        readonly Func<Cell, AppearanceRef> appearance;
         RoomDraftModel before, after;
 
-        public BrushCommand(DraftHolder holder, IEnumerable<Cell> cells, BrushTool tool, int maxSide = int.MaxValue, int rotation = 0)
+        public BrushCommand(DraftHolder holder, IEnumerable<Cell> cells, BrushTool tool, int maxSide = int.MaxValue, int rotation = 0, Func<Cell, AppearanceRef> appearance = null)
         {
             this.holder = holder;
             this.cells = cells.Distinct().ToArray();
             this.tool = tool;
             this.maxSide = maxSide;
             this.rotation = rotation;
+            this.appearance = appearance;
         }
 
         public string Precheck()
         {
-            var plan = BrushPlanner.Preflight(holder.Draft, cells, tool, maxSide, rotation);
+            var plan = BrushPlanner.Preflight(holder.Draft, cells, tool, maxSide, rotation, appearance);
             if (plan.Error != null) return plan.Error;
             return plan.NoChange ? "笔划没有需要修改的格子" : null;
         }
@@ -146,7 +152,7 @@ namespace Sokoban.Core
                 holder.Draft = after;
                 return;
             }
-            var plan = BrushPlanner.Preflight(holder.Draft, cells, tool, maxSide, rotation);
+            var plan = BrushPlanner.Preflight(holder.Draft, cells, tool, maxSide, rotation, appearance);
             if (plan.Error != null) throw new InvalidOperationException(plan.Error);
             if (plan.NoChange) throw new InvalidOperationException("笔划没有需要修改的格子");
             before = holder.Draft;

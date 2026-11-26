@@ -29,6 +29,7 @@ namespace Sokoban
         GridFootprint footprint;
         Animation playback;
         public string SizeReport { get; private set; }
+        public Vector3 MeasuredSize { get; private set; }
         public string FootprintIssue { get; private set; }
         public string AnimationIssue { get; private set; }
         string modelName;
@@ -57,7 +58,7 @@ namespace Sokoban
             if (playback && playback.clip) playback.clip.SampleAnimation(playback.gameObject, Mathf.Clamp01(fraction) * playback.clip.length);
         }
 
-        public static async Task InspectModel(AssetDescriptor asset)
+        public static async Task InspectModel(AssetDescriptor asset, string category = null, string filename = null)
         {
             var stage = new GameObject("模型尺寸检查") { hideFlags = HideFlags.HideAndDontSave };
             stage.transform.position = Vector3.down * 10000;
@@ -66,7 +67,8 @@ namespace Sokoban
                 var appearance = stage.AddComponent<ImportedAppearance>();
                 appearance.Apply(new[] { asset }, asset.Id);
                 await appearance.Ready;
-                string issue = appearance.Error ?? appearance.FootprintIssue;
+                string issue = appearance.Error ?? (category == null ? appearance.FootprintIssue :
+                    AssetPackManifest.SizeIssue(category, filename ?? asset.Name, appearance.MeasuredSize.x, appearance.MeasuredSize.z));
                 Check(issue == null, issue);
             }
             finally { DisposeObject(stage); }
@@ -115,6 +117,7 @@ namespace Sokoban
                     var original = footprint.Measure();
                     footprintRoot.localPosition = new Vector3(-original.center.x, heightOffset, -original.center.z);
                     SizeReport = GridFootprint.Describe(original);
+                    MeasuredSize = original.size;
                     if (!GridFootprint.HasUnitSize(original))
                         FootprintIssue = $"模型「{modelName}」占地 {SizeReport}，需要 1 × 1 格（宽和深各允许 ±0.001 格）";
                 }

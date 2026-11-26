@@ -275,7 +275,7 @@ namespace Sokoban
             RoomFile.Check(error == null, error);
             var outward = MarkerOutward(cell, turns).Value;
             string id = FreshMarkerId(role);
-            Commit(new AddDoorCommand(holders[ActiveId], new DoorInfo(id, cell, outward, role)), id);
+            Commit(new AddDoorCommand(holders[ActiveId], new DoorInfo(id, cell, outward, role), BrushCategory == role ? BrushAppearance : null), id);
             NotifyPlacement(id);
         }
 
@@ -321,17 +321,28 @@ namespace Sokoban
         {
             readonly DraftHolder holder;
             readonly DoorInfo door;
+            readonly AppearanceRef appearance;
             RoomDraftModel before;
 
             RoomDraftModel after;
 
-            public AddDoorCommand(DraftHolder holder, DoorInfo door) { this.holder = holder; this.door = door; }
+            public AddDoorCommand(DraftHolder holder, DoorInfo door, AppearanceRef appearance)
+            {
+                this.holder = holder;
+                this.door = door;
+                this.appearance = appearance;
+            }
 
             public void Apply()
             {
                 before = holder.Draft;
                 string primary = before.PrimaryEntranceId ?? (door.Role == "entry" ? door.Id : null);
-                holder.Draft = after ??= CloneWith(before, before.Doors.Append(door), primary);
+                if (after == null)
+                {
+                    after = CloneWith(before, before.Doors.Append(door), primary);
+                    if (appearance != null) after.Room.SetAppearance(door.Cell, appearance);
+                }
+                holder.Draft = after;
             }
 
             public void Revert() => holder.Draft = before;

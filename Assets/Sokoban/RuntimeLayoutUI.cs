@@ -241,8 +241,14 @@ namespace Sokoban
         void RefreshAssets()
         {
             var draft = Panel.Draft;
-            var assets = custom ? draft.Model.Assets.Select(a => a.Id).ToArray()
-                : categoryOpen ? draft.Model.Assets.Where(a => a.Kind == Sokoban.Core.AssetKinds.Model).Select(a => a.Id).ToArray() : System.Array.Empty<string>();
+            var pack = draft.PackParts().ToArray();
+            string category = CategoryId(paletteCategory);
+            var entries = draft.Model.Assets.Where(asset => !pack.Any(item => item.asset.Id == asset.Id));
+            var assets = custom ? entries.Select(asset => asset.Id).ToArray()
+                : categoryOpen ? pack.Where(item => item.category == category).OrderByDescending(item => item.theme == draft.Theme)
+                    .ThenBy(item => item.asset.Name, System.StringComparer.Ordinal).Select(item => item.asset.Id)
+                    .Concat(entries.Where(asset => asset.Kind == Sokoban.Core.AssetKinds.Model).Select(asset => asset.Id))
+                    .Distinct().ToArray() : System.Array.Empty<string>();
             var definitions = custom ? draft.Model.Templates.Values.ToArray() : null;
             string theme = draft.Theme;
             string key = draft.ActiveId + theme + custom + categoryOpen + paletteCategory + (definitions == null ? "" : string.Join(",", definitions.Select(t => t.Id + t.Name))) + string.Join(",", assets);
@@ -293,7 +299,7 @@ namespace Sokoban
                         pickedAsset = id;
                         pickedBuiltin = null;
                         if (kind != "model") return;
-                        string issue = thumbnails.ModelIssue(draft.Model.Assets, id);
+                        string issue = thumbnails.ModelIssue(draft.Model.Assets, id, !pack.Any(item => item.asset.Id == id));
                         if (issue != null) Panel.Status = issue;
                         else Panel.Run(() => draft.ChooseAppearance(id, custom ? Sokoban.Core.ObjectCategories.Custom : CategoryId(paletteCategory)), "左键放置，短按右键取消");
                     });
@@ -304,7 +310,7 @@ namespace Sokoban
                 bindAsset.interactable = draft.CanReplaceAppearance(pickedBuiltin);
             else if (pickedAsset != null)
                 bindAsset.interactable = draft.CanBindAsset(pickedAsset, categoryOpen ? CategoryId(paletteCategory) : null) &&
-                    thumbnails.ModelIssue(draft.Model.Assets, pickedAsset) == null;
+                    thumbnails.ModelIssue(draft.Model.Assets, pickedAsset, !pack.Any(item => item.asset.Id == pickedAsset)) == null;
             foreach (var card in cards)
             {
                 if (card.Key == "import") continue;
@@ -457,7 +463,7 @@ namespace Sokoban
                     fileMenu.SetActive(!fileMenu.activeSelf);
                     if (fileMenu.activeSelf) fileMenu.transform.SetAsLastSibling();
                     return;
-                case "保存": case "打开": case "导入": case "导出": case "发布": case "导出单房": case "导入模型": case "导入动作": case "导入贴图": case "导入界面图": Panel.ChooseFile(action);break;
+                case "保存": case "打开": case "导入": case "导出": case "发布": case "导出单房": case "导入素材包": case "导入模型": case "导入动作": case "导入贴图": case "导入界面图": Panel.ChooseFile(action);break;
                 case "新建": Panel.NewRoom(true);break;
                 case "默认布局": Panel.NewDefaultRoom();break;
                 case "撤销": Panel.Run(d.Undo,"已撤销");break;
@@ -585,8 +591,8 @@ namespace Sokoban
             var scroll=container.GetComponentInParent<ScrollRect>();
             if(scroll)scroll.verticalNormalizedPosition=1;
         }
-        static readonly string[] MenuItems = { "新建空白房间", "打开", "导入", "导出", "导出单房", "发布世界", "导入模型", "导入动作", "导入贴图", "导入界面图", "世界与属性", "检查结构" };
-        static readonly string[] MenuActs = { "新建", "打开", "导入", "导出", "导出单房", "发布", "导入模型", "导入动作", "导入贴图", "导入界面图", "工作区", "检查" };
+        static readonly string[] MenuItems = { "新建空白房间", "打开", "导入", "导出", "导出单房", "发布世界", "导入素材包", "导入模型", "导入动作", "导入贴图", "导入界面图", "世界与属性", "检查结构" };
+        static readonly string[] MenuActs = { "新建", "打开", "导入", "导出", "导出单房", "发布", "导入素材包", "导入模型", "导入动作", "导入贴图", "导入界面图", "工作区", "检查" };
 
         void BuildFileMenu()
         {

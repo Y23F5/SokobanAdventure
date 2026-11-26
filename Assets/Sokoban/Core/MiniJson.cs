@@ -3,7 +3,8 @@
  * @brief 极小的 JSON 读写器，只覆盖存档用到的结构，不依赖任何外部库，使 Core 在 Unity 与 dotnet 两侧都能编译。
  * MiniJson.Parse(text)：解析为 null、bool、string、long、List<object>、Dictionary<string, object>；语法错误或多余内容抛 FormatException。
  * MiniJson.Write(value)：把上述类型写成紧凑 JSON 文本，字符串按需转义，不支持的类型抛 ArgumentException。
- * Reader：递归下降解析器，逐字符前进，数字只支持整数。
+ * Parse(text, allowFractionalNumbers)：素材包导入可显式启用有限小数和科学记数；存档仍只允许整数。
+ * Reader：递归下降解析器，逐字符前进。
  */
 using System;
 using System.Collections.Generic;
@@ -14,9 +15,11 @@ namespace Sokoban.Core
 {
     public static class MiniJson
     {
-        public static object Parse(string text)
+        public static object Parse(string text) => Parse(text, false);
+
+        internal static object Parse(string text, bool allowFractionalNumbers)
         {
-            var reader = new Reader(text);
+            var reader = new Reader(text, allowFractionalNumbers);
             reader.SkipSpace();
             var value = reader.ReadValue();
             reader.SkipSpace();
@@ -92,9 +95,14 @@ namespace Sokoban.Core
         sealed class Reader
         {
             readonly string text;
+            readonly bool allowFractionalNumbers;
             int pos;
 
-            public Reader(string text) { this.text = text; }
+            public Reader(string text, bool allowFractionalNumbers)
+            {
+                this.text = text;
+                this.allowFractionalNumbers = allowFractionalNumbers;
+            }
 
             public bool End => pos >= text.Length;
 
@@ -200,16 +208,36 @@ namespace Sokoban.Core
                 }
             }
 
-            long ReadNumber()
+            object ReadNumber()
             {
                 int start = pos;
                 if (text[pos] == '-') pos++;
-                while (pos < text.Length && text[pos] >= '0' && text[pos] <= '9') pos++;
-                if (pos < text.Length && (text[pos] == '.' || text[pos] == 'e' || text[pos] == 'E'))
-                    throw new FormatException("JSON 只支持整数");
-                if (!long.TryParse(text.Substring(start, pos - start), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long value))
-                    throw new FormatException("JSON 数字无效");
+                ReadDigits();
+                bool fractional = !End && (text[pos] == '.' || text[pos] == 'e' || text[pos] == 'E');
+                if (!fractional)
+                {
+                    if (!long.TryParse(text.Substring(start, pos - start), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long integer))
+                        throw new FormatException("JSON 数字无效");
+                    return integer;
+                }
+                if (!allowFractionalNumbers) throw new FormatException("JSON 只支持整数");
+                if (text[pos] == '.') { pos++; ReadDigits(); }
+                if (!End && (text[pos] == 'e' || text[pos] == 'E'))
+                {
+                    pos++;
+                    if (!End && (text[pos] == '+' || text[pos] == '-')) pos++;
+                    ReadDigits();
+                }
+                if (!double.TryParse(text.Substring(start, pos - start), NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
+                    || double.IsInfinity(value) || double.IsNaN(value)) throw new FormatException("JSON 数字无效");
                 return value;
+            }
+
+            void ReadDigits()
+            {
+                int start = pos;
+                while (!End && text[pos] >= '0' && text[pos] <= '9') pos++;
+                if (pos == start) throw new FormatException("JSON 缺少数字");
             }
         }
     }

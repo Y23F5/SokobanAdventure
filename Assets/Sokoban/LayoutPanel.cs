@@ -40,6 +40,7 @@ namespace Sokoban
             "导出" or "导出单房" => "把当前设计和所需资源写到交换目的地，当前工作文件保持不变。",
             "发布" => "发布前会检查整图，通过后写出世界清单和全部房间。",
             "导入模型" => "选择 GLB 文件，两个方向的实际尺寸都需为 1 格。",
+            "导入素材包" => "选择素材包的 manifest.json，或输入包含它的目录路径。",
             "保存" => "选择保存位置，保存后与该文件建立关联。",
             _ => "选择要处理的文件。" };
         public string DialogWarning => overwrite ? "目标已存在，请确认覆盖" : (operation == "发布" || operation == "导出") ? StructuralIssue : null;
@@ -153,6 +154,7 @@ namespace Sokoban
         bool FileMatchesOperation(string path)
         {
             var ext=Path.GetExtension(path).ToLowerInvariant();
+            if (operation == "导入素材包") return Path.GetFileName(path).Equals("manifest.json", StringComparison.OrdinalIgnoreCase);
             if(operation=="导入模型" || operation=="导入动作") return ext==".glb";
             if(operation=="导入贴图" || operation=="导入界面图") return ext==".png" || ext==".jpg" || ext==".jpeg";
             return ext==".json";
@@ -162,6 +164,12 @@ namespace Sokoban
         {
             var op=operation; RoomFile.Check(!string.IsNullOrWhiteSpace(filename),"请输入文件名");
             string path=Path.GetFullPath(Path.Combine(directory ?? "",filename));
+            if (op == "导入素材包")
+            {
+                if (Directory.Exists(path)) path = Path.Combine(path, "manifest.json");
+                ImportPack(path);
+                return;
+            }
             if(Directory.Exists(path)) { Browse(path); filename=""; return; }
             string assetKind=op=="导入模型"?"model":op=="导入动作"?"animation":op=="导入贴图"?"texture":op=="导入界面图"?"uiImage":null;
             if (assetKind == "model") { ImportModel(path); return; }
@@ -183,6 +191,33 @@ namespace Sokoban
         }
 
         bool checkingModel;
+        public AssetPackImporter.Report LastPackReport { get; private set; }
+
+        async void ImportPack(string manifest)
+        {
+            if (checkingModel) { Status = "正在导入素材"; return; }
+            checkingModel = true;
+            var model = Draft.Model;
+            var version = fileDialogVersion;
+            var input = filename;
+            Status = "正在导入素材包并测量模型";
+            try
+            {
+                var report = await AssetPackImporter.Import(manifest);
+                if (version != fileDialogVersion || model != Draft.Model || input != filename) return;
+                Draft.RegisterPack(report);
+                LastPackReport = report;
+                Status = report.Summary;
+                if (report.Rejected.Count == 0) operation = null;
+                else Status += "\n" + string.Join("\n", report.Rejected);
+            }
+            catch (Exception error)
+            {
+                if (version == fileDialogVersion) Status = error.Message;
+            }
+            finally { checkingModel = false; }
+        }
+
         async void ImportModel(string path)
         {
             if (checkingModel) { Status = "正在检查模型尺寸"; return; }

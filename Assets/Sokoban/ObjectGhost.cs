@@ -45,7 +45,7 @@ namespace Sokoban
             bool marker = RoomDraft.TryMarkerTool(draft.Tool, out var markerRole);
             var look = moving ? placed?.Appearance ?? decoration?.Appearance : draft.BrushAppearance;
             if (marker && !moving)
-                look = markerRole == "spawn" ? new AppearanceRef("Spawn") : AppearanceLibrary.Default(TerrainCategories.Door, draft.Theme);
+                look = markerRole == "spawn" ? new AppearanceRef("Spawn") : look ?? AppearanceLibrary.Default(TerrainCategories.Door, draft.Theme);
             var states = moving && placed != null ? ObjectStateProfile.StatesOf(draft.Model, placed.Id) : draft.DefinitionStates;
             if (states != null) look = new AppearanceRef(ObjectStateProfile.StateLook(states.Initial));
             look ??= AppearanceLibrary.Default(category ?? ObjectCategories.Target, draft.Theme);

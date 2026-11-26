@@ -20,6 +20,7 @@ namespace Sokoban
     {
         readonly Dictionary<string, Task<Texture2D>> cache = new Dictionary<string, Task<Texture2D>>();
         readonly Dictionary<string, string> sizes = new Dictionary<string, string>();
+        readonly Dictionary<string, string> loadIssues = new Dictionary<string, string>();
         readonly Dictionary<string, string> modelIssues = new Dictionary<string, string>();
         bool disposed;
 
@@ -27,12 +28,13 @@ namespace Sokoban
 
         public string SizeReport(string key) => sizes.TryGetValue(key, out var report) ? report : "";
 
-        public string ModelIssue(IReadOnlyList<AssetDescriptor> assets, string key)
+        public string ModelIssue(IReadOnlyList<AssetDescriptor> assets, string key, bool checkLegacySize = true)
         {
             if (Find(assets, key)?.Kind != AssetKinds.Model) return null;
             var preview = Get(assets, key);
             if (!preview.IsCompleted) return "正在检查模型尺寸";
-            return modelIssues.TryGetValue(key, out string issue) ? issue : null;
+            if (loadIssues.TryGetValue(key, out string loadIssue)) return loadIssue;
+            return checkLegacySize && modelIssues.TryGetValue(key, out string issue) ? issue : null;
         }
 
         public Task<Texture2D> Get(IReadOnlyList<AssetDescriptor> assets, string key, bool builtin = false)
@@ -63,9 +65,9 @@ namespace Sokoban
                     appearance.Apply(assets, key);
                     await appearance.Ready;
                     if (disposed) return null;
-                    string issue = appearance.Error ?? appearance.FootprintIssue;
-                    if (issue != null) modelIssues[key] = issue;
-                    sizes[key] = issue ?? appearance.SizeReport;
+                    if (appearance.Error != null) loadIssues[key] = appearance.Error;
+                    if (appearance.FootprintIssue != null) modelIssues[key] = appearance.FootprintIssue;
+                    sizes[key] = appearance.SizeReport;
                     if (appearance.Error != null) return null;
                 }
                 var renderers = stage.GetComponentsInChildren<Renderer>();

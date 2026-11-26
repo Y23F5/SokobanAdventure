@@ -113,10 +113,11 @@ namespace Sokoban
 
         public static IReadOnlyList<string> CategoriesOf(string tab) => tab switch
         {
-            Terrain => new[] { TerrainCategories.Floor, TerrainCategories.Wall, TerrainCategories.Door, TerrainCategories.Openable },
+            Terrain => new[] { TerrainCategories.Floor, TerrainCategories.Wall, TerrainCategories.Door, TerrainCategories.Openable, AssetPackManifest.Entrance, AssetPackManifest.Exit },
             Object => new[] { ObjectCategories.Box, ObjectCategories.Target, ObjectCategories.Spawn },
             Decoration => new[] { AppearanceLibrary.Decoration },
             Custom => new[] { ObjectCategories.Custom },
+            Other => new[] { AssetPackManifest.Other },
             _ => Array.Empty<string>()
         };
     }
@@ -278,12 +279,16 @@ namespace Sokoban
                     items.Add(new PaletteItem(tab, ObjectCategories.Custom, asset.Id, asset.Name, null, asset.Id));
                 return items;
             }
+            var pack = PackParts().ToArray();
             foreach (string category in PaletteTabs.CategoriesOf(tab))
             {
+                foreach (var item in pack.Where(item => item.category == category).OrderByDescending(item => item.theme == theme)
+                    .ThenBy(item => item.asset.Name, StringComparer.Ordinal))
+                    items.Add(new PaletteItem(tab, category, item.asset.Id, item.asset.Name, null, item.asset.Id));
                 foreach (var entry in AppearanceLibrary.Entries(category, theme))
                     items.Add(new PaletteItem(tab, category, entry.Id, entry.Name, entry.Prefab()));
                 if (tab == PaletteTabs.Decoration)
-                    foreach (var asset in ModelAssets())
+                    foreach (var asset in ModelAssets().Where(asset => !pack.Any(item => item.asset.Id == asset.Id)))
                         items.Add(new PaletteItem(tab, category, asset.Id, asset.Name, null, asset.Id));
             }
             return items;

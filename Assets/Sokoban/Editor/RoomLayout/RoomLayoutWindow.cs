@@ -348,6 +348,14 @@ namespace Sokoban.Editor
                         Panel.Run(() => draft.Move(point - draft.Origin), "已移动对象"));
                 }
                 Line(area, "外观 · " + AppearanceAt(draft, cell));
+                var look = item?.Appearance ?? decoration?.Appearance ?? draft.Room.AppearanceAt(cell);
+                var asset = draft.AssetDefinition(look?.Id);
+                if (asset != null)
+                {
+                    var height = new FloatField("高度偏移（格）") { value = asset.HeightOffset, isDelayed = true };
+                    height.RegisterValueChangedCallback(evt => Panel.Run(() => draft.SetAssetHeight(asset.Id, evt.newValue), "已更新素材高度"));
+                    area.Add(height);
+                }
             }
 
             if (terrain.CategoryId != TerrainCategories.Void)
@@ -415,6 +423,7 @@ namespace Sokoban.Editor
             var area = view.Q<ScrollView>("palette");
             area.Clear();
             pendingThumbnails.Clear();
+            AddButton(area, "导入素材包", () => Import("导入素材包", null));
             foreach (string page in PaletteTabs.All)
                 view.Q<Button>("tab-" + page).EnableInClassList("sl-active", page == tab);
 
@@ -425,7 +434,6 @@ namespace Sokoban.Editor
                 var spawn = AddButton(area, ToolLabel(RoomTool.Spawn), () => UseTool(RoomTool.Spawn));
                 spawn.SetEnabled(PrimaryEntrance(draft) != null);
                 AddButton(area, Panel.RecoveryLabel + (draft.Model.RecoveryItems.Count == 0 ? " · 添加预设" : ""), Panel.CycleRecovery);
-                return;
             }
 
             foreach (var item in draft.PaletteItems(tab))
@@ -493,7 +501,7 @@ namespace Sokoban.Editor
                     else if (asset.Kind != AssetKinds.UiImage) Line(area, asset.Kind);
                 }
             }
-            else
+            else if (tab != PaletteTabs.Other)
             {
                 string[] categories = tab == PaletteTabs.Terrain
                     ? new[] { TerrainCategories.Floor, TerrainCategories.Wall }
@@ -521,7 +529,7 @@ namespace Sokoban.Editor
 
         void ChooseImported(RoomDraft draft, string id, string category)
         {
-            string error = thumbnails.ModelIssue(draft.Model.Assets, id);
+            string error = thumbnails.ModelIssue(draft.Model.Assets, id, !draft.PackParts().Any(part => part.asset.Id == id));
             if (error != null) { Panel.ReportIssue(error); return; }
             UseTool(ToolForCategory(category) ?? RoomTool.Decoration);
             Panel.Run(() => draft.ChooseAppearance(id, category), "已选模型，在场景中放置");
@@ -529,7 +537,7 @@ namespace Sokoban.Editor
 
         void BindImported(RoomDraft draft, string id, string category)
         {
-            string error = thumbnails.ModelIssue(draft.Model.Assets, id);
+            string error = thumbnails.ModelIssue(draft.Model.Assets, id, !draft.PackParts().Any(part => part.asset.Id == id));
             if (error != null) { Panel.ReportIssue(error); return; }
             Panel.Run(() => { draft.BindAsset(id, category); Panel.CancelTool(); }, "已绑定素材");
         }
@@ -739,6 +747,8 @@ namespace Sokoban.Editor
             ObjectCategories.Box => RoomTool.Box,
             ObjectCategories.Target => RoomTool.Target,
             AppearanceLibrary.Decoration => RoomTool.Decoration,
+            AssetPackManifest.Entrance => RoomTool.Entry,
+            AssetPackManifest.Exit => RoomTool.Exit,
             _ => (RoomTool?)null
         };
 
