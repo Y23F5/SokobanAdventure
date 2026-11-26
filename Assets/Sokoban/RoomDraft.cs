@@ -7,6 +7,7 @@
  * Undo/Redo：经 CommandHistory 后退与重做，随后同步房间目录并清除选择。
  * Find/FindDecoration：按稳定 ID 取对象或装饰；Select/SelectRectangle/Click：按格选择，Click 把当前工具翻译为放置或移动。
  * Place/Move/PlacementError：经 PlacementRules 预检后提交 PlaceObjectCommand、MoveObjectCommand；SetRoomMarker：出生点用 SetSpawnCommand，门写门地形与 DoorInfo，朝向取 DoorPlacement.Outward；
+ * BrushRotation 与 RotateBrush 保存本次放置预览的四分之一圈档位；PlacementMarkerError 预检出生点与门，TryMarkerTool 映射房间标记工具。
  * RotateSelection 将所选对象或格的旋转归并到一次可撤销提交；SetAssetHeight 按房内素材 ID 提交高度偏移。
  * MarkerOccupied/DoorDirection：设置门与出生点前的占用与朝向判定；RemoveObject/Rename：经命令删除对象（连带行为图）与改名；
  * Open/Save/ExportRoom：读入世界或单房，保存时用 Core 编解码并以 CommandHistory.MarkSaved 更新保存基线，导出前要求发布级无错误。
@@ -19,7 +20,7 @@ using Sokoban.Core;
 
 namespace Sokoban
 {
-    public enum RoomTool { Select, Box, Target, Move, Floor, Wall, Erase, Decoration }
+    public enum RoomTool { Select, Box, Target, Move, Floor, Wall, Erase, Decoration, Spawn, Entry, Exit }
 
     public sealed partial class RoomDraft
     {
@@ -37,10 +38,11 @@ namespace Sokoban
         public string WorkPath { get; private set; }
         public int Revision => revision;
         public bool Dirty => history.Dirty || unsaved;
+        public int BrushRotation { get; private set; }
         public RoomTool Tool
         {
             get => tool;
-            set { tool = value; ClearBrush(); }
+            set { tool = value; BrushRotation = 0; ClearBrush(); }
         }
 
         public RoomDraft(RoomDraftModel model) { Reset(model, null, null, null); }
@@ -116,6 +118,14 @@ namespace Sokoban
                 case RoomTool.Target: Place(false, cell); break;
                 case RoomTool.Move: Move(cell); break;
                 case RoomTool.Decoration: PlaceAsset(cell); break;
+                case RoomTool.Spawn:
+                case RoomTool.Entry:
+                case RoomTool.Exit:
+                    RoomFile.Check(TryMarkerTool(Tool, out var role), "未知房间标记");
+                    var error = PlacementMarkerError(cell);
+                    RoomFile.Check(error == null, error);
+                    SetRoomMarker(cell, role, BrushRotation);
+                    break;
                 default: Select(cell); break;
             }
         }
@@ -135,7 +145,7 @@ namespace Sokoban
             RoomFile.Check(error == null, error);
             RoomFile.Check(!string.IsNullOrWhiteSpace(id) && !Room.Ids.Contains(id), "对象 ID 为空或已占用");
             var look = BrushCategory == (box ? ObjectCategories.Box : ObjectCategories.Target) ? BrushAppearance : null;
-            Commit(new PlaceObjectCommand(holders[ActiveId], id, box ? ObjectCategories.Box : ObjectCategories.Target, cell, look), id);
+            Commit(new PlaceObjectCommand(holders[ActiveId], id, box ? ObjectCategories.Box : ObjectCategories.Target, cell, look, BrushRotation), id);
             NotifyPlacement(id);
         }
 
@@ -212,16 +222,61 @@ namespace Sokoban
 
         string FreshMarkerId(string role) => Room.Ids.Contains(role) ? role + "-" + Guid.NewGuid().ToString("N") : role;
 
-        public void SetRoomMarker(Cell cell, string role)
+        public void RotateBrush(int quarterTurns) => BrushRotation = RotationSteps.Turn(BrushRotation, quarterTurns);
+
+        public static bool TryMarkerTool(RoomTool tool, out string role)
+        {
+            role = tool == RoomTool.Spawn ? "spawn" : tool == RoomTool.Entry ? "entry" : tool == RoomTool.Exit ? "exit" : null;
+            return role != null;
+        }
+
+        public string PlacementMarkerError(Cell cell)
+        {
+            if (Tool == RoomTool.Spawn)
+            {
+                var entrance = Model.Doors.FirstOrDefault(d => d.Id == Model.PrimaryEntranceId && d.Role == "entry");
+                if (entrance == null) return "请先放置主入口";
+                var spawn = entrance.Cell - entrance.Outward;
+                if (cell != spawn) return "请点击主入口内侧 " + spawn;
+                return PlacementRules.Error(Model, ObjectCategories.Spawn, cell,
+                    Room.ObjectsOf(ObjectCategories.Spawn).FirstOrDefault()?.Id);
+            }
+            return DoorMarkerError(cell, BrushRotation);
+        }
+
+        internal Cell? MarkerOutward(Cell cell, int turns)
+        {
+            var initial = DoorPlacement.Outward(Room, cell);
+            if (!initial.HasValue) return null;
+            return Cell.SearchOrder[RotationSteps.Turn(RotationSteps.DirectionIndex(initial.Value), turns)];
+        }
+
+        string DoorMarkerError(Cell cell, int turns)
+        {
+            if (Room.TerrainAt(cell).CategoryId != TerrainCategories.Floor) return "请在地板格上放置门";
+            if (MarkerOccupied(cell)) return "格子已占用";
+            var outward = MarkerOutward(cell, turns);
+            if (!outward.HasValue || Room.TerrainAt(cell + outward.Value).CategoryId != TerrainCategories.Void
+                || Room.TerrainAt(cell - outward.Value).CategoryId != TerrainCategories.Floor) return "门朝向不可通行";
+            return null;
+        }
+
+        public void SetRoomMarker(Cell cell, string role, int? rotation = null)
         {
             RoomFile.Check(role == "spawn" || role == "entry" || role == "exit", "未知房间标记");
-            if (role == "spawn") { Commit(new SetSpawnCommand(holders[ActiveId]), "spawn"); return; }
-            RoomFile.Check(Room.TerrainAt(cell).CategoryId == TerrainCategories.Floor, "请在地板格上设置出生点或门");
-            RoomFile.Check(!MarkerOccupied(cell), "格子已占用");
-            var outward = DoorPlacement.Outward(Room, cell);
-            RoomFile.Check(outward.HasValue, "门需要朝向空地，且内侧有可通行地板");
+            if (role == "spawn")
+            {
+                Commit(new SetSpawnCommand(holders[ActiveId], rotation), "spawn");
+                NotifyPlacement("spawn");
+                return;
+            }
+            int turns = rotation ?? 0;
+            var error = DoorMarkerError(cell, turns);
+            RoomFile.Check(error == null, error);
+            var outward = MarkerOutward(cell, turns).Value;
             string id = FreshMarkerId(role);
-            Commit(new AddDoorCommand(holders[ActiveId], new DoorInfo(id, cell, outward.Value, role)), id);
+            Commit(new AddDoorCommand(holders[ActiveId], new DoorInfo(id, cell, outward, role)), id);
+            NotifyPlacement(id);
         }
 
         void MoveDecoration(string id, Cell cell)

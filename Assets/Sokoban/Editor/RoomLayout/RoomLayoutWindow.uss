@@ -1,0 +1,20 @@
+.sl-root { flex-grow: 1; }
+.sl-root .sl-grow { flex-grow: 1; min-height: 0; min-width: 0; }
+.sl-root .sl-pane { min-width: 145px; min-height: 0; padding: 6px; }
+.sl-root .sl-toolbar { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 2px 4px; }
+.sl-root .sl-heading { -unity-font-style: bold; margin: 4px 2px; }
+.sl-root .sl-section { padding: 4px 6px; }
+.sl-root .sl-problems { height: 132px; border-top-width: 1px; border-top-color: rgba(128,128,128,0.5); }
+.sl-root .sl-status { padding: 4px 6px; white-space: normal; }
+.sl-root .sl-wrap { white-space: normal; }
+.sl-root .sl-row { flex-direction: row; align-items: center; min-height: 24px; }
+.sl-root .sl-row Label { flex-grow: 1; white-space: normal; }
+.sl-root .sl-card { flex-direction: row; align-items: center; margin: 2px 0; padding: 3px; }
+.sl-root .sl-card-main { flex-grow: 1; min-width: 0; white-space: normal; }
+.sl-root .sl-thumb { width: 38px; height: 38px; margin-right: 4px; }
+.sl-root .sl-active { border-bottom-width: 2px; border-bottom-color: #c99134; }
+.sl-root .sl-entry { white-space: normal; -unity-text-align: middle-left; min-height: 24px; }
+.sl-root .sl-overlay { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.42); justify-content: center; align-items: center; display: none; }
+.sl-root .sl-dialog { width: 90%; height: 88%; max-width: 780px; padding: 12px; }
+.sl-root.sl-dark .sl-dialog { background-color: #383838; }
+.sl-root.sl-light .sl-dialog { background-color: #d6d6d6; }

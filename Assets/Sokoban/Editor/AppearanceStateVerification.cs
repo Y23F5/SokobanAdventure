@@ -228,7 +228,7 @@ namespace Sokoban.Editor
         public static void Prepare()
         {
             Directory.CreateDirectory(Folder);
-            var draft = RoomWindow.Open().Panel.Draft;
+            var draft = RoomLayoutWindow.Open().Panel.Draft;
             ForestExport(draft);
             MixedRoom(draft);
             string modelPath = Environment.GetEnvironmentVariable("SOKOBAN_APPEARANCE_GLB");

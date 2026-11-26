@@ -154,7 +154,7 @@ namespace Sokoban.Editor
                     Require(Root().childCount==3,"第 "+(open+1)+" 次直接打开 Game 生成一份三房整图");
                     foreach(var placement in draft.World.Rooms)
                         CheckRoom(draft.Catalog[placement.LevelId],placement.Origin);
-                    var root=Root(); RoomWindow.Open().Close();WorldSceneSession.Tick();
+                    var root=Root(); RoomLayoutWindow.Open().Close();WorldSceneSession.Tick();
                     Require(root==Root(),"打开并关闭工具窗口保留原预览实例");
                 }
                 var panel=WorldSceneSession.Panel;var state=panel.Draft;

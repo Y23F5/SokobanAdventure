@@ -5,7 +5,7 @@
  * RecoveryItem：恢复道具（道具 ID、脚本引用、时长秒、数值参数表），ID 与房内对象共用同一份 ID 空间。
  * RoomCodec.Encode(draft)：写出房间名与主题、类型化地形网格（类别、实体 ID、状态、外观引用与变体序号）、对象及其外观、门与主入口、恢复道具、装饰、资源描述符、行为图（节点带格坐标）、对象模板、模板实例、对象状态表、界面图资源 ID 与 Extras；
  * 小数不进 JSON，恢复道具时长与参数按千分之一取整数；写完先调用 Decode 试读，任何问题抛 FormatException，调用方不应写入文件。
- * RoomCodec.Decode(text)：返回 RoomDraftModel；校验格式号、尺寸、地形与对象类别（取自注册表）、格子范围、ID 在房间内唯一、恢复时长为正、主入口引用与各字段类型，任何问题统一抛 FormatException。
+ * RoomCodec.Decode(text)：返回 RoomDraftModel；校验格式号、尺寸、地形与对象类别（取自注册表）、格子范围、对象不共享初始格、ID 在房间内唯一、恢复时长为正、主入口引用与各字段类型，任何问题统一抛 FormatException。
  * GraphOut、StatesOut、GraphIn、StatesIn：房间文件与对象模板共用同一份行为图与对象状态表写法。
  */
 using System;
@@ -268,12 +268,16 @@ namespace Sokoban.Core
                 if (look != null) room.SetAppearance(cell, look);
             }
 
+            var occupied = new HashSet<Cell>();
             foreach (var item in Arr(root, "objects"))
             {
                 var rec = Obj(item, "对象记录");
                 string category = Str(rec, "category");
                 if (!Registries.Objects.Contains(category)) throw new FormatException("未知对象类别 " + category);
-                room.AddObject(Str(rec, "id"), category, CellOf(room, rec, "对象"), AppearanceOf(rec), OptionalInt(rec, "rotation"));
+                string id = Str(rec, "id");
+                Cell cell = CellOf(room, rec, "对象");
+                if (!occupied.Add(cell)) throw new FormatException(id + " 所在的 " + cell + " 有多个对象");
+                room.AddObject(id, category, cell, AppearanceOf(rec), OptionalInt(rec, "rotation"));
             }
 
             var doors = new List<DoorInfo>();

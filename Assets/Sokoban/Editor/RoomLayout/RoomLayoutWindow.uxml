@@ -1,0 +1,46 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:VisualElement name="room-layout" class="sl-root">
+        <ui:Label name="inactive" class="sl-section" text="请在 Game 场景的编辑模式下使用房间布局。" />
+        <ui:VisualElement name="workbench" class="sl-grow">
+            <ui:VisualElement name="files" class="sl-toolbar" />
+            <ui:VisualElement name="tools" class="sl-toolbar" />
+            <ui:TwoPaneSplitView name="palette-split" fixed-pane-index="0" fixed-pane-initial-dimension="236" orientation="Horizontal" class="sl-grow">
+                <ui:VisualElement class="sl-pane">
+                    <ui:Label text="素材库" class="sl-heading" />
+                    <ui:VisualElement name="tabs" class="sl-toolbar" />
+                    <ui:ScrollView name="palette" class="sl-grow" />
+                </ui:VisualElement>
+                <ui:TwoPaneSplitView name="inspector-split" fixed-pane-index="1" fixed-pane-initial-dimension="260" orientation="Horizontal" class="sl-grow">
+                    <ui:ScrollView name="workspace" class="sl-pane" />
+                    <ui:ScrollView name="inspector" class="sl-pane" />
+                </ui:TwoPaneSplitView>
+            </ui:TwoPaneSplitView>
+            <ui:VisualElement class="sl-section sl-problems">
+                <ui:Label name="issues-heading" text="结构检查" class="sl-heading" />
+                <ui:ScrollView name="issues" focusable="true" class="sl-grow" />
+            </ui:VisualElement>
+            <ui:Label name="status" class="sl-status" />
+        </ui:VisualElement>
+        <ui:VisualElement name="dialog" class="sl-overlay">
+            <ui:VisualElement class="sl-dialog">
+                <ui:Label name="dialog-title" class="sl-heading" />
+                <ui:Label name="dialog-note" class="sl-wrap" />
+                <ui:VisualElement name="file-fields" class="sl-grow">
+                    <ui:Label name="directory" class="sl-wrap" />
+                    <ui:Button name="parent" text="上一级目录" />
+                    <ui:ScrollView name="entries" class="sl-grow" />
+                    <ui:TextField name="filename" label="文件名或完整路径" />
+                </ui:VisualElement>
+                <ui:Label name="dialog-message" class="sl-wrap" />
+                <ui:VisualElement name="dialog-actions" class="sl-toolbar" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="legacy" class="sl-overlay">
+            <ui:VisualElement class="sl-dialog">
+                <ui:ScrollView class="sl-grow">
+                    <ui:VisualElement name="legacy-content" />
+                </ui:ScrollView>
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

@@ -274,7 +274,7 @@ namespace Sokoban
         {
             if (tool != RoomTool.Wall && tool != RoomTool.Floor && tool != RoomTool.Erase) return "当前工具不是地形画刷";
             if (World != null && Placement == null) return "房间尚未放置";
-            var plan = BrushPlanner.Preflight(Model, cells, tool == RoomTool.Wall ? BrushTool.Wall : tool == RoomTool.Floor ? BrushTool.Floor : BrushTool.Erase);
+            var plan = BrushPlanner.Preflight(Model, cells, tool == RoomTool.Wall ? BrushTool.Wall : tool == RoomTool.Floor ? BrushTool.Floor : BrushTool.Erase, rotation: BrushRotation);
             if (plan.Error != null) return plan.Error;
             if (World != null && plan.Expands) return "请进入单独编辑后再扩建";
             if (plan.NoChange) return null;

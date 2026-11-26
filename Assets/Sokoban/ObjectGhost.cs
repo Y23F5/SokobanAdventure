@@ -40,15 +40,19 @@ namespace Sokoban
                 return;
             }
             var placed = moving && draft.SelectedCell.HasValue ? draft.Room.ObjectAt(draft.SelectedCell.Value) : null;
+            var decoration = moving && placed == null ? draft.FindDecoration(draft.Selected) : null;
             string category = moving ? placed?.CategoryId : draft.BrushCategory;
-            var look = moving ? placed?.Appearance : draft.BrushAppearance;
+            bool marker = RoomDraft.TryMarkerTool(draft.Tool, out var markerRole);
+            var look = moving ? placed?.Appearance ?? decoration?.Appearance : draft.BrushAppearance;
+            if (marker && !moving)
+                look = markerRole == "spawn" ? new AppearanceRef("Spawn") : AppearanceLibrary.Default(TerrainCategories.Door, draft.Theme);
             var states = moving && placed != null ? ObjectStateProfile.StatesOf(draft.Model, placed.Id) : draft.DefinitionStates;
             if (states != null) look = new AppearanceRef(ObjectStateProfile.StateLook(states.Initial));
             look ??= AppearanceLibrary.Default(category ?? ObjectCategories.Target, draft.Theme);
             string prefab = AppearanceLibrary.Prefab(look);
             string modelId = prefab == null && draft.Model.Assets.Any(a => a.Id == look?.Id && a.Kind == AssetKinds.Model) ? look.Id : null;
             if (prefab == null && modelId == null) prefab = AppearanceLibrary.Prefab(AppearanceLibrary.Default(ObjectCategories.Target, draft.Theme));
-            string key = draft.ActiveId + "|" + prefab + "|" + modelId;
+            string key = draft.ActiveId + "|" + prefab + "|" + modelId + "|" + draft.AssetDefinition(modelId)?.HeightOffset;
             if (!model || previous != key)
             {
                 Hide();
@@ -77,6 +81,11 @@ namespace Sokoban
             color.a = .43f;
             tint.SetColor("_BaseColor", color);
             model.transform.position = new Vector3(world.X, .025f, world.Y);
+            int turns = moving ? placed?.Rotation ?? decoration?.Rotation ?? 0 : draft.BrushRotation;
+            var direction = !moving && marker && markerRole != "spawn" ? draft.MarkerOutward(world - draft.Origin, turns) : null;
+            if (direction.HasValue)
+                model.transform.rotation = Quaternion.LookRotation(new Vector3(-direction.Value.X, 0, -direction.Value.Y));
+            else model.transform.rotation = RoomPreview.CellRotation(turns);
         }
 
         public void Hide()

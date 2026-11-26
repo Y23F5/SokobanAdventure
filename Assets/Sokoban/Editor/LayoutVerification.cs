@@ -15,6 +15,8 @@ using System.Linq;
 using System.Text;
 using Sokoban.Core;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UIElements;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEditor.Build.Reporting;
@@ -67,7 +69,13 @@ namespace Sokoban.Editor
             var built=RoomCodec.Decode(Resources.Load<TextAsset>("DefaultRoom").text);
             Expect(built.Room.Width==7 && built.Room.Height==7 && built.PrimaryEntranceId=="entry" && built.Room.ObjectsOf(ObjectCategories.Spawn).Single().Cell==new Cell(2,2) && built.Doors.Select(x=>x.Id).OrderBy(x=>x).SequenceEqual(new[]{"entry","exit"}),"FLOW01-001 built-in default room: 7x7, stable spawn (2,2), primary entrance and entry/exit doors");
             Expect(fixture.Room.Width==7 && fixture.Room.Height==7 && fixture.PrimaryEntranceId=="entry" && fixture.Room.Objects.Single(o=>o.Id=="box-a").Cell==new Cell(3,2) && fixture.Room.Objects.Single(o=>o.Id=="target-a").Cell==new Cell(4,2) && fixture.Room.Objects.Single(o=>o.Id=="spawn").Cell==new Cell(2,2),"FLOW01-001 design fixture loads: size 7x7, origin zero, stable spawn, box, target, doors and primary entrance");
-            var window=RoomWindow.Open(); var panel=window.Panel; var d=panel.Draft;
+            var window = RoomLayoutWindow.Open();
+            window.CreateGUI();
+            var view = window.rootVisualElement;
+            Expect(view.Q<TwoPaneSplitView>("palette-split") != null && view.Q<TwoPaneSplitView>("inspector-split") != null
+                && view.Q("files") != null && view.Q<ScrollView>("issues") != null, "Room layout instantiates the UXML panes, file toolbar and issue list");
+            var panel = window.Panel;
+            var d = panel.Draft;
             d.Open("Docs/关卡样例/WS-01.json",true);
             d.Tool=RoomTool.Target; panel.Click(new Cell(4,4)); d.Tool=RoomTool.Box; panel.Click(new Cell(2,4)); string id=d.Selected;
             d.Tool=RoomTool.Select; panel.Click(new Cell(2,4)); Expect(d.Selected==id,"Editor selection "+id);
@@ -77,10 +85,25 @@ namespace Sokoban.Editor
             var overlapText=File.ReadAllText("Docs/关卡样例/WS-01.json").Replace("{\"id\":\"target-a\",\"category\":\"target\",\"x\":4,\"y\":2}","{\"id\":\"target-a\",\"category\":\"target\",\"x\":3,\"y\":2}");
             Expect(overlapText!=File.ReadAllText("Docs/关卡样例/WS-01.json") && Rejected(()=>RoomCodec.Decode(overlapText)),"Reject overlapped room on import");
             var baseline=RoomCodec.Encode(d.Model); d.Move(new Cell(3,4)); Expect(RoomCodec.Encode(d.Model)!=baseline,"Move changes the draft"); d.Undo(); Expect(baseline==RoomCodec.Encode(d.Model),"Single undo restores design"); d.Redo(); d.Undo();
-            var projection=new RoomPreview(); projection.Sync(d); var box=GameObject.Find(id); var position=box.transform.localPosition;
-            box.transform.localPosition=Vector3.one*60; box.transform.localScale=Vector3.one*4; box.transform.localRotation=Quaternion.Euler(90,25,5); projection.Sync(d);
-            Expect(box.transform.localPosition==position && box.transform.localRotation==Quaternion.identity && box.transform.localScale!=Vector3.one*4,"Preview restores external position/rotation/scale from data"); projection.Clear();
-            d.Save(Output+"A.json",false); window.Close(); window=RoomWindow.Open(); d=window.Panel.Draft; d.Open(Output+"A.json",false);
+            var currentRoots = SceneManager.GetActiveScene().GetRootGameObjects();
+            var projection = new RoomPreview();
+            try
+            {
+                projection.Sync(d);
+                var projectionRoot = SceneManager.GetActiveScene().GetRootGameObjects().Except(currentRoots).Single();
+                var box = projectionRoot.transform.Find(d.ActiveId).Find(id);
+                var position = box.localPosition;
+                var rotation = box.localRotation;
+                var scale = box.localScale;
+                box.localPosition = Vector3.one * 60;
+                box.localRotation = Quaternion.Euler(90, 25, 5);
+                box.localScale = Vector3.one * 4;
+                projection.Sync(d);
+                Expect(box.localPosition == position && box.localRotation == rotation && box.localScale == scale,
+                    "Preview restores external position/rotation/scale from data");
+            }
+            finally { projection.Clear(); }
+            d.Save(Output+"A.json",false); window.Close(); window=RoomLayoutWindow.Open(); d=window.Panel.Draft; d.Open(Output+"A.json",false);
             Expect(d.Room.ObjectsOf(ObjectCategories.Box).Count()==2 && d.Room.ObjectsOf(ObjectCategories.Target).Count()==2 && d.Find(id).Cell==new Cell(2,4),"EditorWindow reopen A with two boxes and two targets");
             window.Close();
         }
@@ -88,7 +111,7 @@ namespace Sokoban.Editor
         {
             var folder = Environment.GetEnvironmentVariable("SOKOBAN_EXCHANGE_DIR") ?? "Docs/验收证据/WS-01";
             record=Path.Combine(folder,"return-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".txt"); File.WriteAllText(record,Application.unityVersion+" | "+DateTimeOffset.Now.ToString("o")+Environment.NewLine);
-            var window=RoomWindow.Open(); var d=window.Panel.Draft; d.Open(Path.Combine(folder,"B.json"),true); var b=d.Model; d.Open(Path.Combine(folder,"A.json"),false);
+            var window=RoomLayoutWindow.Open(); var d=window.Panel.Draft; d.Open(Path.Combine(folder,"B.json"),true); var b=d.Model; d.Open(Path.Combine(folder,"A.json"),false);
             var moved=d.Room.ObjectsOf(ObjectCategories.Box).Single(x=>x.Cell==new Cell(2,4));
             Expect(Signature(d.Model,moved.Id,new Cell(3,4))==Signature(b),"Unity editor reimport B and reopen A: only the cell of "+moved.Id+" differs, (2,4) -> (3,4)");window.Close();
         }

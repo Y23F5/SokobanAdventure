@@ -1,5 +1,6 @@
 /**
  * @file WorldSceneSession.cs
+ * DrawGrid 在房间外扩六格绘制可切换网格；DrawSelectionRectangle 绘制框选范围；EditShortcut 与工作窗口调用同一草稿历史；DeleteAt 优先删除格中实体，再尝试擦除地形。
  * @brief 编辑态 Game 场景持有一份草稿、视角和模型投影。Tick 随活动场景建立或释放预览并刷新草稿；
  * OpenSession 优先还原磁盘现场，首次打开装配默认世界。Frame 按房间外接框定位，Solo 与 ReturnToWorld 切换可见范围。
  * ResetView 在换文件后恢复取景；Release 在关闭场景、进入运行态或域重载时保存并清理；
@@ -20,6 +21,15 @@ namespace Sokoban.Editor
     internal static class WorldSceneSession
     {
         static Vector2Int? rectangleStart;
+        static InterfaceTheme theme;
+        internal static Sokoban.Core.Cell? HoverCell { get; private set; }
+        internal static bool GridVisible
+        {
+            get => SessionState.GetBool("Sokoban.LayoutGrid", true);
+            set { SessionState.SetBool("Sokoban.LayoutGrid", value); Refresh(); }
+        }
+
+        static InterfaceTheme Theme => theme ? theme : theme = Resources.Load<InterfaceTheme>("LayoutUI/WarmPixel");
         internal const string GamePath = "Assets/Scenes/Game.unity";
         internal static bool Active => !EditorApplication.isPlayingOrWillChangePlaymode && !SessionState.GetBool("Sokoban.TrialTransition", false) && SceneManager.GetActiveScene().path == GamePath;
         internal static LayoutPanel Panel { get; private set; }
@@ -67,6 +77,15 @@ namespace Sokoban.Editor
             public Quaternion rotation;
             public float size;
             public bool ortho;
+            public RoomTool tool;
+            public string appearance;
+            public int variant;
+            public string category;
+            public string template;
+            public int brushRotation;
+            public bool hasSelection;
+            public Vector2Int primary;
+            public Vector2Int[] selection;
         }
 
         static void PlayState(PlayModeStateChange state)
@@ -87,7 +106,13 @@ namespace Sokoban.Editor
                 SessionState.SetString("Sokoban.GameTrial", Panel.Draft.Snapshot());
                 if (view)
                     SessionState.SetString("Sokoban.TrialView", JsonUtility.ToJson(new TrialView {
-                        solo = soloId, pivot = view.pivot, rotation = view.rotation, size = view.size, ortho = view.orthographic }));
+                        solo = soloId, pivot = view.pivot, rotation = view.rotation, size = view.size, ortho = view.orthographic,
+                        tool = Panel.Draft.Tool, appearance = Panel.Draft.BrushAppearance?.Id,
+                        variant = Panel.Draft.BrushAppearance?.Variant ?? 0, category = Panel.Draft.BrushCategory,
+                        template = Panel.Draft.BrushTemplate, brushRotation = Panel.Draft.BrushRotation,
+                        hasSelection = Panel.Draft.SelectedCell.HasValue, primary = Panel.Draft.SelectedCell.HasValue ? V(Panel.Draft.SelectedCell.Value) : default,
+                        selection = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(Panel.Draft.Selection, V))
+                    }));
                 SessionState.SetBool("Sokoban.TrialTransition", true);
                 Release();
             }
@@ -112,6 +137,20 @@ namespace Sokoban.Editor
             soloId = saved.solo;
             view.LookAtDirect(saved.pivot, saved.rotation, saved.size);
             view.orthographic = saved.ortho;
+            var draft = Panel.Draft;
+            if (saved.hasSelection)
+            {
+                var primary = C(saved.primary);
+                draft.Select(primary);
+                if (saved.selection != null)
+                    foreach (var selected in saved.selection)
+                        if (selected != saved.primary) draft.Selection.Add(C(selected));
+            }
+            draft.Tool = saved.tool;
+            if (!string.IsNullOrEmpty(saved.template)) draft.SelectDefinition(saved.template);
+            else if (!string.IsNullOrEmpty(saved.appearance) && !string.IsNullOrEmpty(saved.category))
+                draft.ChooseAppearance(saved.appearance, saved.category, saved.variant);
+            draft.RotateBrush(saved.brushRotation);
             SessionState.EraseString("Sokoban.TrialView");
         }
 
@@ -170,6 +209,7 @@ namespace Sokoban.Editor
             ghost.Dispose();
             soloId = null;
             rectangleStart = null;
+            HoverCell = null;
             dragging = rightDown = rightDragged = false;
         }
 
@@ -239,15 +279,76 @@ namespace Sokoban.Editor
 
         static void Refresh()
         {
-            RoomWindow.Current?.Repaint();
+            RoomLayoutWindow.Current?.Repaint();
             SceneView.RepaintAll();
+        }
+
+        static void DrawGrid(RoomDraft draft)
+        {
+            if (!GridVisible) return;
+            const int margin = 6;
+            float x = draft.Origin.X - margin - .5f;
+            float z = draft.Origin.Y - margin - .5f;
+            int width = draft.Room.Width + 2 * margin;
+            int height = draft.Room.Height + 2 * margin;
+            Color color = Theme ? Theme.hover : Color.white;
+            color.a *= .36f;
+            using (new Handles.DrawingScope(color))
+            {
+                for (int i = 0; i <= width; i++)
+                    Handles.DrawLine(new Vector3(x + i, .024f, z), new Vector3(x + i, .024f, z + height));
+                for (int i = 0; i <= height; i++)
+                    Handles.DrawLine(new Vector3(x, .024f, z + i), new Vector3(x + width, .024f, z + i));
+            }
+        }
+
+        static void DrawSelectionRectangle(Vector2Int start, Vector2Int end, Color color)
+        {
+            float x0 = Mathf.Min(start.x, end.x) - .5f, x1 = Mathf.Max(start.x, end.x) + .5f;
+            float z0 = Mathf.Min(start.y, end.y) - .5f, z1 = Mathf.Max(start.y, end.y) + .5f;
+            const float y = .08f;
+            using (new Handles.DrawingScope(color))
+                Handles.DrawAAPolyLine(3, new Vector3(x0, y, z0), new Vector3(x1, y, z0),
+                    new Vector3(x1, y, z1), new Vector3(x0, y, z1), new Vector3(x0, y, z0));
+        }
+
+        static bool EditShortcut(Event ev, RoomDraft draft)
+        {
+            if (ev.type != EventType.KeyDown || ev.alt) return false;
+            int turns = ev.keyCode == KeyCode.LeftBracket || ev.character == '[' ? -1
+                : ev.keyCode == KeyCode.RightBracket || ev.character == ']' ? 1 : 0;
+            if (turns != 0 && !ev.control && !ev.command)
+            {
+                if (draft.Tool == RoomTool.Select) Panel.Run(() => draft.RotateSelection(turns), "已旋转所选内容");
+                else if (draft.Tool != RoomTool.Move && draft.Tool != RoomTool.Erase) draft.RotateBrush(turns);
+                return true;
+            }
+            if (!ev.control && !ev.command) return false;
+            if (ev.keyCode == KeyCode.Z && !ev.shift) Panel.Run(draft.Undo, "已撤销");
+            else if (ev.keyCode == KeyCode.Y || ev.keyCode == KeyCode.Z && ev.shift) Panel.Run(draft.Redo, "已重做");
+            else return false;
+            return true;
+        }
+
+        static void DeleteAt(RoomDraft draft, Sokoban.Core.Cell cell)
+        {
+            var id = draft.Room.ObjectAt(cell)?.Id ?? draft.Model.Decorations.Find(item => item.Cell == cell)?.Id;
+            if (id != null) Panel.Run(() => draft.RemoveObject(id), "已删除");
+            else
+            {
+                var error = draft.Brush(new[] { cell }, RoomTool.Erase);
+                Panel.Status = error ?? "已擦除地形";
+            }
+            Refresh();
         }
 
         static void SceneGUI(SceneView view)
         {
-            if(!Active || Panel == null || Panel.Modal) { ghost.Hide(); return; }
+            if (!Active || Panel == null) { ghost.Hide(); HoverCell = null; return; }
+            if (Panel.Modal || RoomLayoutWindow.Current && RoomLayoutWindow.Current.BlocksSceneInput) { ghost.Hide(); HoverCell = null; return; }
             
             var ev=Event.current; var draft=Panel.Draft;
+            if (EditShortcut(ev, draft)) { ev.Use(); Refresh(); return; }
             if(ev.rawType==EventType.MouseDown && ev.button==1) {rightDown=true;rightDragged=false;rightStart=ev.mousePosition;}
             if(rightDown && ev.rawType==EventType.MouseDrag && (ev.delta.sqrMagnitude>=16 || Vector2.Distance(rightStart,ev.mousePosition)>=4)) rightDragged=true;
             bool cancelRight=ev.rawType==EventType.MouseUp && ev.button==1 && rightDown && !rightDragged && Vector2.Distance(rightStart,ev.mousePosition)<4;
@@ -260,16 +361,19 @@ namespace Sokoban.Editor
                     if(!cancelRight) ev.Use();
                     view.Repaint();Refresh();
                 }
-                else if (cancelRight && Tools.current != Tool.View && RoomWindow.Current &&
+                else if (cancelRight && Tools.current != Tool.View && RoomLayoutWindow.Current &&
                     (draft.World == null || draft.Placement != null) &&
                     RoomPreview.CellFromRay(HandleUtility.GUIPointToWorldRay(ev.mousePosition), out var clicked))
                 {
                     var cell = C(clicked) - draft.Origin;
-                    if (draft.Room.TerrainAt(cell).CategoryId != Sokoban.Core.TerrainCategories.Void)
+                    if (draft.Room.TerrainAt(cell).CategoryId != Sokoban.Core.TerrainCategories.Void || draft.Model.Decorations.Exists(item => item.Cell == cell))
                     {
                         if (!draft.Selection.Contains(cell)) draft.Select(cell);
                         var menu = new GenericMenu();
-                        menu.AddItem(new GUIContent("编辑行为"), false, RoomWindow.Current.OpenBehavior);
+                        if (draft.Room.TerrainAt(cell).CategoryId != Sokoban.Core.TerrainCategories.Void)
+                            menu.AddItem(new GUIContent("编辑行为"), false, RoomLayoutWindow.Current.OpenBehavior);
+                        menu.AddItem(new GUIContent("旋转 90°"), false, () => { Panel.Run(() => draft.RotateSelection(1), "已旋转"); Refresh(); });
+                        menu.AddItem(new GUIContent("删除"), false, () => DeleteAt(draft, cell));
                         menu.ShowAsContext();
                         ev.Use();
                         Refresh();
@@ -277,6 +381,8 @@ namespace Sokoban.Editor
                 }
                 return;
             }
+            if (ev.type == EventType.Repaint) DrawGrid(draft);
+            if (ev.type == EventType.MouseLeaveWindow) HoverCell = null;
             if(ev.alt || Tools.current==Tool.View || rightDown || ev.type==EventType.ScrollWheel || ev.button==2) { ghost.Hide(); return; }
             if(ev.type==EventType.MouseMove || ev.type==EventType.MouseLeaveWindow) view.Repaint();
             bool hit=RoomPreview.CellFromRay(HandleUtility.GUIPointToWorldRay(ev.mousePosition),out var world);
@@ -303,6 +409,7 @@ namespace Sokoban.Editor
             }
             preview.HidePlacement();
             var origin=V(draft.Origin); var local=world-origin;
+            if (ev.type == EventType.Repaint) HoverCell = hit && EditorWindow.mouseOverWindow == view ? C(local) : (Sokoban.Core.Cell?)null;
             bool roomVisible = draft.World == null || draft.Placement != null;
             var obj = roomVisible ? draft.Find(draft.Selected) : null;
             var deco = roomVisible && obj == null ? draft.FindDecoration(draft.Selected) : null;
@@ -320,8 +427,12 @@ namespace Sokoban.Editor
             }
             if(ev.type==EventType.Repaint) {
                 foreach (var gap in BoundaryGaps(draft)) SceneGhost.Mark(C(origin+gap), Color.red, "边界缺墙");
-                if (draft.Selection.Count > 1) foreach (var point in draft.Selection) SceneGhost.Mark(C(origin + V(point)), Color.yellow, "");
-                if(selAt.HasValue) SceneGhost.Mark(C(V(selAt.Value)+origin),Color.yellow,draft.Tool==RoomTool.Select && !dragging?draft.Selected+"  "+(V(selAt.Value)+origin):"");
+                var selectedTint = Theme ? Theme.active : Color.yellow;
+                foreach (var point in draft.Selection) SceneGhost.Mark(C(origin + V(point)), selectedTint, "");
+                var primary = selAt ?? draft.SelectedCell;
+                if (primary.HasValue) SceneGhost.Mark(C(V(primary.Value) + origin), selectedTint,
+                    draft.Tool == RoomTool.Select && !dragging ? draft.Selected ?? "" : "");
+                if (rectangleStart.HasValue && hit) DrawSelectionRectangle(origin + rectangleStart.Value, world, selectedTint);
                 bool showGhost=false;
                 if(hit && EditorWindow.mouseOverWindow==view) {
                     bool moving=dragging || draft.Tool==RoomTool.Move;
@@ -330,13 +441,22 @@ namespace Sokoban.Editor
                         ghost.Draw(draft, C(world), false,draft.TerrainPlacementError(C(local), draft.Tool), null);
                         showGhost = true;
                     }
+                    else if (RoomDraft.TryMarkerTool(draft.Tool, out _))
+                    {
+                        ghost.Draw(draft, C(world), false, draft.PlacementMarkerError(C(local)), null);
+                        showGhost = true;
+                    }
                     else if(moving || draft.Tool==RoomTool.Box || draft.Tool==RoomTool.Target || draft.Tool==RoomTool.Decoration) {
                         bool box=draft.Tool==RoomTool.Box || moving && obj?.CategoryId==Sokoban.Core.ObjectCategories.Box;
                         string issue=moving && (!selAt.HasValue || !draggable)?"请选择箱子或目标":draft.PlacementError(box,C(local),moving?draft.Selected:null);
+                        if (!moving && draft.Tool == RoomTool.Decoration)
+                            issue = draft.BrushCategory == AppearanceLibrary.Decoration
+                                ? draft.Room.Inside(C(local)) ? "装饰只能放在房间外" : null
+                                : draft.PlacementError(Sokoban.Core.ObjectCategories.Custom, C(local));
                         if(draft.World!=null && draft.Placement==null) issue="当前房间尚未放入世界";
                         Sokoban.Core.Cell? source=moving && selAt.HasValue ? (Sokoban.Core.Cell?)C(V(selAt.Value)+origin) : null;
                         if(source!=C(world) && (!moving || selAt.HasValue)) { ghost.Draw(draft,C(world),moving,issue,source);showGhost=true; }
-                    } else if(!selAt.HasValue || V(selAt.Value)+origin!=world) SceneGhost.Mark(C(world),Color.white,world.ToString());
+                    } else if(!selAt.HasValue || V(selAt.Value)+origin!=world) SceneGhost.Mark(C(world),Theme ? Theme.hover : Color.white,local.ToString());
                 }
                 if(!showGhost) ghost.Hide();
                 Panel.DrawStroke();
@@ -349,11 +469,20 @@ namespace Sokoban.Editor
                 rectangleStart=null; GUIUtility.hotControl=0; ev.Use(); Refresh(); view.Repaint(); return;
             }
             if(ev.type==EventType.MouseDown && ev.button==0 && hit && HandleUtility.nearestControl==control) {
+                if (draft.Tool == RoomTool.Select && ev.clickCount == 2 && RoomLayoutWindow.Current
+                    && draft.Room.TerrainAt(C(local)).CategoryId != Sokoban.Core.TerrainCategories.Void)
+                {
+                    draft.Select(C(local));
+                    RoomLayoutWindow.Current.OpenBehavior();
+                    ev.Use(); Refresh(); return;
+                }
                 if (draft.Tool == RoomTool.Select && ev.shift) { rectangleStart=local; GUIUtility.hotControl=control; ev.Use(); return; }
                 if (draft.Tool == RoomTool.Select && (ev.control || ev.shift || ev.command)) { draft.Select(C(local), true); ev.Use(); Refresh(); view.Repaint(); return; }
                 if(IsSolo && !Panel.IsBrush && !draft.Room.Inside(C(local))) { ev.Use(); return; } if(Panel.IsBrush) {Panel.StartStroke(world);GUIUtility.hotControl=control;} else Panel.ClickWorld(world);
                 ev.Use();Refresh();view.Repaint();
-            } else if(Panel.Painting && ev.type==EventType.MouseDrag && hit) {Panel.ExtendStroke(world);ev.Use();view.Repaint();}
+            }
+            else if (rectangleStart.HasValue && ev.type == EventType.MouseDrag) { ev.Use(); view.Repaint(); }
+            else if(Panel.Painting && ev.type==EventType.MouseDrag && hit) {Panel.ExtendStroke(world);ev.Use();view.Repaint();}
             else if(Panel.Painting && ev.rawType==EventType.MouseUp && ev.button==0) {Panel.EndStroke();GUIUtility.hotControl=0;ev.Use();Refresh();view.Repaint();}
         }
     }

@@ -135,7 +135,7 @@ namespace Sokoban
             {
                 if (room.Inside(cell)) throw new InvalidOperationException("装饰只能放在房间外");
                 string decorId = "decor-" + Guid.NewGuid().ToString("N");
-                var decoration = new Decoration(decorId, cell, BrushAppearance);
+                var decoration = new Decoration(decorId, cell, BrushAppearance, BrushRotation);
                 var decorHold = AssetCopy(BrushAppearance.Id);
                 Commit(new ModelEdit(() =>
                 {
@@ -157,12 +157,13 @@ namespace Sokoban
             if (BrushTemplate != null && template == null) throw new InvalidOperationException("当前房间没有所选对象模板");
             string id = "custom-" + Guid.NewGuid().ToString("N");
             var look = template?.Appearance ?? BrushAppearance;
+            int rotation = BrushRotation;
             var hold = AssetCopy(look?.Id);
             var instance = template == null ? null : new TemplateInstance(id, template.Id);
             Commit(new ModelEdit(() =>
             {
                 hold.Apply(model);
-                room.AddObject(id, ObjectCategories.Custom, cell, look);
+                room.AddObject(id, ObjectCategories.Custom, cell, look, rotation);
                 if (instance != null) model.Instances.Add(instance);
             }, () =>
             {
