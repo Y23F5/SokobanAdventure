@@ -30,6 +30,8 @@ namespace Sokoban
             int? version = (int?)room["formatVersion"];
             Check((string)room["kind"] == "room" && (version == 2 || version == 3), "需要有效的房间文件");
             Validate(room);
+            var loadIssue = RoomCoreBridge.LoadIssues(room).FirstOrDefault();
+            Check(loadIssue == null, loadIssue);
             RoomAssets.Validate(room);
             if (!draft) RequireStructure(room);
             return room;
