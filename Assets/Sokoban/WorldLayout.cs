@@ -76,13 +76,30 @@ namespace Sokoban
                 foreach(var issue in ObjectBehavior.TargetIssues((JObject)rooms[id],world,rooms)) yield return issue;
             }
             foreach (var issue in ConnectionIssues(world,rooms)) yield return issue;
+            var endpointIssues = EndpointIssues(world, rooms);
+            foreach (var issue in endpointIssues.Where(i => i.StartsWith("世界起点"))) yield return issue;
+            if (!(world["finish"]?["requiresSolved"] is JArray finishRooms) || finishRooms.Any(id => !world["rooms"].Any(r => (string)r["levelId"] == (string)id)))
+                yield return "世界终局的前置房间引用无效";
+            foreach (var issue in endpointIssues.Where(i => i.StartsWith("世界终点门"))) yield return issue;
+        }
+        public static List<string> EndpointIssues(JObject world,JObject rooms)
+        {
+            try
+            {
+                var core = Sokoban.Core.WorldCodec.Decode(world.ToString(Newtonsoft.Json.Formatting.None));
+                return Sokoban.Core.WorldValidator.Endpoints(core, ToCoreRooms(rooms)).ToList();
+            }
+            catch (FormatException) { }
+            catch (InvalidDataException) { }
+            return LegacyEndpointIssues(world, rooms).ToList();
+        }
+        public static IEnumerable<string> LegacyEndpointIssues(JObject world,JObject rooms)
+        {
             var start = world["start"];
             string startRoom = (string)start?["levelId"];
             if (!world["rooms"].Any(r => (string)r["levelId"] == startRoom)
                 || (string)rooms[startRoom]?["spawn"]?["id"] != (string)start?["spawnId"])
                 yield return "世界起点无效 "+startRoom;
-            if (!(world["finish"]?["requiresSolved"] is JArray finishRooms) || finishRooms.Any(id => !world["rooms"].Any(r => (string)r["levelId"] == (string)id)))
-                yield return "世界终局的前置房间引用无效";
             if (Endpoint(world["finish"]?["endpoint"],world,rooms,out _) == null)
                 yield return "世界终点门无效 "+world["finish"]?["endpoint"];
         }

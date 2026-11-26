@@ -183,6 +183,17 @@ namespace Sokoban.Editor
                 var oldEnds = WorldLayout.Issues(legacyWorld, catalog).Where(i => i.StartsWith("世界起点") || i.StartsWith("世界终点门")).ToList();
                 var newEnds = WorldValidator.Endpoints(coreWorld, coreRooms).ToList();
                 if (oldEnds.Count != newEnds.Count) failures.Add("起终点检查条数不一致：旧=" + oldEnds.Count + " 新=" + newEnds.Count);
+                var legacyEnds = WorldLayout.LegacyEndpointIssues(legacyWorld, catalog).ToList();
+                var routedEnds = WorldLayout.EndpointIssues(legacyWorld, catalog);
+                if (legacyEnds.Count != routedEnds.Count) failures.Add("转调后的起终点检查条数不一致：旧=" + legacyEnds.Count + " 转调=" + routedEnds.Count);
+                foreach (var bad in new[] { "spawnId", "doorId" })
+                {
+                    var broken = (Newtonsoft.Json.Linq.JObject)legacyWorld.DeepClone();
+                    if (bad == "spawnId") broken["start"]["spawnId"] = "nowhere"; else broken["finish"]["endpoint"]["doorId"] = "nowhere";
+                    int oldCount = WorldLayout.LegacyEndpointIssues(broken, catalog).Count();
+                    int newCount = WorldLayout.EndpointIssues(broken, catalog).Count;
+                    if (oldCount != 1 || newCount != 1) failures.Add("破坏 " + bad + " 后起终点问题条数异常：旧=" + oldCount + " 转调=" + newCount);
+                }
                 Debug.Log("PARITY WORLD-LINKS 比对点数=" + linkChecks + " 起终点问题=" + newEnds.Count);
             }
             catch (Exception ex)
