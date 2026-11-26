@@ -51,7 +51,9 @@ namespace Sokoban.Editor
                     for (int py = -1; py <= original.Height; py++)
                         for (int px = -1; px <= original.Width; px++)
                         {
-                            string oldError = legacyDraft.PlacementError(true, new Vector2Int(px, py));
+                            string oldError = legacyDraft.LegacyPlacementError(true, new Vector2Int(px, py));
+                            string routed = legacyDraft.PlacementError(true, new Vector2Int(px, py));
+                            if (routed != oldError) failures.Add(name + " 转调后的 PlacementError 与旧判定不一致 (" + px + "," + py + ")：旧=" + oldError + " 转调=" + routed);
                             string newError = PlacementRules.Error(draft, ObjectCategories.Box, new Sokoban.Core.Cell(px, py), null);
                             if (oldError != newError) failures.Add(name + " 放置预检不一致 (" + px + "," + py + ")：旧=" + oldError + " 新=" + newError);
                         }
