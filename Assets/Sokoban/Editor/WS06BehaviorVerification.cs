@@ -1,6 +1,6 @@
 /**
  * @file WS06BehaviorVerification.cs
- * @brief Run 用 Core.BehaviorGraph 构造两面内墙的夹具，绑定、保存并重开，断言身份、图的所有者、连线与求解结论；Tick 逐帧推进 Play 模式检查。
+ * @brief Run 用 Core.BehaviorGraph 构造两面内墙的夹具，绑定、保存并重开，断言身份、图的所有者、连线与实际触发结果；Tick 逐帧推进 Play 模式检查。
  * Fixture：在默认房间放两面内墙、箱子、目标并添加恢复道具，使其通过发布级校验。
  * Edges：把图内局部 ID 解析为 节点类型.端口 的语义连线。
  * Trial：用真实 PuzzleHost 推箱解开房间，比较主体墙与对照墙的渲染器，并尝试走向主体墙格。
@@ -51,8 +51,6 @@ namespace Sokoban.Editor
             var b = new Cell(4, 3);
             Fixture(draft, a, b);
             string baseline = RoomCodec.Encode(draft.Model);
-            var start = draft.Room.ObjectsOf(ObjectCategories.Spawn).Single().Cell;
-            var plain = RoomSolution.Check(draft.Model, start);
             draft.SetBehavior(a, ObjectBehavior.Template());
             string owner = draft.OwnerAt(a);
             string bound = RoomCodec.Encode(draft.Model);
@@ -81,9 +79,6 @@ namespace Sokoban.Editor
             draft.Save(path, false);
             draft.Open(path, false);
             Check(design == File.ReadAllText(path) && design == RoomCodec.Encode(draft.Model), "formal save and reopen preserve whole room including graph IDs, owners, edges and conditions");
-            var withGraphs = RoomSolution.Check(draft.Model, start);
-            Check(plain.Verdict == SolveVerdict.Confirmed && plain.Detail == "R" && withGraphs.Verdict == plain.Verdict && withGraphs.Detail == plain.Detail && withGraphs.Expanded == plain.Expanded,
-                "BFS with and without bindings: R, expanded=" + plain.Expanded);
             EditorSceneManager.OpenScene("Assets/Scenes/RuntimeEditor.unity");
             SessionState.SetString(Key, path);
             EditorApplication.EnterPlaymode();

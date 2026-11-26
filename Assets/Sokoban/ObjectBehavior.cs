@@ -12,7 +12,6 @@
  * ObjectBehavior.Issues(model)：校验图 ID 唯一、所有者存在、节点类型已登记、端口属于节点类型、setState 目标状态存在、同房显式目标存在。
  * ObjectBehavior.TargetIssues(model, lookup)：校验跨房 setVisible 目标，lookup 按房间 ID 取草稿，取不到时报错。
  * ObjectBehavior.Effects(graph, trigger)：从该触发器的入口节点出发按具名端口广度遍历，产出 setVisible、setState 与 Lua 合成的动作节点。
- * ObjectBehavior.CanSimulateNode / CanSimulate：按节点注册表的 Simulatable 判断求解器能否模拟，未登记的类型视为不可模拟。
  * ObjectBehavior.IsVisual(graph)：只含触发器、无表达式条件、setVisible、setState 的图对规则无影响。
  */
 using System;
@@ -272,9 +271,7 @@ namespace Sokoban
             }
         }
 
-        public static bool CanSimulateNode(BehaviorNode node) => Registries.BehaviorNodes.TryGet(node.Kind, out var kind) && kind.Simulatable;
 
-        public static bool CanSimulate(BehaviorGraph graph) => graph.Nodes.All(CanSimulateNode);
 
         public static bool IsVisual(BehaviorGraph graph) => graph.Nodes.All(n =>
             IsTrigger(n.Kind) || n.Kind == SetVisible || n.Kind == SetState || n.Kind == Condition && Parameter(n, "expression") == null);

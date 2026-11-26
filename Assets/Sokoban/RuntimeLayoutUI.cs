@@ -6,7 +6,8 @@
  * BuildTabs 用同一个 Bookmark 预制件生成地形、物件、装饰、其他、自定义五个页签，tab 是素材区的唯一显隐依据。
  * BuildMust 与 RefreshMust 在左上角用代码构建 210 宽房间必填项清单，每行经 Tag 显示 tag-ok 或 tag-bad，状态来自 Core 校验结果，点击经 LayoutPanel.LocateIssue 定位。
  * BuildProps 与 RefreshProps 用 panel-small 构建属性卡：56px thumb 缩略图、标题、编号标签、移动与危险色删除按钮，删除调用 RoomDraft.RemoveObject，未选中对象时回到文字属性。
- * 检查模式只读 LayoutPanel.Mode，工作区页与结果弹窗同属 Check 模式；状态栏只显示最新操作反馈。
+ * 检查模式只读 LayoutPanel.Mode，世界与属性及结构检查共用 Check 模式，并按入口分别显示；状态栏只显示最新操作反馈。
+ * OpenCheck 选择检查或工作区；BuildIssueList 创建带输入遮罩的滚动问题列表；RefreshIssues 按草稿修订重建问题行。
  * ChooseEntry 分派文件和房间选取，RefreshTools 同步书签、选中高亮及属性说明。
  */
 using System.IO;
@@ -22,8 +23,6 @@ namespace Sokoban
     {
         public LayoutHost host;
         public GameObject fileMenu,workspace,fileDialog,confirmation,keepDraft;
-        public GameObject solutionDialog;
-        public Text solutionText;
         public GameObject terrainCards,objectCards;
         public Text status,properties,dialogTitle,pathText,submitText,workspaceInfo,message,confirmMessage;
         public InputField fileName,fieldX,fieldY,roomName;
@@ -85,6 +84,7 @@ namespace Sokoban
 
         void SetToolLabel(RoomTool type, string name) => toolButtons[(int)type].GetComponentInChildren<Text>().text = name;
 
+        bool showWorkspace;
         int tab = 1;
         Button[] tabs;
         public Button[] Bookmarks => tabs;
@@ -217,7 +217,7 @@ namespace Sokoban
             var issue = Panel.Issues.FirstOrDefault(i => i.RuleId == MustRules[index])
                 ?? new Sokoban.Core.Issue(MustRules[index], Sokoban.Core.Severity.Hint, Panel.Draft.ActiveId, MustLabels[index] + "未完成");
             Panel.LocateIssue(issue);
-            if (Sokoban.Core.IssueLocator.Locate(issue).Kind == Sokoban.Core.LocateKind.Room) Panel.Mode.Enter(Sokoban.Core.UiMode.Check);
+            if (Sokoban.Core.IssueLocator.Locate(issue).Kind == Sokoban.Core.LocateKind.Room) OpenCheck(false);
         }
 
         void OnDestroy() => thumbnails.Dispose();
@@ -453,7 +453,10 @@ namespace Sokoban
             var d=Panel.Draft;
             switch(action)
             {
-                case "文件": fileMenu.SetActive(!fileMenu.activeSelf);return;
+                case "文件":
+                    fileMenu.SetActive(!fileMenu.activeSelf);
+                    if (fileMenu.activeSelf) fileMenu.transform.SetAsLastSibling();
+                    return;
                 case "保存": case "打开": case "导入": case "导出": case "发布": case "导出单房": case "导入模型": case "导入动作": case "导入贴图": case "导入界面图": Panel.ChooseFile(action);break;
                 case "新建": Panel.NewRoom(true);break;
                 case "默认布局": Panel.NewDefaultRoom();break;
@@ -462,8 +465,8 @@ namespace Sokoban
                 case "网格": host.GridVisible=!host.GridVisible;break;
                 case "试玩": fileMenu.SetActive(false); host.StartTrial(); return;
                 case "离开": host.Leave();break;
-                case "工作区": Panel.Mode.Enter(Sokoban.Core.UiMode.Check);break;
-                case "返回": Panel.CloseSolution();break;
+                case "工作区": OpenCheck(true);break;
+                case "返回": Panel.CloseCheck();break;
                 case "选物件": tab = 1; custom = categoryOpen = false; terrain = false; pickedAsset = pickedBuiltin = null; break;
                 case "选地形": tab = 0; custom = categoryOpen = false; terrain = true; pickedAsset = pickedBuiltin = null; break;
                 case "选素材":
@@ -476,7 +479,7 @@ namespace Sokoban
                         Panel.CancelTool();
                     }, "已更新外观绑定");
                     break;
-                case "切换房间视图": host.ToggleRoomView();if(Panel.Mode.Current==Sokoban.Core.UiMode.Check)Panel.CloseSolution();break;
+                case "切换房间视图": host.ToggleRoomView();if(Panel.Mode.Current==Sokoban.Core.UiMode.Check)Panel.CloseCheck();break;
                 case "选择": Tool(RoomTool.Select);break;
                 case "纸箱": OpenCategory(RoomTool.Box); break;
                 case "目标": OpenCategory(RoomTool.Target); break;
@@ -486,13 +489,13 @@ namespace Sokoban
                 case "移动": Tool(RoomTool.Move);break;
                 case "建世界": Panel.Run(d.BeginWorld,"世界已创建，请放置房间");break;
                 case "加入房间": Panel.ChooseFile(action);break;
-                case "整房预览": if(d.World!=null){Panel.StartRoomPlacement();if(Panel.Mode.Current==Sokoban.Core.UiMode.Check)Panel.CloseSolution();}break;
+                case "整房预览": if(d.World!=null){Panel.StartRoomPlacement();if(Panel.Mode.Current==Sokoban.Core.UiMode.Check)Panel.CloseCheck();}break;
                 case "按坐标放置": ApplyPoint(true);break;
                 case "移动对象": ApplyPoint(false);break;
                 case "移出": Panel.Run(d.RemoveRoom,"房间已移回目录");break;
                 case "名称": Panel.Run(()=>d.Rename(roomName.text),"已修改名称");break;
-                case "关闭检查": Panel.CloseSolution(); break;
-                case "检查": Panel.CheckCurrentRoom();break;
+                case "关闭检查": Panel.CloseCheck(); break;
+                case "检查": OpenCheck(false);break;
                 case "上一级": Panel.ParentDirectory();break;
                 case "提交文件": Panel.SubmitFile();break;
                 case "取消": Panel.CancelDialog();break;
@@ -570,7 +573,7 @@ namespace Sokoban
                     int index = i;
                     var button = Instantiate(entryPrefab, container, false);
                     button.GetComponentInChildren<Text>().text = LayoutPanel.MarkerLabels[index];
-                    button.onClick.AddListener(() => { Panel.ApplyMarker(index); if (Panel.Mode.Current == Sokoban.Core.UiMode.Check) Panel.CloseSolution(); });
+                    button.onClick.AddListener(() => { Panel.ApplyMarker(index); if (Panel.Mode.Current == Sokoban.Core.UiMode.Check) Panel.CloseCheck(); });
                 }
             if (!directory && Panel.Draft.World != null)
                 foreach (var link in Panel.Draft.World.Connections)
@@ -639,28 +642,72 @@ namespace Sokoban
             Place("保留草稿退出", null, 0, 40, 240);
         }
 
+        GameObject checkOverlay;
         RectTransform issueList;
         string issueKey;
         readonly List<GameObject> issueRows = new List<GameObject>();
 
+        void OpenCheck(bool workspaceRequested)
+        {
+            showWorkspace = workspaceRequested;
+            fileMenu.SetActive(false);
+            Panel.CheckCurrentRoom();
+        }
+
         void BuildIssueList()
         {
-            var go = new GameObject("问题列表", typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
-            issueList = (RectTransform)go.transform;
-            issueList.SetParent(workspace.transform, false);
-            issueList.anchorMin = issueList.anchorMax = issueList.pivot = new Vector2(1, 1);
-            issueList.anchoredPosition = new Vector2(-12, -68);
-            issueList.sizeDelta = new Vector2(380, 0);
-            var image = go.GetComponent<Image>();
+            checkOverlay = new GameObject("结构检查", typeof(RectTransform), typeof(Image));
+            var overlay = (RectTransform)checkOverlay.transform;
+            overlay.SetParent(workspace.transform.parent, false);
+            overlay.anchorMin = Vector2.zero;
+            overlay.anchorMax = Vector2.one;
+            overlay.offsetMin = overlay.offsetMax = Vector2.zero;
+            checkOverlay.GetComponent<Image>().color = new Color(0, 0, 0, .18f);
+            checkOverlay.SetActive(false);
+
+            var panel = new GameObject("问题面板", typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup));
+            var panelRect = (RectTransform)panel.transform;
+            panelRect.SetParent(overlay, false);
+            panelRect.anchorMin = new Vector2(1, 0);
+            panelRect.anchorMax = Vector2.one;
+            panelRect.offsetMin = new Vector2(-392, 12);
+            panelRect.offsetMax = new Vector2(-12, -68);
+            var image = panel.GetComponent<Image>();
             if (Skin && Skin.panelSmallSprite) { image.sprite = Skin.panelSmallSprite; image.type = Image.Type.Sliced; image.color = Color.white; }
             else image.color = NormalTint;
-            var stack = go.GetComponent<VerticalLayoutGroup>();
-            stack.padding = new RectOffset(12, 12, 10, 12);
+            var panelStack = panel.GetComponent<VerticalLayoutGroup>();
+            panelStack.padding = new RectOffset(12, 12, 10, 12);
+            panelStack.spacing = 6;
+            panelStack.childControlWidth = panelStack.childControlHeight = true;
+            panelStack.childForceExpandWidth = true;
+            panelStack.childForceExpandHeight = false;
+            CardButton(panelRect, "返回布局", false, Panel.CloseCheck);
+
+            var viewport = new GameObject("问题滚动区", typeof(RectTransform), typeof(RectMask2D), typeof(Image), typeof(ScrollRect), typeof(LayoutElement));
+            var viewportRect = (RectTransform)viewport.transform;
+            viewportRect.SetParent(panelRect, false);
+            viewport.GetComponent<Image>().color = Color.clear;
+            viewport.GetComponent<LayoutElement>().flexibleHeight = 1;
+            var issueScroll = viewport.GetComponent<ScrollRect>();
+            issueScroll.viewport = viewportRect;
+            issueScroll.horizontal = false;
+            issueScroll.movementType = ScrollRect.MovementType.Clamped;
+            issueScroll.scrollSensitivity = 28;
+
+            var list = new GameObject("问题列表", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            issueList = (RectTransform)list.transform;
+            issueList.SetParent(viewportRect, false);
+            issueList.anchorMin = new Vector2(0, 1);
+            issueList.anchorMax = Vector2.one;
+            issueList.pivot = new Vector2(.5f, 1);
+            issueList.offsetMin = issueList.offsetMax = Vector2.zero;
+            issueScroll.content = issueList;
+            var stack = list.GetComponent<VerticalLayoutGroup>();
             stack.spacing = 6;
             stack.childControlWidth = stack.childControlHeight = true;
             stack.childForceExpandWidth = true;
             stack.childForceExpandHeight = false;
-            go.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            list.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         }
 
         void RefreshIssues()
@@ -681,6 +728,7 @@ namespace Sokoban
             head.rectTransform.offsetMin = head.rectTransform.offsetMax = Vector2.zero;
             head.text = Panel.Issues.Count == 0 ? "问题列表 · 没有问题" : "问题列表 · " + Panel.Issues.Count + " 项";
             issueRows.Add(title);
+            issueList.anchoredPosition = Vector2.zero;
             foreach (var issue in Panel.Issues)
             {
                 var captured = issue;
@@ -879,20 +927,17 @@ namespace Sokoban
         {
             if(!host || Panel==null)return;
             bool checking = Panel.Mode.Current == Sokoban.Core.UiMode.Check;
-            bool solutionView = checking && Panel.SolutionText != null;
-            solutionDialog.SetActive(solutionView);
-            if (checking && Input.GetKeyDown(KeyCode.Escape) && !solutionView) Panel.CloseSolution();
-            if (solutionView)
+            if (checking && !Panel.Modal && Input.GetKeyDown(KeyCode.Escape))
             {
-                if (Input.GetKeyDown(KeyCode.Escape)) Panel.CloseSolution();
-                solutionText.text = Panel.SolutionText;
-                solutionDialog.transform.SetAsLastSibling();
+                Panel.CloseCheck();
+                checking = Panel.Mode.Current == Sokoban.Core.UiMode.Check;
             }
             bool dialog=Panel.Operation!=null && !Panel.Confirming;
             fileDialog.SetActive(dialog);
             confirmation.SetActive(Panel.Confirming);
             keepDraft.SetActive(Panel.CanKeepDraft);
-            workspace.SetActive(checking && !Panel.Modal);
+            workspace.SetActive(checking && showWorkspace && !Panel.Modal);
+            checkOverlay.SetActive(checking && !showWorkspace && !Panel.Modal);
             if(dialog)
             {
                 dialogTitle.text=Panel.DialogTitle;
@@ -922,7 +967,7 @@ namespace Sokoban
                 workspaceInfo.text=d.Model.Meta.Name+" · "+(d.World==null?"独立房间":d.Placement==null?"尚未放置":"原点 "+d.Origin)+"\n"+Panel.Status;
             }
             status.text = host.HoverFeedback ?? host.AppearanceIssue ?? Panel.Status;
-            if (workspace.activeSelf) RefreshIssues();
+            if (checkOverlay.activeSelf) RefreshIssues();
             RefreshMust();
             RefreshTools();
         }

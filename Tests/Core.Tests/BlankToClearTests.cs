@@ -61,16 +61,6 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void SolverConfirmsTheBuiltRoomAndReplayClearsIt()
-        {
-            var draft = Build(new CommandHistory());
-            var start = draft.Room.ObjectsOf(ObjectCategories.Spawn).Single().Cell;
-            var verdict = Solver.Judge(draft.Room, start, 100000);
-            Assert.Equal(SolveVerdict.Confirmed, verdict.Verdict);
-            Assert.True(Solver.Replay(draft.Room, start, verdict.Moves));
-        }
-
-        [Fact]
         public void PlayingEntersExploresGrantsItemAndRecoveryRestoresTheBox()
         {
             var draft = Build(new CommandHistory());
@@ -103,11 +93,21 @@ namespace Sokoban.Core.Tests
             var draft = Build(new CommandHistory());
             var room = draft.Room;
             var boxes = room.ObjectsOf(ObjectCategories.Box).ToDictionary(b => b.Id, b => b.Cell);
-            var session = new RecoverySession(room, boxes, new Cell(2, 2), new Cell(1, 2));
+            var player = room.ObjectsOf(ObjectCategories.Spawn).Single().Cell;
+            var session = new RecoverySession(room, boxes, player, null);
             Assert.False(PushRules.Solved(room, session.Boxes));
-            var player = new Cell(2, 2);
+
+            var approach = PushRules.TryPush(session, player, Cell.Right);
+            Assert.True(approach.Moved);
+            Assert.False(approach.Pushed);
+            player = approach.Player;
             for (int i = 0; i < 2; i++)
-                player = PushRules.TryPush(session, player, Cell.Right).Player;
+            {
+                var push = PushRules.TryPush(session, player, Cell.Right);
+                Assert.True(push.Pushed);
+                player = push.Player;
+            }
+
             Assert.True(PushRules.Solved(room, session.Boxes));
         }
 

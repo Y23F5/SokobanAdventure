@@ -8,7 +8,7 @@
  * ImportedModel：导入 GLB 作为自定义物件放进房间，独立导出后资源描述符随房间保存。
  * TemplateInstance：自定义物件存为对象模板，实例只存模板 ID 加覆盖项，由模板的行为图切换状态。
  * ForestPush：把树推上目标时仍用原箱子身份判定，第二次推动保持原木，撞墙拒绝推动且不改状态。
- * Run、Hook、Tick、Verify：进入 Play 模式后逐帧执行素材卡、森林试玩、存读与恢复检查。
+ * Run、Hook、Tick、Verify：进入 Play 模式后逐帧执行素材卡、森林试玩、存读与恢复检查；Verify 按固定步序穿过藤门并推动树木。
  * StateOf、ViewState：读取运行态里的对象状态，未写入时回落到状态表的初始状态。
  */
 using System;
@@ -305,29 +305,21 @@ namespace Sokoban.Editor
             foreach (var box in initial)
                 Check(ViewState(host.Run, room, box.Key) == "tree" && room.Find(box.Key).Find("状态 · tree").gameObject.activeSelf, "初始完整树木 " + box.Key);
 
-            var input = new[] { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
-            var solver = RoomSolution.Check(host.Run.Room.Room, host.Run.Room.Spawn.Cell);
-            string moved = null;
-            foreach (var step in solver.Moves)
+            foreach (var step in new[] { Vector2Int.up, Vector2Int.up, Vector2Int.right })
             {
-                int index = Array.IndexOf(new[] { Cell.Up, Cell.Right, Cell.Down, Cell.Left }, step);
-                if (index < 0) continue;
-                bool accepted = host.Move(input[index]);
-                if (!accepted && host.Run.Room.Room.TerrainAt(host.Run.PlayerLocal + step).CategoryId == TerrainCategories.Openable)
-                {
-                    Check(host.UseItem(), "藤门挡路，使用恢复装置开门");
-                    accepted = host.Move(input[index]);
-                }
-                else if (!accepted && host.Run.Recovering && !host.Run.PlayerOnClosingCell)
-                {
-                    while (host.Run.Recovering) yield return null;
-                    accepted = host.Move(input[index]);
-                }
-                Check(accepted, "走向首个可推动树木 " + RoomSolution.Letters(new[] { step }) + "；玩家 " + host.Run.Player + "，视角 " + host.Run.Heading);
+                Check(host.Move(step), "走向森林藤门，玩家 " + host.Run.Player);
                 while (host.Busy) yield return null;
-                moved = initial.Keys.FirstOrDefault(id => StateOf(host.Run, roomId, id) == "logs");
-                if (moved != null) break;
             }
+            Check(!host.Move(Vector2Int.right) && host.UseItem(), "藤门挡路，使用恢复装置开门");
+            for (int i = 0; i < 2; i++)
+            {
+                Check(host.Move(Vector2Int.right), "穿过藤门，玩家 " + host.Run.Player);
+                while (host.Busy) yield return null;
+            }
+            while (host.Run.Recovering) yield return null;
+            Check(host.Move(Vector2Int.right), "推动藤门另一侧的树木");
+            while (host.Busy) yield return null;
+            string moved = initial.Keys.SingleOrDefault(id => StateOf(host.Run, roomId, id) == "logs");
             Check(moved != null && host.Run.Boxes[moved] != initial[moved] && room.Find(moved).Find("状态 · logs").gameObject.activeSelf && room.Find("残留物 · " + moved) != null,
                 "首次推动产生原木和原格树桩，箱子 ID 未变");
             var before = host.Run.Snapshot();

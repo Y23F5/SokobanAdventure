@@ -57,10 +57,10 @@ namespace Sokoban.Editor
         {
             var run = PuzzleRun.Campaign();
             Check(run.ActiveId == "warehouse" && !run.Solved, "正式局从未解开的仓库开始");
-            WS06WorldSolutionVerification.SolveInRoom(run);
+            WS06RelockReferenceVerification.ReplayRoute(run, WS06RelockReferenceVerification.WarehouseRouteToExit);
             Check(run.Solved, "实走推箱解开出口");
             var exit = run.Room.Doors.Single(d => d.Role == "exit");
-            WS06WorldSolutionVerification.WalkTo(run, exit.Cell);
+            Check(run.PlayerLocal == exit.Cell, "固定路线到达仓库出口");
             var outward = new Vector2Int(exit.Outward.X, exit.Outward.Y);
             Check(run.Step(outward, out _) && run.ActiveId == "factory" && run.PlayerLocal == run.Room.Doors.Single(d => d.Id == "entry").Cell, "向房外 Void 迈步，传送至 factory 入口 " + run.PlayerLocal);
             Check(run.Step(Vector2Int.left, out _) && run.ActiveId == "warehouse" && run.PlayerLocal == exit.Cell, "经同一连接反向返回");

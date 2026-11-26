@@ -127,13 +127,19 @@ namespace Sokoban.Editor
             if (!WorldSceneSession.Active) { GUILayout.Label("在 Game 场景的编辑模式下使用"); return; }
             WorldSceneSession.OpenSession();
             panelScroll = GUILayout.BeginScrollView(panelScroll);
-            if (Panel.SolutionText != null)
+            bool checking = Panel.Mode.Current == Sokoban.Core.UiMode.Check;
+            if (checking)
             {
-                GUILayout.Label("检查结果", EditorStyles.boldLabel);
-                EditorGUILayout.SelectableLabel(Panel.SolutionText, EditorStyles.wordWrappedLabel,
-                    GUILayout.Height(EditorStyles.wordWrappedLabel.CalcHeight(new GUIContent(Panel.SolutionText), Mathf.Max(100, position.width - 30)) + 8));
-                if (GUILayout.Button("返回布局")) Panel.CloseSolution();
-                Repaint();
+                GUILayout.Label("结构检查", EditorStyles.boldLabel);
+                if (Panel.Issues.Count == 0) GUILayout.Label("没有结构问题");
+                foreach (var issue in Panel.Issues)
+                    if (GUILayout.Button("[" + issue.RuleId + "] " + issue.Message))
+                    {
+                        Panel.LocateIssue(issue);
+                        WorldSceneSession.FocusRoom();
+                        break;
+                    }
+                if (GUILayout.Button("返回布局")) Panel.CloseCheck();
             }
             else if (stateEditor != null)
             {
@@ -199,9 +205,12 @@ namespace Sokoban.Editor
                         GUILayout.EndHorizontal();
                     }
             }
-            EditorGUILayout.HelpBox(Panel.Status, MessageType.Info);
-            if (WorldSceneSession.AppearanceIssue is string appearanceIssue) EditorGUILayout.HelpBox(appearanceIssue, MessageType.Warning);
-            if (Panel.StructuralIssue != null) EditorGUILayout.HelpBox(Panel.StructuralIssue, MessageType.Error);
+            if (!checking)
+            {
+                EditorGUILayout.HelpBox(Panel.Status, MessageType.Info);
+                if (WorldSceneSession.AppearanceIssue is string appearanceIssue) EditorGUILayout.HelpBox(appearanceIssue, MessageType.Warning);
+                if (Panel.StructuralIssue != null) EditorGUILayout.HelpBox(Panel.StructuralIssue, MessageType.Error);
+            }
             GUILayout.EndScrollView();
             if (GUI.changed) SceneView.RepaintAll();
         }

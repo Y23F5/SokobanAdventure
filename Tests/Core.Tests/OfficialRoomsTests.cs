@@ -29,9 +29,6 @@ namespace Sokoban.Core.Tests
             "###########",
         };
 
-        static IReadOnlyList<Cell> Moves(string text) => text.Select(c =>
-            c == 'E' ? Cell.Right : c == 'W' ? Cell.Left : c == 'N' ? Cell.Up : Cell.Down).ToList();
-
         static RoomDraftModel Source(string id, string[] rows)
         {
             var r = Blueprint.Parse(id, rows);
@@ -41,22 +38,35 @@ namespace Sokoban.Core.Tests
 
         static RoomDraftModel RoundTrip(string id, string[] rows) => RoomCodec.Decode(RoomCodec.Encode(Source(id, rows)));
 
-        static Cell Spawn(Room r) => r.ObjectsOf(ObjectCategories.Spawn).Single().Cell;
-
-        [Fact]
-        public void WarehouseSurvivesRoundTripAndDocumentedSolutionReplays()
+        [Theory]
+        [InlineData("warehouse", "EEENEEE")]
+        [InlineData("factory", "EENWNENEEEWWWSSENWNEEWSSSEEEENNE")]
+        public void DocumentedRouteClearsRoundTrippedRoomAndReachesExit(string id, string route)
         {
-            var room = RoundTrip("warehouse", Warehouse).Room;
-            Assert.True(Solver.Replay(room, Spawn(room), Moves("EEE")));
-        }
+            var draft = RoundTrip(id, id == "warehouse" ? Warehouse : Factory);
+            var room = draft.Room;
+            var player = room.ObjectsOf(ObjectCategories.Spawn).Single().Cell;
+            var boxes = room.ObjectsOf(ObjectCategories.Box).ToDictionary(box => box.Id, box => box.Cell);
+            var session = new RecoverySession(room, boxes, player, null);
 
-        [Fact]
-        public void FactorySurvivesRoundTripAndSolverFindsASolution()
-        {
-            var room = RoundTrip("factory", Factory).Room;
-            var result = Solver.Solve(room, Spawn(room), 500000);
-            Assert.Equal(SolveOutcome.Solved, result.Outcome);
-            Assert.True(Solver.Replay(room, Spawn(room), result.Moves));
+            Assert.False(PushRules.Solved(room, session.Boxes));
+            for (int i = 0; i < route.Length; i++)
+            {
+                var direction = route[i] switch
+                {
+                    'E' => Cell.Right,
+                    'W' => Cell.Left,
+                    'N' => Cell.Up,
+                    'S' => Cell.Down,
+                    _ => throw new System.ArgumentException("Invalid direction in documented route", nameof(route)),
+                };
+                var step = PushRules.TryPush(session, player, direction);
+                Assert.True(step.Moved, $"{id}: step {i + 1} ({route[i]}) blocked at {player}");
+                player = step.Player;
+            }
+
+            Assert.True(PushRules.Solved(room, session.Boxes));
+            Assert.Equal(draft.Doors.Single(door => door.Role == "exit").Cell, player);
         }
 
         [Fact]

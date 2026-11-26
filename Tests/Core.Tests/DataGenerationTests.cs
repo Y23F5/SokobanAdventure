@@ -1,11 +1,11 @@
 /**
  * @file DataGenerationTests.cs
  * @brief 数据生成测试：用关卡图纸转换器重新生成正式房间、世界文件与默认房间，只有环境变量 SOKOBAN_GENERATE=1 时才真正写文件，否则直接通过。
- * GenerateData：转换仓库、工厂、森林图纸并设置名称与主题，加恢复道具；森林先用求解器验证 13×8 地图，确认有解或乐观有解才采用，否则保留 11×9 图纸；对三房跑发布级校验与求解，写出房间与世界文件、DefaultRoom.json，再复制到 Docs/关卡样例 并重新生成传送测试样例，最后逐个读回核对。
+ * GenerateData：转换仓库、工厂及正式森林的 13×8 图纸并设置名称、主题和恢复道具；对三房执行发布级结构校验，写出房间、世界及默认房间，同步文档样例和传送测试样例，最后逐个读回核对。
  * Build：图纸转房间草稿，按格子重命名门 ID，主入口取第一个 entry 门，恢复道具由 Items 给出。
  * Items：先用 RecoveryMapping.FromPresentation 取恢复道具；森林房内有可开合地形时，藤门参数以该格坐标与通道朝向替换。
  * FindOpenable、GateParams：定位第一个可开合地形格，藤门 gateX、gateZ 取该格坐标，yaw 取通道一侧朝向的角度，通道轴向由左右或上下两侧是否为地板判定。
- * Root、Put、SpawnOf：定位仓库根目录、以无 BOM 的 UTF-8 写文件、取房间出生点格子。
+ * Root、Put：定位仓库根目录，以无 BOM 的 UTF-8 写文件。
  */
 using System;
 using System.Collections.Generic;
@@ -19,8 +19,6 @@ namespace Sokoban.Core.Tests
 {
     public class DataGenerationTests
     {
-        const int Budget = 2000000;
-
         static readonly string[] Warehouse =
         {
             "#########",
@@ -43,7 +41,7 @@ namespace Sokoban.Core.Tests
             "###########",
         };
 
-        static readonly string[] ForestNew =
+        static readonly string[] Forest =
         {
             "#############",
             "#...######T##",
@@ -53,19 +51,6 @@ namespace Sokoban.Core.Tests
             "#####..B....#",
             "##########T##",
             "#############",
-        };
-
-        static readonly string[] ForestOld =
-        {
-            "###########",
-            "#..T#.....#",
-            "#...#..T..#",
-            "#.B...#...#",
-            "#..##..B..#",
-            "<...#..#..>",
-            "#.P....#..#",
-            "#.........#",
-            "###########",
         };
 
         static readonly string[] PortalWarehouse =
@@ -113,8 +98,6 @@ namespace Sokoban.Core.Tests
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             File.WriteAllText(path, text, new UTF8Encoding(false));
         }
-
-        static Cell SpawnOf(Room room) => room.ObjectsOf(ObjectCategories.Spawn).Single().Cell;
 
         static Cell? FindOpenable(Room room)
         {
@@ -227,23 +210,14 @@ namespace Sokoban.Core.Tests
                 written.Add((name, text, source));
             }
 
-            var forestNew = Build("forest", "森林", ForestNew);
-            var verdict = Solver.Judge(forestNew.Room, SpawnOf(forestNew.Room), Budget);
-            log.WriteLine("森林 13x8 Solver：" + verdict.Verdict + "，展开状态 " + verdict.Expanded + "，步数 " + verdict.Moves.Count);
-            bool useNew = verdict.Verdict == SolveVerdict.Confirmed || verdict.Verdict == SolveVerdict.Optimistic;
-            var forest = useNew ? forestNew : Build("forest", "森林", ForestOld);
-            log.WriteLine("森林采用：" + (useNew ? "13x8" : "11x9 旧图纸"));
-
             var rooms = new[]
             {
                 ("warehouse", Build("warehouse", "仓库", Warehouse)),
                 ("factory", Build("factory", "工厂", Factory)),
-                ("forest", forest),
+                ("forest", Build("forest", "森林", Forest)),
             };
             foreach (var (id, draft) in rooms)
             {
-                var judged = Solver.Judge(draft.Room, SpawnOf(draft.Room), Budget);
-                log.WriteLine(id + " Solver：" + judged.Verdict + "，展开状态 " + judged.Expanded + "，步数 " + judged.Moves.Count);
                 var issues = RoomValidator.ValidateDraft(draft, ValidationStage.Publish);
                 foreach (var i in issues) log.WriteLine(id + " 发布级 " + i.Severity + " " + i.RuleId + " @ " + i.Location + "：" + i.Message);
                 Assert.False(RoomValidator.HasErrors(issues), id + " 发布级校验有错误");

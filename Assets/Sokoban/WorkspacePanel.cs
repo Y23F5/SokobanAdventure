@@ -5,7 +5,7 @@
  * WorkspaceControls 处理房间目录、原点、属性与检查。ClickWorld 选房并换算局部格。
  * Issues 按草稿修订号缓存 Core 的发布级校验结果与世界布局问题，独立于状态栏的操作反馈；StructuralIssue 取第一条错误，RuleOk 与 RuleHint 按规则 ID 查询必填项清单。
  * LocateIssue 经 Core 的 IssueLocator 跳转：格类问题选中该格，房间级问题选中第一个空地板格，并按建议工具切到放置目标或画墙，同时从检查模式回到上一模式。
- * CheckCurrentRoom 进入检查模式并异步求解，CloseSolution 取消结果并回到上一模式；模式只存放在 Mode，不再有独立的显示标志。
+ * CheckCurrentRoom 打开结构问题列表，CloseCheck 回到上一模式。
  * StartStroke/ExtendStroke/EndStroke 合并一笔，CancelTool 清除暂存，DrawStroke 绘制待提交格。
  */
 using System;
@@ -177,28 +177,8 @@ namespace Sokoban
             string role = index == 0 ? "spawn" : index == 1 ? "entry" : "exit";
             Run(() => Draft.SetRoomMarker(Draft.SelectedCell.Value, role), MarkerLabels[index] + "已完成");
         }
-        int solutionRequest;
-        public string SolutionText { get; private set; }
-        public void CloseSolution() { solutionRequest++; SolutionText = null; Mode.Back(); }
-        public async void CheckCurrentRoom()
-        {
-            int request = ++solutionRequest;
-            int revision = Draft.Revision;
-            Mode.Enter(Sokoban.Core.UiMode.Check);
-            if (StructuralIssue != null) { SolutionText = StructuralIssue; return; }
-            var model = Draft.Model;
-            var world = Draft.World;
-            var rooms = world == null ? null : new Dictionary<string, Sokoban.Core.RoomDraftModel>(Draft.Catalog);
-            SolutionText = world == null ? "正在检查房间解法" : "正在检查世界路线";
-            try
-            {
-                bool unsimulatable = Sokoban.Core.BehaviorNodeKinds.HasUnsimulatable(ObjectBehavior.AllGraphs(model));
-                var result = await System.Threading.Tasks.Task.Run(() => world == null ? RoomSolution.CheckEntries(model, null, 100000, unsimulatable) : WorldSolution.Describe(WorldSolution.Check(world, rooms)));
-                if (request != solutionRequest) return;
-                SolutionText = revision == Draft.Revision ? result : "布局已变更，请重新检查";
-            }
-            catch (Exception error) { if (request == solutionRequest) SolutionText = "检查失败 · " + error.Message; }
-        }
+        public void CloseCheck() => Mode.Back();
+        public void CheckCurrentRoom() => Mode.Enter(Sokoban.Core.UiMode.Check);
         string objectName;
         bool nameMixed;
         int objectNameRevision = -1;
@@ -213,7 +193,7 @@ namespace Sokoban
                 GUILayout.Label(Draft.Placement==null?"尚未放置":"房间原点 "+Draft.Origin);
                 if(GUILayout.Button(Draft.Placement==null?"在地图放置整房":"在地图移动整房")) StartRoomPlacement();
             }
-            if (GUILayout.Button(Draft.World == null ? "检查当前房间解法" : "检查世界路线")) CheckCurrentRoom();
+            if (GUILayout.Button("检查结构")) CheckCurrentRoom();
             if (Draft.SelectedCell.HasValue)
                 for (int i = 0; i < MarkerLabels.Length; i++) if (GUILayout.Button(MarkerLabels[i])) ApplyMarker(i);
             GUILayout.BeginHorizontal(); GUILayout.Label("X",GUILayout.Width(34));fieldX=GUILayout.TextField(fieldX);GUILayout.Label("Y",GUILayout.Width(34));fieldY=GUILayout.TextField(fieldY);GUILayout.EndHorizontal();

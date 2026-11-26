@@ -4,10 +4,9 @@
  * Folder：证据目录，可由环境变量 WS06_RELOCK_EVIDENCE 覆盖。Check(ok, label)：断言失败抛异常，通过则输出日志。
  * Campaign()：打开正式世界草稿并切到仓库房。Encoded(model)：以 RoomCodec.Encode 序列化房间，供逐字比较。
  * Describe(graph)：把行为图的 ID、所有者、节点参数与连线写成可比较的字符串。
- * Walk(run, goal)：在当前房间对格子做广度优先搜索，绕开箱子，逐格调用 Step 走到目标格，任一步被拒绝即抛异常。
- * Clear(run)：用 RoomSolution.Check 从当前玩家格求解，要求确认有解，再按 Moves 逐步 Step 解开本房。
- * Leave(run)：走到本房 exit 门格并沿门的外向调用 Step 跨入下一房。
- * Relock()：校验世界结论为确认有解，逐房实际通关并在工厂出口门格取 SaveData；再验证仓库箱推离目标后重新锁门且 EverSolved 保留，旧快照可跨入森林，混入失效仓库的快照拒绝跨房且状态不变。
+ * ReplayRoute(run, route)：依照固定方向序列逐步调用 Step，拒绝时记录房间、玩家格与步号。
+ * Leave(run)：确认玩家已到出口且房间已解开，随后沿门的外向跨房。
+ * Relock()：回放正式三房并核对终点通行；记录工厂出口存档，验证仓库推离目标后重锁、EverSolved 保留，以及有效和失效存档的跨房行为。
  * Reference()：绑定指向工厂箱子的跨房图，擦除遇对象整笔拒绝，RemoveObject 后用 TargetIssues 报出悬空目标，撤销还原，导出再导入后引用仍解析到原对象。
  * Ports()：用 ObjectBehavior.GraphIssues 检查合法分支与无效输出、输入端口。
  * Run()：依次执行三个用例，累计失败数，有失败则抛异常。
@@ -35,87 +34,44 @@ namespace Sokoban.Editor
             graph.Id + "/" + graph.OwnerId + "|" + string.Join("|", graph.Nodes.Select(n => n.Id + ":" + n.Kind + ":" + string.Join(",", n.Parameters.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value)))
                 .Concat(graph.Edges.Select(e => e.FromNode + "." + e.FromPort + ">" + e.ToNode + "." + e.ToPort)));
 
-        static void Walk(PuzzleRun run, Cell goal)
+        internal static void ReplayRoute(PuzzleRun run, string route)
         {
-            var room = run.Room.Room;
-            var origin = run.Origin;
-            var blocked = new HashSet<Cell>(run.Boxes.Values.Select(v => new Cell(v.x - origin.x, v.y - origin.y)));
-            var start = run.PlayerLocal;
-            var previous = new Dictionary<Cell, Cell> { [start] = start };
-            var queue = new Queue<Cell>();
-            queue.Enqueue(start);
-            while (queue.Count > 0)
+            var directions = new[] { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
+            for (int i = 0; i < route.Length; i++)
             {
-                var cell = queue.Dequeue();
-                if (cell == goal) break;
-                foreach (var direction in Cell.SearchOrder)
-                {
-                    var next = cell + direction;
-                    string category = room.TerrainAt(next).CategoryId;
-                    if (previous.ContainsKey(next) || blocked.Contains(next) || (category != TerrainCategories.Floor && category != TerrainCategories.Door)) continue;
-                    previous[next] = cell;
-                    queue.Enqueue(next);
-                }
-            }
-            if (!previous.ContainsKey(goal)) throw new InvalidOperationException("无法走到 " + goal);
-            var path = new List<Cell>();
-            for (var cell = goal; cell != start; cell = previous[cell]) path.Add(cell);
-            path.Reverse();
-            var at = start;
-            foreach (var next in path)
-            {
-                var delta = next - at;
-                if (!run.Step(new Vector2Int(delta.X, delta.Y), out _)) throw new InvalidOperationException("行走被拒绝 " + at + " → " + next);
-                at = next;
+                if (!run.Step(directions["URDL".IndexOf(route[i])], out _))
+                    throw new InvalidOperationException($"{run.ActiveId} 第 {i + 1} 步 {route[i]} 被拒绝，玩家格 {run.PlayerLocal}");
             }
         }
 
-        static void Clear(PuzzleRun run)
-        {
-            var result = RoomSolution.Check(run.Room.Room, run.PlayerLocal);
-            bool hasVine = Enumerable.Range(0, run.Room.Room.Width).SelectMany(x => Enumerable.Range(0, run.Room.Room.Height).Select(y => new Cell(x, y))).Any(c => run.Room.Room.TerrainAt(c).CategoryId == TerrainCategories.Openable);
-            var expected = hasVine ? SolveVerdict.Optimistic : SolveVerdict.Confirmed;
-            if (result.Verdict != expected) throw new InvalidOperationException(run.ActiveId + " 求解结论应为 " + RoomSolution.Label(expected) + "，实际 " + RoomSolution.Label(result.Verdict));
-            for (int i = 0; i < result.Moves.Count; i++)
-            {
-                var delta = new Vector2Int(result.Moves[i].X, result.Moves[i].Y);
-                if (run.Step(delta, out _)) continue;
-                if (!hasVine) throw new InvalidOperationException(run.ActiveId + " 第 " + (i + 1) + " 步被拒绝");
-                if (run.Recovering)
-                {
-                    if (run.PlayerOnClosingCell) throw new InvalidOperationException(run.ActiveId + " 第 " + (i + 1) + " 步被拒绝，玩家仍在将要闭合的格子上");
-                    run.AdvanceRecovery(60f);
-                }
-                else if (!run.BeginRecovery()) throw new InvalidOperationException(run.ActiveId + " 第 " + (i + 1) + " 步被拒绝且无法开始恢复");
-                if (!run.Step(delta, out _)) throw new InvalidOperationException(run.ActiveId + " 第 " + (i + 1) + " 步在恢复处理后仍被拒绝 player=" + run.PlayerLocal + " delta=" + delta + " recovering=" + run.Recovering + " boxes=" + string.Join(";", run.Boxes.Select(b => b.Key + "@" + b.Value)) + " route=" + string.Join(" ", result.Moves));
-            }
-            if (run.Recovering) run.AdvanceRecovery(60f);
-            if (!run.Solved) throw new InvalidOperationException(run.ActiveId + " 回放后未解开");
-        }
+        internal const string WarehouseRouteToExit = "RRRURRR";
 
         static void Leave(PuzzleRun run)
         {
             var door = run.Room.Doors.Single(d => d.Id == "exit");
-            Walk(run, door.Cell);
+            Check(run.Solved && run.PlayerLocal == door.Cell, run.ActiveId + " solved and at exit");
             if (!run.Step(new Vector2Int(door.Outward.X, door.Outward.Y), out _)) throw new InvalidOperationException(run.ActiveId + " 出口跨房被拒绝");
         }
 
         static void Relock()
         {
             var draft = Campaign();
-            var result = WorldSolution.Check(draft.World, draft.Catalog);
-            Check(result.Verdict == SolveVerdict.Optimistic, "world solver (forest has a vine gate, so the verdict is optimistic) expanded=" + result.Expanded + " route=" + result.Detail);
             var run = PuzzleRun.FromDraft(draft);
-            Clear(run); Leave(run);
+            ReplayRoute(run, WarehouseRouteToExit);
+            Leave(run);
             Check(run.ActiveId == "factory", "solved warehouse crosses into factory");
-            Clear(run);
+            ReplayRoute(run, "RURRRRRRLDLDDLUULURRRDLDDRRRRUUR");
             var factoryExit = run.Room.Doors.Single(d => d.Id == "exit");
-            Walk(run, factoryExit.Cell);
+            Check(run.Solved && run.PlayerLocal == factoryExit.Cell, "factory solved and at exit");
             var atDoor = run.Snapshot();
             Check(run.Step(new Vector2Int(factoryExit.Outward.X, factoryExit.Outward.Y), out _) && run.ActiveId == "forest", "solved factory with solved warehouse crosses to forest");
-            Clear(run);
+            ReplayRoute(run, "RURR");
+            Check(!run.Step(Vector2Int.right, out _), "closed forest vine blocks passage");
+            Check(run.BeginRecovery(), "forest recovery opens the vine");
+            ReplayRoute(run, "RR");
+            Check(run.PlayerLocal == new Cell(5, 5) && run.AdvanceRecovery(60f), "forest recovery ends after crossing the vine");
+            ReplayRoute(run, "RRRRDRULLLLDDDRRRURDURR");
             var finish = run.Room.Doors.Single(d => d.Id == "exit");
-            Walk(run, finish.Cell);
             Check(run.CanLeaveWorld(new Vector2Int(finish.Outward.X, finish.Outward.Y)), "replayed room routes reach finish and allow outward step");
             var source = PuzzleRun.FromDraft(draft);
             var gate = source.Room.Doors.Single(d => d.Id == "exit");

@@ -1,9 +1,12 @@
 /**
  * @file WS06FlowExchangeVerification.cs
- * @brief Run opens RuntimeEditor. Observe exchanges each authored Core.BehaviorGraph through save and reopen, checks the live report and triggers it twice. Report reads the actual dialog text. Replay drives PuzzleHost with the solver direction letters. Tick advances on Play Mode frames.
+ * @brief 在 RuntimeEditor 中验证行为图文件往返、结构检查和试玩中的重复触发。
+ * Run：打开运行编辑器场景并进入 Play 模式。Hook、Tick：按帧驱动验证并记录退出状态。
+ * Check：记录断言结果，失败时抛异常。
+ * CheckStructure：经界面动作进入检查模式，读取并记录结构问题，再关闭检查并核对模式恢复。
+ * Replay：按 U、R、D、L 方向字母驱动 PuzzleHost.Move，等待每步动画结束。
  * Author：在默认房间补上箱子、目标与恢复道具，并在边墙格绑定行为图，使房间通过发布级校验。
- * Report：点击检查页并读取真实对话框文字，结论用 确认有解、乐观有解、确认无解、无法验证 四种。
- * Replay：按 U、R、D、L 方向字母驱动 PuzzleHost.Move。
+ * Observe：往返保存三种图并各触发两次，随后试玩正式仓库，移除箱子后检查结构错误。
  */
 using System;
 using System.Collections;
@@ -24,7 +27,6 @@ namespace Sokoban.Editor
         static string Folder => Environment.GetEnvironmentVariable("FLOW_EVIDENCE") ?? Path.GetFullPath("Logs/FlowExchange");
         static IEnumerator routine;
         static int frame = -1;
-        static string text;
 
         static void Check(bool ok, string message) { if (!ok) throw new InvalidOperationException(message); Debug.Log("FLOWQA PASS " + message); }
 
@@ -41,17 +43,17 @@ namespace Sokoban.Editor
             catch (Exception ex) { Debug.LogException(ex); SessionState.EraseBool(Key); EditorApplication.Exit(1); }
         }
 
-        static IEnumerator Report(LayoutHost editor, string label, string expected)
+        static void CheckStructure(LayoutHost editor, string label, params string[] expectedErrors)
         {
+            var previous = editor.Panel.Mode.Current;
             editor.Interface.Act("检查");
-            double deadline = EditorApplication.timeSinceStartup + 120;
-            while (editor.Panel.SolutionText.StartsWith("正在") && EditorApplication.timeSinceStartup < deadline) yield return null;
-            yield return null; yield return null;
-            text = editor.Interface.solutionText.text;
-            File.WriteAllText(Path.Combine(Folder, label + "-report.txt"), text);
-            Check(editor.Interface.solutionDialog.activeInHierarchy && text == editor.Panel.SolutionText && text.Contains(expected), label + " report " + expected);
+            Check(editor.Panel.Mode.Current == UiMode.Check, label + " opens structural check");
+            var issues = editor.Panel.Issues;
+            File.WriteAllLines(Path.Combine(Folder, label + "-report.txt"), issues.Select(i => i.RuleId + " " + i.Message));
+            var errors = issues.Where(i => i.Severity == Severity.Error).Select(i => i.RuleId).ToArray();
+            Check(errors.SequenceEqual(expectedErrors), label + " structural errors: " + string.Join(", ", errors));
             editor.Interface.Act("关闭检查");
-            yield return null; yield return null;
+            Check(editor.Panel.Mode.Current == previous, label + " closes structural check");
         }
 
         static IEnumerator Replay(PuzzleHost host, string moves)
@@ -100,13 +102,9 @@ namespace Sokoban.Editor
                 draft.Save(last, true);
                 draft.Open(last, true);
                 Check(original == File.ReadAllText(first) && original == File.ReadAllText(last) && original == RoomCodec.Encode(draft.Model), mode + " whole room roundtrip");
-                var report = Report(editor, mode, mode == "control" ? "确认有解" : "无法验证");
-                while (report.MoveNext()) yield return null;
-                if (mode != "control")
-                {
-                    var culprit = ObjectBehavior.AllGraphs(draft.Model).Single(g => !ObjectBehavior.CanSimulate(g) || g.Nodes.Any(n => !BehaviorNodeKinds.CanSimulate(n)));
-                    Check(culprit.OwnerId == owner && culprit.Id == graph.Id && culprit.Nodes.Any(n => !BehaviorNodeKinds.CanSimulate(n)), mode + " unsupported owner graph node located by graph model");
-                }
+                var returned = draft.Model.Graphs.Single();
+                Check(returned.OwnerId == owner && returned.Id == graph.Id, mode + " returned graph retains its owner and ID");
+                CheckStructure(editor, mode);
                 editor.StartTrial(); yield return null; yield return null;
                 var host = Object.FindObjectOfType<PuzzleHost>();
                 if (host.Run.PendingItem != null) host.panels.Back();
@@ -117,9 +115,7 @@ namespace Sokoban.Editor
                 for (int trigger = 1; trigger <= 2; trigger++)
                 {
                     Check(!host.Run.Solved && affected.Length > 0 && affected.All(r => r.enabled) && control.Length > 0 && control.All(r => r.enabled), mode + " visible before trigger " + trigger);
-                    var plan = RoomSolution.Check(host.Run.Room.Room, host.Run.PlayerLocal);
-                    Check(plan.Verdict == SolveVerdict.Confirmed && plan.Detail.Length > 0, mode + " solver route before trigger " + trigger + " " + plan.Detail);
-                    var replay = Replay(host, plan.Detail);
+                    var replay = Replay(host, trigger == 1 ? "R" : "LDR");
                     while (replay.MoveNext()) yield return null;
                     Check(host.Run.Solved && affected.All(r => !r.enabled) && control.All(r => r.enabled), mode + " trigger " + trigger + " hides only subject of two walls");
                     if (trigger == 1)
@@ -134,43 +130,18 @@ namespace Sokoban.Editor
             }
 
             draft.Open(Path.Combine(Application.streamingAssetsPath, "World/warehouse.room.json"), true);
-            var solved = Report(editor, "warehouse", "出生点 · 确认有解");
-            while (solved.MoveNext()) yield return null;
-            string route = text.Split('\n').Single(l => l.StartsWith("出生点 · 确认有解 ")).Split(' ').Last().Trim();
+            CheckStructure(editor, "warehouse");
             editor.StartTrial(); yield return null; yield return null;
             var game = Object.FindObjectOfType<PuzzleHost>();
             if (game.Run.PendingItem != null) game.panels.Back();
             yield return null; yield return null;
-            var replayExit = Replay(game, route);
+            var replayExit = Replay(game, WS06RelockReferenceVerification.WarehouseRouteToExit);
             while (replayExit.MoveNext()) yield return null;
-            Check(game.Run.Solved, "displayed route " + route + " solves the room");
+            Check(game.Run.Solved && game.Run.PlayerLocal == game.Run.Room.Doors.Single(d => d.Role == "exit").Cell, "warehouse walkthrough solves the room and reaches the exit");
             game.Leave(); yield return null; yield return null;
 
-            draft.Select(draft.Room.ObjectsOf(ObjectCategories.Box).Single().Cell);
-            draft.Move(new Cell(1, 1));
-            var dead = Report(editor, "deadlock", "确认无解");
-            while (dead.MoveNext()) yield return null;
-
-            var large = new RoomDraft(RoomCodec.Decode(Resources.Load<TextAsset>("DefaultRoom").text));
-            large.NewBlankRoom("budget-room", "预算检查", "warehouse", new Cell(14, 10));
-            var all = Enumerable.Range(0, 14).SelectMany(x => Enumerable.Range(0, 10).Select(y => new Cell(x, y))).ToArray();
-            large.Brush(all, RoomTool.Floor);
-            large.Brush(all.Where(p => (p.X == 0 || p.X == 13 || p.Y == 0 || p.Y == 9) && !(p.Y == 4 && (p.X == 0 || p.X == 13))), RoomTool.Wall);
-            large.SetRoomMarker(new Cell(0, 4), "entry");
-            large.SetRoomMarker(new Cell(13, 4), "exit");
-            large.SetRoomMarker(new Cell(1, 4), "spawn");
-            for (int i = 0; i < 4; i++)
-            {
-                large.Place(true, new Cell(3 + i * 2, 4));
-                large.Place(false, new Cell(4 + i * 2, 7));
-            }
-            large.Commit(new AddRecoveryItemCommand(large.Model, new RecoveryItem("recovery-budget", "warehouse-lift", RecoveryItem.DefaultDuration)));
-            string budgetPath = Path.Combine(Folder, "budget.room.json");
-            large.Save(budgetPath, false);
-            draft.Open(budgetPath, true);
-            var budgetReport = Report(editor, "budget", "无法验证");
-            while (budgetReport.MoveNext()) yield return null;
-            WS06RoomSolutionVerification.Run();
+            draft.RemoveObject(draft.Room.ObjectsOf(ObjectCategories.Box).Single().Id);
+            CheckStructure(editor, "missing-box", "target.exceedsBoxes");
             Debug.Log("FLOWQA COMPLETE");
         }
     }
