@@ -469,6 +469,7 @@ namespace Sokoban
             {
                 case "文件":
                     fileMenu.SetActive(!fileMenu.activeSelf);
+                    if (fileMenu.activeSelf) UiLayers.SetOrder(fileMenu, UiLayers.Dropdown);
                     return;
                 case "保存": case "打开": case "导入": case "导出": case "发布": case "导出单房": case "导入素材包": case "导入模型": case "导入动作": case "导入贴图": case "导入界面图": Panel.ChooseFile(action);break;
                 case "新建": Panel.NewRoom(true);break;
@@ -951,6 +952,10 @@ namespace Sokoban
             keepDraft.SetActive(Panel.CanKeepDraft);
             workspace.SetActive(checking && showWorkspace && !Panel.Modal);
             checkOverlay.SetActive(checking && !showWorkspace && !Panel.Modal);
+            if (workspace.activeInHierarchy) UiLayers.SetOrder(workspace, UiLayers.Modal);
+            if (checkOverlay.activeInHierarchy) UiLayers.SetOrder(checkOverlay, UiLayers.Modal);
+            if (fileDialog.activeInHierarchy) UiLayers.SetOrder(fileDialog, UiLayers.Modal + 1);
+            if (confirmation.activeInHierarchy) UiLayers.SetOrder(confirmation, UiLayers.Modal + 2);
             if(dialog)
             {
                 dialogTitle.text=Panel.DialogTitle;

@@ -121,6 +121,17 @@ namespace Sokoban.Editor
         {
             yield return null; yield return null;
             var host = Object.FindObjectOfType<LayoutHost>();
+            var ui = host.Interface;
+            ui.Act("文件");
+            var menu = ui.fileMenu.GetComponent<Canvas>();
+            Check(ui.fileMenu.activeInHierarchy && menu && menu.overrideSorting && menu.sortingOrder == 10,
+                "文件菜单激活后使用下拉图层");
+            ui.Act("打开");
+            yield return null; yield return null;
+            var dialog = ui.fileDialog.GetComponent<Canvas>();
+            Check(ui.fileDialog.activeInHierarchy && dialog && dialog.overrideSorting && dialog.sortingOrder > menu.sortingOrder,
+                "文件对话框激活后使用高于下拉的模态图层");
+            host.Panel.CancelDialog();
             var panel = host.Panel;
             var draft = panel.Draft;
             draft.NewBlankRoom(); yield return null; yield return null;
