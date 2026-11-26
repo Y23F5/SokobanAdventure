@@ -2,6 +2,7 @@
  * @file RoomDraft.cs
  * @brief 两端共用单房编辑会话。RoomDraft 解析初始数据；Open 预读候选文件再替换现场，Save 区分工作文件与交换副本；
  * Find/Select 按稳定 ID 或格定位，Click 将当前工具翻译为编辑命令，Place/Move 校验并提交，
+ * SetRoomMarker 设置出生点时忽略传入格，固定取主入口内侧格（PrimaryEntranceInner），无主入口时报错；
  * MarkerOccupied 经 Core 的 PlacementRules.Occupied 判定设置出生点与门时的占用，再补判门格（旧侧把门当对象）与装饰物（Core 没有），LegacyMarkerOccupied 保留旧判定供比对；
  * DoorDirection 经 Core 的 DoorPlacement 为地板格选门朝向，LegacyDoorDirection 保留旧逐向判定供比对；
  * TryCoreDraft 供 PlacementError、MarkerOccupied、DoorDirection 共用，缓存转换结果，旧数据无法转换时返回空，三者据此回退到各自的旧判定；
@@ -147,8 +148,9 @@ namespace Sokoban
         }
         public void SetRoomMarker(Vector2Int cell, string role)
         {
-            RoomFile.Check(RoomFile.Floor(Room, cell), "请在地板格上设置出生点或门");
             RoomFile.Check(role == "spawn" || role == "entry" || role == "exit", "未知房间标记");
+            if (role == "spawn") cell = PrimaryEntranceInner();
+            RoomFile.Check(RoomFile.Floor(Room, cell), "请在地板格上设置出生点或门");
             bool spawn = role == "spawn";
             var previous = spawn ? Room["spawn"] : null;
             if (previous != null && RoomFile.At(previous) == cell) return;
@@ -171,6 +173,12 @@ namespace Sokoban
                 if (role == "entry" && next["primaryEntranceId"] == null) next["primaryEntranceId"] = (string)marker["id"];
             }
             Commit(next, (string)marker["id"]);
+        }
+        Vector2Int PrimaryEntranceInner()
+        {
+            var door = Room["doors"].FirstOrDefault(d => (string)d["id"] == (string)Room["primaryEntranceId"] && (string)d["role"] == "entry");
+            RoomFile.Check(door != null, "请先添加入口，出生点固定在主入口内侧");
+            return RoomFile.At(door) + RoomFile.Inward(door);
         }
         public bool MarkerOccupied(Vector2Int cell, JToken previous)
         {

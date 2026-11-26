@@ -4,7 +4,7 @@
  * RoomDraftModel：编辑中的房间，允许缺出生点、缺主入口、没有恢复道具等中间态；恢复道具 ID 与房内对象共用 Room 的 ID 空间；Extras 是 string 到 string 的透传字段包，存放旧房间里 Core 不解释的字段原文，默认为空。
  * PlaceObjectCommand(draft, id, categoryId, cell)：先经 PlacementRules.Error 预检（越界、空格、墙、门格或主入口预留格、已占用），再放置对象，ID 不得重复；Revert 移除并释放 ID。
  * MoveObjectCommand(draft, id, cell, syncRecoveryCell)：按 ID 移动对象，经 PlacementRules.Error 预检（对象可留在原格），syncRecoveryCell 为真时箱子的恢复格同步到新格；找不到对象或预检失败抛 InvalidOperationException；装饰类型与外观引用随对象保留；Revert 还原原格与原恢复格。
- * SetSpawnCommand(draft, cell)：把唯一的出生点移到指定地板空格，没有则新建；Revert 还原旧出生点或移除。
+ * SetSpawnCommand(draft)：出生点固定在主入口内侧格（门格减外侧偏移），没有主入口、该格不是地板或被其他对象占用时抛 InvalidOperationException；重复设置幂等；Revert 还原旧出生点或移除。
  * AddRecoveryItemCommand(draft, item)：添加恢复道具，时长必须大于 0、ID 不得重复；Revert 移除并释放 ID。
  * SetRecoveryDurationCommand(draft, itemId, duration)：修改恢复道具时长，必须大于 0；Revert 还原旧时长。
  */
@@ -103,18 +103,19 @@ namespace Sokoban.Core
     {
         const string SpawnId = "spawn";
         readonly RoomDraftModel draft;
-        readonly Cell cell;
         Cell? previous;
 
-        public SetSpawnCommand(RoomDraftModel draft, Cell cell)
+        public SetSpawnCommand(RoomDraftModel draft)
         {
             this.draft = draft;
-            this.cell = cell;
         }
 
         public void Apply()
         {
             var room = draft.Room;
+            var door = draft.Doors.FirstOrDefault(d => d.Id == draft.PrimaryEntranceId && d.Role == "entry");
+            if (door == null) throw new InvalidOperationException("没有主入口，无法设置出生点");
+            var cell = new Cell(door.Cell.X - door.Outward.X, door.Cell.Y - door.Outward.Y);
             if (!room.Inside(cell) || room.TerrainAt(cell).CategoryId != TerrainCategories.Floor)
                 throw new InvalidOperationException("格子 " + cell + " 不是地板");
             var old = room.ObjectsOf(ObjectCategories.Spawn).FirstOrDefault();

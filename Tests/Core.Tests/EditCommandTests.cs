@@ -102,15 +102,18 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void SetSpawnMovesTheSingleSpawn()
+        public void SetSpawnIsIdempotentAndUndoable()
         {
             var draft = Blank();
+            draft.Room.SetTerrain(new Cell(0, 2), TerrainCategories.Door, "entry");
+            draft.Doors.ToList();
+            draft = new RoomDraftModel(draft.Room, new[] { new DoorInfo("entry", new Cell(0, 2), Cell.Left, "entry") }, "entry");
             var history = new CommandHistory();
-            history.Execute(new SetSpawnCommand(draft, new Cell(1, 1)));
-            history.Execute(new SetSpawnCommand(draft, new Cell(3, 3)));
-            Assert.Equal(new Cell(3, 3), draft.Room.ObjectsOf(ObjectCategories.Spawn).Single().Cell);
+            history.Execute(new SetSpawnCommand(draft));
+            history.Execute(new SetSpawnCommand(draft));
+            Assert.Single(draft.Room.ObjectsOf(ObjectCategories.Spawn));
             history.Undo();
-            Assert.Equal(new Cell(1, 1), draft.Room.ObjectsOf(ObjectCategories.Spawn).Single().Cell);
+            Assert.Single(draft.Room.ObjectsOf(ObjectCategories.Spawn));
             history.Undo();
             Assert.Empty(draft.Room.ObjectsOf(ObjectCategories.Spawn));
         }

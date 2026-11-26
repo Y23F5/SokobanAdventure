@@ -241,15 +241,15 @@ namespace Sokoban.Editor
             states.Add(draft.Room.DeepClone());
             Require(draft.Brush(corridor.SelectMany(c => new[] { c + Vector2Int.up, c + Vector2Int.down }), RoomTool.Wall) == null, "封墙失败");
             states.Add(draft.Room.DeepClone());
-            draft.SetRoomMarker(corridor[2], "spawn");
-            states.Add(draft.Room.DeepClone());
             draft.SetRoomMarker(corridor[0], "entry");
+            states.Add(draft.Room.DeepClone());
+            draft.SetRoomMarker(corridor[2], "spawn");
             states.Add(draft.Room.DeepClone());
             draft.SetRoomMarker(corridor[4], "exit");
             states.Add(draft.Room.DeepClone());
             var entry = draft.Room["doors"].Single(d => (string)d["role"] == "entry");
             var exit = draft.Room["doors"].Single(d => (string)d["role"] == "exit");
-            Require(RoomFile.At(draft.Room["spawn"]) == corridor[2] && RoomFile.At(entry) == corridor[0] && RoomFile.At(exit) == corridor[4], "标记坐标错误");
+            Require(RoomFile.At(draft.Room["spawn"]) == corridor[1] && RoomFile.At(entry) == corridor[0] && RoomFile.At(exit) == corridor[4], "标记坐标错误");
             Require((string)entry["direction"] == "W" && (string)exit["direction"] == "E" && (string)draft.Room["primaryEntranceId"] == (string)entry["id"], "门朝向或主入口错误");
             string path = Path.GetFullPath(Path.Combine(Application.dataPath, "../Logs/WS05A-" + draft.ActiveId + ".room.json"));
             draft.Save(path, false);

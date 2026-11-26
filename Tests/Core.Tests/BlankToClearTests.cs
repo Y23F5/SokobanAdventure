@@ -26,7 +26,7 @@ namespace Sokoban.Core.Tests
         static RoomDraftModel Build(CommandHistory history)
         {
             var draft = BlankRoom();
-            history.Execute(new SetSpawnCommand(draft, new Cell(2, 1)));
+            history.Execute(new SetSpawnCommand(draft));
             history.Execute(new PlaceObjectCommand(draft, "box-1", ObjectCategories.Box, new Cell(3, 2)));
             history.Execute(new PlaceObjectCommand(draft, "target-1", ObjectCategories.Target, new Cell(5, 2)));
             history.Execute(new AddRecoveryItemCommand(draft, new RecoveryItem("recovery-1", "warehouse-lift", 3.7f)));
