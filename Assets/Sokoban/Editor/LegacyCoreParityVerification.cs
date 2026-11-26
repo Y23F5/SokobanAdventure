@@ -57,6 +57,12 @@ namespace Sokoban.Editor
                             string newError = PlacementRules.Error(draft, ObjectCategories.Box, new Sokoban.Core.Cell(px, py), null);
                             if (oldError != newError) failures.Add(name + " 放置预检不一致 (" + px + "," + py + ")：旧=" + oldError + " 新=" + newError);
                         }
+                    var freeCell = Enumerable.Range(0, original.Width * original.Height).Select(i => new Vector2Int(i % original.Width, i / original.Width)).First(p => legacyDraft.PlacementError(true, p) == null);
+                    legacyDraft.Place(true, freeCell, "parity-cache-probe");
+                    string afterPlace = legacyDraft.PlacementError(true, freeCell);
+                    if (afterPlace != "格子已占用") failures.Add(name + " 放置后缓存未失效 " + freeCell + "：" + afterPlace);
+                    legacyDraft.Undo();
+                    if (legacyDraft.PlacementError(true, freeCell) != null) failures.Add(name + " 撤销后缓存未失效 " + freeCell);
                     foreach (var issue in issues.Where(i => i.Severity == Severity.Error))
                         failures.Add(name + " Core 发布级错误：" + issue.RuleId + " " + issue.Location + " " + issue.Message);
                     foreach (var issue in issues.Where(i => i.RuleId.StartsWith("box.recovery")))

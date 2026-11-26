@@ -2,7 +2,7 @@
  * @file RoomDraft.cs
  * @brief 两端共用单房编辑会话。RoomDraft 解析初始数据；Open 预读候选文件再替换现场，Save 区分工作文件与交换副本；
  * Find/Select 按稳定 ID 或格定位，Click 将当前工具翻译为编辑命令，Place/Move 校验并提交，
- * PlacementError 经 Core 的 PlacementRules 判定越界、墙、门预留与对象占用，再补判 Core 没有的装饰物占格；LegacyPlacementError 保留旧逐项判定供比对，旧房间数据无法转换时也回退到它；Commit 记修改前后选择与数据，Undo/Redo 经 Restore 在历史栈之间移动快照。
+ * PlacementError 把旧房间转成的 Core 草稿按 Room 引用与 Revision 缓存，悬停时不再每帧整房转换，并经 Core 的 PlacementRules 判定越界、墙、门预留与对象占用，再补判 Core 没有的装饰物占格；LegacyPlacementError 保留旧逐项判定供比对，旧房间数据无法转换时也回退到它；Commit 记修改前后选择与数据，Undo/Redo 经 Restore 在历史栈之间移动快照。
  */
 using System;
 using System.IO;
@@ -103,16 +103,25 @@ namespace Sokoban
                 default: Select(cell); break;
             }
         }
+        Sokoban.Core.RoomDraftModel coreDraft;
+        JObject coreRoom;
+        int coreRevision;
         public string PlacementError(bool box, Vector2Int cell, string ignore = null)
         {
             string error;
             try
             {
-                var core = Sokoban.Core.LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(Room));
+                if (!ReferenceEquals(coreRoom, Room) || coreRevision != Revision)
+                {
+                    coreDraft = Sokoban.Core.LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(Room));
+                    coreRoom = Room;
+                    coreRevision = Revision;
+                }
+                var core = coreDraft;
                 error = Sokoban.Core.PlacementRules.Error(core, box ? Sokoban.Core.ObjectCategories.Box : Sokoban.Core.ObjectCategories.Target,
                     new Sokoban.Core.Cell(cell.x, cell.y), ignore);
             }
-            catch (FormatException) { return LegacyPlacementError(box, cell, ignore); }
+            catch (FormatException) { coreRoom = null; return LegacyPlacementError(box, cell, ignore); }
             if (error != null) return error;
             var decorations = Room["decorations"] as JArray;
             if (decorations != null && decorations.Any(o => (string)o["id"] != ignore && RoomFile.At(o) == cell)) return "格子已占用";
