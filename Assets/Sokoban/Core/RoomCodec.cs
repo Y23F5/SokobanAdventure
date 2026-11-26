@@ -3,6 +3,7 @@
  * @brief 房间文件的数据与编解码：类型化地形网格、对象、门、主入口与恢复道具，用 MiniJson 读写，不依赖外部库。
  * RecoveryItem：恢复道具（道具 ID、脚本引用、时长秒、数值参数表），ID 与房内对象共用同一份 ID 空间。
  * RoomDocument：房间文件的内存形态，含 Room、门列表、主入口门 ID（可为空）与恢复道具列表。
+ * 对象记录可带可选的 recoveryX、recoveryY（箱子恢复格），缺省表示没有；
  * RoomCodec.Encode(doc)：写成 JSON 文本；小数不进 JSON，时长与参数按千分之一取整数；写完先调用 Decode 试读，失败抛 InvalidOperationException，调用方不应写入文件。
  * RoomCodec.Decode(text)：解析并校验格式号、尺寸、地形类别、对象类别、格子范围、ID 唯一、时长为正与主入口引用，任何问题统一抛 FormatException。
  */
@@ -77,6 +78,8 @@ namespace Sokoban.Core
             {
                 ["id"] = o.Id, ["category"] = o.CategoryId, ["x"] = (long)o.Cell.X, ["y"] = (long)o.Cell.Y
             }).ToList();
+            foreach (var (o, rec) in room.Objects.Zip(objects, (o, rec) => (o, (Dictionary<string, object>)rec)))
+                if (o.RecoveryCell.HasValue) { rec["recoveryX"] = (long)o.RecoveryCell.Value.X; rec["recoveryY"] = (long)o.RecoveryCell.Value.Y; }
             var doors = doc.Doors.Select(d => (object)new Dictionary<string, object>
             {
                 ["id"] = d.Id, ["x"] = (long)d.Cell.X, ["y"] = (long)d.Cell.Y,
@@ -172,7 +175,13 @@ namespace Sokoban.Core
                 var rec = Obj(item, "对象记录");
                 string category = Str(rec, "category");
                 if (!ObjectIds.Contains(category)) throw new FormatException("未知对象类别 " + category);
-                room.AddObject(Str(rec, "id"), category, CellOf(room, rec, "对象"));
+                Cell? recoveryCell = null;
+                if (rec.ContainsKey("recoveryX") || rec.ContainsKey("recoveryY"))
+                {
+                    recoveryCell = new Cell(Int(rec, "recoveryX"), Int(rec, "recoveryY"));
+                    if (!room.Inside(recoveryCell.Value)) throw new FormatException("对象恢复格 " + recoveryCell.Value + " 超出房间");
+                }
+                room.AddObject(Str(rec, "id"), category, CellOf(room, rec, "对象"), recoveryCell);
             }
 
             var doors = new List<DoorInfo>();
