@@ -5,11 +5,10 @@
  * LateUpdate 同步正式与半透明模型，RenderOverlay 对齐网格和选择框；RequestQuit 和 Leave 保护未保存现场。
  * StartTrial 先让 Panel.Mode 进入试玩模式开启输入遮罩，再对目录内每个房间调用 ValidatedRoom.From 做发布级校验；失败时退回上一模式，经 Panel 上报规则、定位与修复入口，
  * 成功后在同一帧生成运行副本并最后关闭编辑界面。ValidateTrial 逐房校验并返回首个失败的规则问题与完整说明，FixEntry 把建议工具翻译成修复入口文字。
- * EndTrial 保留编辑会话，退出试玩模式并重新投影编辑相机与模型。OverUI 在射线命中界面或鼠标落在可见 InterfaceTooltip 提示面板矩形内时返回 true，
+ * EndTrial 保留编辑会话，退出试玩模式并重新投影编辑相机与模型。通过 RuntimeLayoutUI 的输入遮罩决定是否允许地图输入，
  * Update 的地图输入遮罩读取 Panel.Mode.BlocksMapInput，不再依赖独立的界面状态。
  */
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,8 +24,6 @@ namespace Sokoban
         public string AppearanceIssue => preview.AppearanceIssue;
         public RuntimeLayoutUI Interface;
         readonly RoomPreview preview = new RoomPreview();
-        readonly List<RaycastResult> hits = new List<RaycastResult>();
-        readonly List<InterfaceTooltip> tips = new List<InterfaceTooltip>();
         LayoutOverlay overlay;
         Camera lens;
         DioramaLighting lighting;
@@ -202,25 +199,6 @@ namespace Sokoban
             return Mathf.Max(halfHeight, halfWidth / Mathf.Max(.1f, lens.aspect * .74f));
         }
 
-        bool OverUI(Vector3 position)
-        {
-            if (!EventSystem.current) return false;
-            hits.Clear();
-            var data = new PointerEventData(EventSystem.current) { position = position };
-            EventSystem.current.RaycastAll(data,hits);
-            if (hits.Count != 0) return true;
-            if (!Interface) return false;
-            Interface.GetComponentsInChildren(false, tips);
-            foreach (var tip in tips)
-            {
-                if (!tip.tooltip || !tip.tooltip.gameObject.activeInHierarchy) continue;
-                var canvas = tip.tooltip.GetComponentInParent<Canvas>();
-                var camera = canvas && canvas.rootCanvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.rootCanvas.worldCamera : null;
-                if (RectTransformUtility.RectangleContainsScreenPoint(tip.tooltip, position, camera)) return true;
-            }
-            return false;
-        }
-
         void UpdateCamera()
         {
             var draft = Panel.Draft;
@@ -259,8 +237,8 @@ namespace Sokoban
         {
             if (trial) return;
             Vector3 pointer = Input.mousePosition;
-            bool modal = Panel.Modal || Panel.Mode.BlocksMapInput;
-            hovering = !modal && !OverUI(pointer) && new Rect(0,0,Screen.width,Screen.height).Contains(pointer)
+            bool modal = Interface ? Interface.CoversMap : Panel.Modal || Panel.Mode.BlocksMapInput;
+            hovering = !modal && (!Interface || !Interface.PointerOverUi(pointer)) && new Rect(0,0,Screen.width,Screen.height).Contains(pointer)
                 && RoomPreview.CellFromRay(lens.ScreenPointToRay(pointer), out hoveredCell);
             if (modal) { gesture = -1; return; }
             if (Input.GetKeyDown(KeyCode.Q) || Input.GetKeyDown(KeyCode.E))

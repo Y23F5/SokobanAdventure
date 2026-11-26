@@ -42,7 +42,9 @@ namespace Sokoban
         string[] roomIds;
         bool lastDialog;
         string activeRoom;
-        public bool CoversMap => Panel.Mode.BlocksMapInput;
+        UiLayers layers;
+        public bool CoversMap => Panel.Modal || Panel.Mode.BlocksMapInput;
+        internal bool PointerOverUi(Vector3 position) => layers != null && layers.PointerOverUi(position);
         LayoutPanel Panel => host.Panel;
         Color SelectedTint => interfaceStyle && interfaceStyle.theme ? interfaceStyle.theme.active : new Color32(255, 195, 104, 255);
         Color NormalTint => interfaceStyle && interfaceStyle.theme ? interfaceStyle.theme.parchment : new Color32(255, 228, 182, 255);
@@ -80,6 +82,12 @@ namespace Sokoban
             BuildFileMenu();
             BuildConfirmButtons();
             BuildIssueList();
+            layers = new UiLayers(gameObject);
+            UiLayers.SetOrder(fileMenu, UiLayers.Dropdown);
+            UiLayers.SetOrder(workspace, UiLayers.Modal);
+            UiLayers.SetOrder(checkOverlay, UiLayers.Modal);
+            UiLayers.SetOrder(fileDialog, UiLayers.Modal + 1);
+            UiLayers.SetOrder(confirmation, UiLayers.Modal + 2);
         }
 
         void SetToolLabel(RoomTool type, string name) => toolButtons[(int)type].GetComponentInChildren<Text>().text = name;
@@ -461,7 +469,6 @@ namespace Sokoban
             {
                 case "文件":
                     fileMenu.SetActive(!fileMenu.activeSelf);
-                    if (fileMenu.activeSelf) fileMenu.transform.SetAsLastSibling();
                     return;
                 case "保存": case "打开": case "导入": case "导出": case "发布": case "导出单房": case "导入素材包": case "导入模型": case "导入动作": case "导入贴图": case "导入界面图": Panel.ChooseFile(action);break;
                 case "新建": Panel.NewRoom(true);break;
