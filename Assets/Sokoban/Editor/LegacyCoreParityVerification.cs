@@ -47,6 +47,14 @@ namespace Sokoban.Editor
                     if (!original.Boxes.Select(b => b.Id + b.Cell + b.RecoveryCell).OrderBy(s => s).SequenceEqual(back.Boxes.Select(b => b.Id + b.Cell + b.RecoveryCell).OrderBy(s => s))) failures.Add(name + " 往返后箱子或恢复格不一致");
                     if (!original.Targets.Select(t => t.Id + t.Cell).OrderBy(s => s).SequenceEqual(back.Targets.Select(t => t.Id + t.Cell).OrderBy(s => s))) failures.Add(name + " 往返后目标不一致");
                     if ((original.Spawn?.Id + original.Spawn?.Cell) != (back.Spawn?.Id + back.Spawn?.Cell)) failures.Add(name + " 往返后出生点不一致");
+                    var legacyDraft = new RoomDraft(File.ReadAllText(Path.Combine(Application.streamingAssetsPath, "World/" + name + ".room.json")));
+                    for (int py = -1; py <= original.Height; py++)
+                        for (int px = -1; px <= original.Width; px++)
+                        {
+                            string oldError = legacyDraft.PlacementError(true, new Vector2Int(px, py));
+                            string newError = PlacementRules.Error(draft, ObjectCategories.Box, new Sokoban.Core.Cell(px, py), null);
+                            if (oldError != newError) failures.Add(name + " 放置预检不一致 (" + px + "," + py + ")：旧=" + oldError + " 新=" + newError);
+                        }
                     foreach (var issue in issues.Where(i => i.Severity == Severity.Error))
                         failures.Add(name + " Core 发布级错误：" + issue.RuleId + " " + issue.Location + " " + issue.Message);
                     foreach (var issue in issues.Where(i => i.RuleId.StartsWith("box.recovery")))

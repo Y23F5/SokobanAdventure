@@ -2,7 +2,7 @@
  * @file EditCommands.cs
  * @brief 房间草稿模型与放置类编辑命令：草稿持有 Room、门、主入口与恢复道具，命令先预检再提交，非法则抛 InvalidOperationException、不压栈。
  * RoomDraftModel：编辑中的房间，允许缺出生点、缺主入口、没有恢复道具等中间态；恢复道具 ID 与房内对象共用 Room 的 ID 空间。
- * PlaceObjectCommand(draft, id, categoryId, cell)：在地板空格放置一个对象，ID 不得重复；Revert 移除并释放 ID。
+ * PlaceObjectCommand(draft, id, categoryId, cell)：先经 PlacementRules.Error 预检（越界、空格、墙、门格或主入口预留格、已占用），再放置对象，ID 不得重复；Revert 移除并释放 ID。
  * SetSpawnCommand(draft, cell)：把唯一的出生点移到指定地板空格，没有则新建；Revert 还原旧出生点或移除。
  * AddRecoveryItemCommand(draft, item)：添加恢复道具，时长必须大于 0、ID 不得重复；Revert 移除并释放 ID。
  * SetRecoveryDurationCommand(draft, itemId, duration)：修改恢复道具时长，必须大于 0；Revert 还原旧时长。
@@ -51,9 +51,8 @@ namespace Sokoban.Core
         {
             var room = draft.Room;
             if (string.IsNullOrEmpty(id) || room.Ids.Contains(id)) throw new InvalidOperationException("ID 为空或已存在：" + id);
-            if (!room.Inside(cell) || room.TerrainAt(cell).CategoryId != TerrainCategories.Floor)
-                throw new InvalidOperationException("格子 " + cell + " 不是地板");
-            if (room.ObjectAt(cell) != null) throw new InvalidOperationException("格子 " + cell + " 已有对象");
+            string error = PlacementRules.Error(draft, categoryId, cell, null);
+            if (error != null) throw new InvalidOperationException("格子 " + cell + " 不能放置：" + error);
             room.AddObject(id, categoryId, cell);
         }
 
