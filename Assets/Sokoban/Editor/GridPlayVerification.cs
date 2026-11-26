@@ -146,13 +146,32 @@ namespace Sokoban.Editor
             Hover(host, RoomTool.Box, new Vector2Int(2, 4), true);
             Hover(host, RoomTool.Box, new Vector2Int(4, 2), false);
             Hover(host, RoomTool.Wall, new Vector2Int(1, 3), false);
-            draft.Place(true, new Cell(2, 4)); draft.Tool = RoomTool.Select;
+            draft.Place(true, new Cell(2, 4));
+            var spawn = draft.Room.ObjectsOf(ObjectCategories.Spawn).Single();
+            var hintCell = spawn.Cell + Cell.Up;
+            draft.Tool = RoomTool.Hint;
+            draft.Click(hintCell);
+            const string hint = "提示物件专项验证";
+            draft.SetHintText(draft.Selected, hint);
+            draft.Tool = RoomTool.Select;
             int roomLines = draft.Room.Width + 1 + draft.Room.Height + 1;
             var snapshot = draft.Snapshot(); var camera = Camera.main.transform.position;
             host.Interface.Act("试玩"); yield return null; yield return null;
             var game = Object.FindObjectOfType<PuzzleHost>();
             Check(game && game.IsTrial && GridLines() == 0 && !host.Interface.gameObject.activeInHierarchy, "试玩隐藏编辑网格和界面");
-            Check(game.Run.Step(Vector2Int.up, out _), "试玩副本实际移动");
+            if (game.Run.PendingItem != null) game.panels.Back();
+            yield return null; yield return null;
+            Check(game.Interact() && game.panels.discovery.activeInHierarchy && game.panels.discoveryText.text == hint,
+                "面对提示物件交互弹出文字");
+            Check(!game.Interact(), "弹窗打开时拦截交互");
+            game.panels.Back();
+            yield return null; yield return null;
+            Check(game.Move(Vector2Int.up), "试玩副本实际移动");
+            float deadline = Time.realtimeSinceStartup + 3f;
+            while (game.Busy && Time.realtimeSinceStartup < deadline) yield return null;
+            Check(game.Run.PlayerLocal == hintCell && game.panels.discovery.activeInHierarchy
+                && game.panels.discoveryText.text == hint, "走到提示物件格后弹出文字");
+            game.panels.Back();
             game.Leave(); yield return null; yield return null;
             Check(host.Interface.gameObject.activeInHierarchy && GridLines() == roomLines && snapshot == draft.Snapshot() && Vector3.Distance(camera, Camera.main.transform.position) < .001f, "退出试玩恢复编辑地图、相机、选择、脏状态及历史");
             SceneManager.LoadScene("MainMenu"); yield return null; yield return null;
