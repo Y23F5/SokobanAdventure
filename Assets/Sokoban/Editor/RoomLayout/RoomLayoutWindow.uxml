@@ -35,12 +35,5 @@
                 <ui:VisualElement name="dialog-actions" class="sl-toolbar" />
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:VisualElement name="legacy" class="sl-overlay">
-            <ui:VisualElement class="sl-dialog">
-                <ui:ScrollView class="sl-grow">
-                    <ui:VisualElement name="legacy-content" />
-                </ui:ScrollView>
-            </ui:VisualElement>
-        </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

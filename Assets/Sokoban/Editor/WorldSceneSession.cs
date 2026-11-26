@@ -361,7 +361,7 @@ namespace Sokoban.Editor
                     if(!cancelRight) ev.Use();
                     view.Repaint();Refresh();
                 }
-                else if (cancelRight && Tools.current != Tool.View && RoomLayoutWindow.Current &&
+                else if (cancelRight && Tools.current != Tool.View &&
                     (draft.World == null || draft.Placement != null) &&
                     RoomPreview.CellFromRay(HandleUtility.GUIPointToWorldRay(ev.mousePosition), out var clicked))
                 {
@@ -371,7 +371,7 @@ namespace Sokoban.Editor
                         if (!draft.Selection.Contains(cell)) draft.Select(cell);
                         var menu = new GenericMenu();
                         if (draft.Room.TerrainAt(cell).CategoryId != Sokoban.Core.TerrainCategories.Void)
-                            menu.AddItem(new GUIContent("编辑行为"), false, RoomLayoutWindow.Current.OpenBehavior);
+                            menu.AddItem(new GUIContent("编辑行为"), false, BehaviorGraphWindow.Open);
                         menu.AddItem(new GUIContent("旋转 90°"), false, () => { Panel.Run(() => draft.RotateSelection(1), "已旋转"); Refresh(); });
                         menu.AddItem(new GUIContent("删除"), false, () => DeleteAt(draft, cell));
                         menu.ShowAsContext();
@@ -469,11 +469,11 @@ namespace Sokoban.Editor
                 rectangleStart=null; GUIUtility.hotControl=0; ev.Use(); Refresh(); view.Repaint(); return;
             }
             if(ev.type==EventType.MouseDown && ev.button==0 && hit && HandleUtility.nearestControl==control) {
-                if (draft.Tool == RoomTool.Select && ev.clickCount == 2 && RoomLayoutWindow.Current
+                if (draft.Tool == RoomTool.Select && ev.clickCount == 2
                     && draft.Room.TerrainAt(C(local)).CategoryId != Sokoban.Core.TerrainCategories.Void)
                 {
                     draft.Select(C(local));
-                    RoomLayoutWindow.Current.OpenBehavior();
+                    BehaviorGraphWindow.Open();
                     ev.Use(); Refresh(); return;
                 }
                 if (draft.Tool == RoomTool.Select && ev.shift) { rectangleStart=local; GUIUtility.hotControl=control; ev.Use(); return; }

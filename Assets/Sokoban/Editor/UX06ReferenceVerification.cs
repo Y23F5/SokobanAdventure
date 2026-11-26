@@ -90,6 +90,7 @@ namespace Sokoban.Editor
             bool cross = Environment.GetEnvironmentVariable("UX06_REF_CASE") == "cross";
             Directory.CreateDirectory(folder);
             var draft = new LayoutPanel().Draft;
+            draft.Open("Docs/关卡样例/WS-01.json", true);
             string source = draft.ActiveId;
             string roomPath = Path.Combine(folder, "other.room.json");
             File.WriteAllText(roomPath, RoomCodec.Encode(draft.Model).Replace("\"id\":\"" + source + "\"", "\"id\":\"" + Other + "\"", StringComparison.Ordinal));
@@ -142,7 +143,7 @@ namespace Sokoban.Editor
             editor.Panel.Draft.UseRoom(editor.Panel.Draft.World.Start.LevelId);
             editor.StartTrial(); yield return null; yield return null;
             var game = Object.FindObjectOfType<PuzzleHost>();
-            Check(game.IsTrial && !game.Run.Solved, "real host starts unsolved");
+            Check(game && game.IsTrial && !game.Run.Solved, "real host starts unsolved: " + editor.Panel.Status);
             if (game.Run.PendingItem != null) game.panels.Back(); yield return null; yield return null;
             string source = game.Run.ActiveId;
             string destination = Environment.GetEnvironmentVariable("UX06_REF_CASE") == "cross" ? Other : source;

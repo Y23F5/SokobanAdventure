@@ -10,6 +10,7 @@
  * ObjectBehavior.Node / WithParameter / WithCanvas：构造节点、改单个参数、改画布坐标，节点不可变，返回新节点。
  * ObjectBehavior.GraphsOf(model, ownerId)、AllGraphs(model)：房间自有图加对象模板实例的图，模板图按 “实例 ID/图 ID” 改写 ID 并绑定实例为所有者。
  * ObjectBehavior.Issues(model)：校验图 ID 唯一、所有者存在、节点类型已登记、端口属于节点类型、setState 目标状态存在、同房显式目标存在。
+ * ObjectBehavior.GraphTargetIssues 校验单图的对象、地形与恢复项引用。
  * ObjectBehavior.TargetIssues(model, lookup)：校验跨房 setVisible 目标，lookup 按房间 ID 取草稿，取不到时报错。
  * ObjectBehavior.Effects(graph, trigger)：从该触发器的入口节点出发按具名端口广度遍历，产出 setVisible、setState 与 Lua 合成的动作节点。
  * ObjectBehavior.IsVisual(graph)：只含触发器、无表达式条件、setVisible、setState 的图对规则无影响。
@@ -174,7 +175,7 @@ namespace Sokoban
                 if (string.IsNullOrWhiteSpace(graph.Id) || !graphIds.Add(graph.Id)) yield return "行为图 ID 无效或重复：" + graph.Id;
                 if (graph.OwnerId == null || !model.Room.Ids.Contains(graph.OwnerId)) yield return $"行为图 {graph.Id} 找不到所有者 {graph.OwnerId}";
                 foreach (var issue in GraphIssues(graph, StatesOf(model, graph.OwnerId))) yield return issue;
-                foreach (var issue in LocalTargetIssues(model, graph)) yield return issue;
+                foreach (var issue in GraphTargetIssues(model, graph, null, includeCrossRoom: false)) yield return issue;
             }
         }
 
@@ -197,7 +198,7 @@ namespace Sokoban
                 }
                 kinds.Add(node.Id, kind);
                 if (node.Kind == SetState && (states == null || !states.States.Contains(Parameter(node, "state"))))
-                    yield return $"行为图 {graph.Id} 引用了不存在的对象状态：{Parameter(node, "state")}";
+                    yield return $"行为图 {graph.Id} 节点 {node.Id} 引用了不存在的对象状态：{Parameter(node, "state")}";
             }
             foreach (var edge in graph.Edges)
             {
@@ -211,27 +212,35 @@ namespace Sokoban
             }
         }
 
-        static IEnumerable<string> LocalTargetIssues(RoomDraftModel model, BehaviorGraph graph)
-        {
-            foreach (var node in graph.Nodes.Where(n => n.Kind == SetVisible))
-            {
-                string id = Parameter(node, "targetObject"), level = Parameter(node, "targetRoom");
-                if (id == null || level != null && level != model.Room.Id) continue;
-                if (!model.Room.Ids.Contains(id)) yield return $"{model.Room.Id}/{graph.OwnerId}/{graph.Id}/{node.Id} 找不到目标 {id}";
-            }
-        }
+        public static IEnumerable<string> TargetIssues(RoomDraftModel model, Func<string, RoomDraftModel> lookup) =>
+            AllGraphs(model).SelectMany(graph => GraphTargetIssues(model, graph, lookup, false));
 
-        public static IEnumerable<string> TargetIssues(RoomDraftModel model, Func<string, RoomDraftModel> lookup)
+        public static IEnumerable<string> GraphTargetIssues(RoomDraftModel model, BehaviorGraph graph,
+            Func<string, RoomDraftModel> lookup, bool includeLocal = true, bool includeCrossRoom = true)
         {
-            foreach (var graph in AllGraphs(model))
-                foreach (var node in graph.Nodes.Where(n => n.Kind == SetVisible))
+            foreach (var node in graph.Nodes)
+            {
+                string location = $"{model.Room.Id}/{graph.OwnerId}/{graph.Id}/{node.Id}";
+                if (node.Kind == SetVisible)
                 {
                     string id = Parameter(node, "targetObject"), level = Parameter(node, "targetRoom");
-                    if (id == null || level == null || level == model.Room.Id) continue;
-                    var target = lookup?.Invoke(level);
+                    if (id == null) continue;
+                    bool local = level == null || level == model.Room.Id;
+                    if (local ? !includeLocal : !includeCrossRoom) continue;
+                    var target = local ? model : lookup?.Invoke(level);
                     if (target == null || !target.Room.Ids.Contains(id))
-                        yield return $"{model.Room.Id}/{graph.OwnerId}/{graph.Id}/{node.Id} 找不到目标 {level}/{id}";
+                        yield return $"{location} 找不到目标 {(local ? id : level + "/" + id)}";
                 }
+                if (includeLocal && node.Kind == BehaviorNodeKinds.StartRecovery &&
+                    !model.RecoveryItems.Any(item => item.Id == Parameter(node, "recovery")))
+                    yield return $"{location} 找不到指定的恢复项";
+                if (includeLocal && node.Kind == BehaviorNodeKinds.SetTerrainState)
+                {
+                    string terrain = Parameter(node, "targetTerrain");
+                    if (terrain == null || !model.Room.Ids.Contains(terrain) || model.Room.Ids.KindOf(terrain) != "terrain")
+                        yield return $"{location} 找不到指定的地形实体";
+                }
+            }
         }
 
         public static IEnumerable<BehaviorNode> Effects(BehaviorGraph graph, string trigger)

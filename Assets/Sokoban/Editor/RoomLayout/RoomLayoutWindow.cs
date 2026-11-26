@@ -7,7 +7,7 @@
  * BuildToolbars、DrawWorkspace、DrawInspector：连接共享文件与编辑命令，显示房间、选中项和世界信息。
  * DrawPalette、AddCard、RefreshThumbnails：按分页列出实际素材，复用模型预检和缩略图。
  * DrawIssues、Locate：显示结构问题，按 Core 定位结果选中对应格或实体。
- * RefreshDialog、DrawLegacy、OpenBehavior：显示共享文件操作及暂时嵌入的行为和状态界面。
+ * RefreshDialog、对象状态分区承载 ObjectStateEditor，按选中实体应用状态表。
  * OnKey、StartTrial：将窗口快捷键转成共享命令，通过 Game 的 Play Mode 试玩当前草稿。
  */
 using System;
@@ -35,7 +35,7 @@ namespace Sokoban.Editor
         static bool quitApproved;
         internal static RoomLayoutWindow Current { get; private set; }
         public LayoutPanel Panel => WorldSceneSession.Panel;
-        internal bool BlocksSceneInput => Panel?.Modal == true || behavior != null || stateEditor != null;
+        internal bool BlocksSceneInput => Panel?.Modal == true;
 
         LayoutPanel bound;
         RoomDraftModel shownModel;
@@ -51,9 +51,7 @@ namespace Sokoban.Editor
         AssetThumbnail thumbnails;
         readonly List<(Image Image, Task<Texture2D> Task)> pendingThumbnails = new List<(Image, Task<Texture2D>)>();
         bool thumbnailsChanged;
-        BehaviorPage behavior;
         ObjectStateEditor stateEditor;
-        IMGUIContainer legacyGui;
         VisualElement view;
 
         [MenuItem("Tools/Sokoban/房间布局")]
@@ -135,8 +133,6 @@ namespace Sokoban.Editor
             view.styleSheets.Add(style);
             view.AddToClassList(EditorGUIUtility.isProSkin ? "sl-dark" : "sl-light");
             view.RegisterCallback<KeyDownEvent>(OnKey, TrickleDown.TrickleDown);
-            legacyGui = new IMGUIContainer(DrawLegacy);
-            view.Q("legacy-content").Add(legacyGui);
             view.Q<Button>("parent").clicked += () => Panel.ParentDirectory();
             view.Q<TextField>("filename").RegisterValueChangedCallback(evt => Panel.Filename = evt.newValue);
             BuildToolbars();
@@ -156,9 +152,7 @@ namespace Sokoban.Editor
             Show(view.Q("workbench"), bound != null);
             if (bound != null) RefreshDocument();
             RefreshDialog();
-            bool legacy = bound != null && !bound.Modal && (behavior != null || stateEditor != null);
-            Show(view.Q("legacy"), legacy);
-            view.Q("workbench").SetEnabled(bound != null && !bound.Modal && !legacy);
+            view.Q("workbench").SetEnabled(bound != null && !bound.Modal);
         }
 
         void Bind(LayoutPanel panel)
@@ -179,9 +173,7 @@ namespace Sokoban.Editor
             thumbnails?.Dispose();
             thumbnails = bound == null ? null : new AssetThumbnail();
             pendingThumbnails.Clear();
-            behavior = null;
             stateEditor = null;
-            legacyGui?.MarkDirtyRepaint();
         }
 
         void RefreshDocument()
@@ -194,9 +186,7 @@ namespace Sokoban.Editor
                     thumbnails.Dispose();
                     thumbnails = new AssetThumbnail();
                     pendingThumbnails.Clear();
-                    behavior = null;
                     stateEditor = null;
-                    legacyGui?.MarkDirtyRepaint();
                 }
                 thumbnailRoom = draft.ActiveId;
             }
@@ -365,12 +355,24 @@ namespace Sokoban.Editor
                 var rotations = Row(area);
                 AddButton(rotations, "⟲ 90°", () => Rotate(-1));
                 AddButton(rotations, "⟳ 90°", () => Rotate(1));
-                AddButton(area, "编辑行为", OpenBehavior);
+                AddButton(area, "编辑行为", BehaviorGraphWindow.Open);
             }
             if (!multiple)
             {
                 if (draft.CanEditStateProfile)
-                    AddButton(area, "配置物件状态", () => { stateEditor = new ObjectStateEditor(draft); legacyGui.MarkDirtyRepaint(); });
+                {
+                    var stateSection = new Foldout { text = "对象状态", value = false };
+                    stateSection.RegisterValueChangedCallback(evt =>
+                    {
+                        if (evt.newValue) stateEditor = new ObjectStateEditor(draft);
+                        else stateEditor = null;
+                    });
+                    stateSection.Add(new IMGUIContainer(() =>
+                    {
+                        if (stateSection.value && stateEditor != null && !stateEditor.Draw(bound)) stateSection.value = false;
+                    }));
+                    area.Add(stateSection);
+                }
                 if (draft.BoxSelected)
                     for (int i = 0; i < RoomDraft.BuiltinBoxes.Length; i++)
                     {
@@ -657,28 +659,6 @@ namespace Sokoban.Editor
             }
         }
 
-        internal void OpenBehavior()
-        {
-            var panel = Panel;
-            if (!WorldSceneSession.Active || panel == null || panel.Modal || !panel.Draft.SelectedCell.HasValue) return;
-            if (panel.Draft.Room.TerrainAt(panel.Draft.SelectedCell.Value).CategoryId == TerrainCategories.Void) return;
-            Bind(panel);
-            behavior = BehaviorPage.Open(panel.Draft);
-            stateEditor = null;
-            Focus();
-            legacyGui?.MarkDirtyRepaint();
-        }
-
-        void DrawLegacy()
-        {
-            if (bound == null || bound.Modal) return;
-            if (stateEditor != null)
-            {
-                if (!stateEditor.Draw(bound)) stateEditor = null;
-            }
-            else if (behavior != null && !behavior.Draw(bound)) behavior = null;
-        }
-
         void StartTrial()
         {
             if (BlocksSceneInput || EditorApplication.isPlayingOrWillChangePlaymode) return;
@@ -728,13 +708,6 @@ namespace Sokoban.Editor
             if (bound.Modal)
             {
                 if (evt.keyCode == KeyCode.Escape) { bound.CancelDialog(); evt.StopPropagation(); }
-                return;
-            }
-            if (evt.keyCode == KeyCode.Escape && (behavior != null || stateEditor != null))
-            {
-                behavior = null;
-                stateEditor = null;
-                evt.StopPropagation();
                 return;
             }
             if (BlocksSceneInput || evt.altKey || IsTextInput(evt.target as VisualElement)) return;
