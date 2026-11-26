@@ -14,14 +14,15 @@ namespace Sokoban.Editor
 
         public static void Install()
         {
+            var factoryMetal = Resources.Load<Material>("LayoutModels/FactoryMetal");
             var stone = Resources.Load<Material>("LayoutModels/Stone");
             var moss = Resources.Load<Material>("LayoutModels/Moss");
             var wood = Resources.Load<Material>("Diorama/Paint-71452F");
             var warm = Resources.Load<Material>("Diorama/Paint-C58A54");
             Save("FactoryWall", root =>
             {
-                Part(root, "金属底座", PrimitiveType.Cube, new Vector3(0,.29f,0), new Vector3(1,.58f,1), stone);
-                Part(root, "金属上盖", PrimitiveType.Cube, new Vector3(0,.65f,0), new Vector3(.96f,.14f,.96f), stone);
+                Part(root, "金属底座", PrimitiveType.Cube, new Vector3(0,.29f,0), new Vector3(1,.58f,1), factoryMetal);
+                Part(root, "金属上盖", PrimitiveType.Cube, new Vector3(0,.65f,0), new Vector3(.96f,.14f,.96f), factoryMetal);
                 for (int i = -1; i <= 1; i++) Part(root, "金属压条", PrimitiveType.Cube, new Vector3(i*.29f,.73f,0), new Vector3(.09f,.04f,.96f), warm);
             });
             var rock = Rock();
