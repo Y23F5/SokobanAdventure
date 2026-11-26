@@ -66,16 +66,18 @@ namespace Sokoban.Editor
         static void SearchExhaustion()
         {
             var draft = Default();
-            draft.SetRoomMarker(new Vector2Int(1, 5), "spawn");
-            var walls = new[] { new Vector2Int(1, 4), new Vector2Int(2, 4), new Vector2Int(3, 5) };
+            draft.SetRoomMarker(new Vector2Int(1, 3), "spawn");
+            draft.Select(RoomFile.At(draft.Find("box-a"))); draft.Move(new Vector2Int(3, 5));
+            draft.Select(RoomFile.At(draft.Find("target-a"))); draft.Move(new Vector2Int(4, 5));
+            var walls = new[] { new Vector2Int(1, 2), new Vector2Int(2, 2), new Vector2Int(1, 4), new Vector2Int(2, 4), new Vector2Int(3, 3) };
             Expect(draft.Brush(walls, RoomTool.Wall) == null, "未能围出双格出生区");
             var run = PuzzleRun.FromDraft(draft);
-            Expect(!run.Solved && run.Step(Vector2Int.right, out _) && run.Player == new Vector2Int(2, 5), "双格出生区无法步行");
+            Expect(!run.Solved && run.Step(Vector2Int.right, out _) && run.Player == new Vector2Int(2, 3), "双格出生区无法步行");
             var start = Spawn(draft);
             var partial = Check(draft, start, RoomSolution.Outcome.BudgetReached, 1);
             Expect(partial.Expanded == 1, "单步预算应在第二个状态前耗尽");
             var complete = Check(draft, start, RoomSolution.Outcome.Unsolvable);
-            Expect(complete.Expanded == 2, "两个可达玩家位置应各展开一次");
+            Expect(complete.Expanded == 3, "出生区内可达状态应各展开一次，实测共 3 个");
         }
         static void Unknown()
         {
