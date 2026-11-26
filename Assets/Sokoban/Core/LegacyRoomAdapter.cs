@@ -5,7 +5,7 @@
  * LegacyDoor：旧房间里的门（ID、格子、方向字母 N/E/S/W、角色）。
  * LegacyRoomData：旧房间拆出的数据（房间 ID、尺寸、由北向南的地形行、门、主入口、箱、目标、出生点）。
  * LegacyRoomAdapter.ToDraft(data)：行序转为原点在左下角，# 为墙，. 为地板，_ 为空格；门格改写为 door 地形并以门 ID 作实体 ID；
- * 方向字母转为向外偏移（N 上、E 右、S 下、W 左）；箱、目标、出生点转为对象。未知地形字符、未知方向、行宽或行数与尺寸不符均抛 FormatException。
+ * 方向字母转为向外偏移（N 上、E 右、S 下、W 左）；箱、目标、出生点转为对象。未知地形字符、未知方向、行宽或行数与尺寸不符、ID 为空或重复（含门与对象同名）均抛 FormatException。
  */
 using System;
 using System.Collections.Generic;
@@ -81,16 +81,23 @@ namespace Sokoban.Core
             }
 
             var doors = new List<DoorInfo>();
-            foreach (var door in data.Doors)
+            try
             {
-                if (!room.Inside(door.Cell)) throw new FormatException("门 " + door.Id + " 的格子 " + door.Cell + " 超出房间");
-                room.SetTerrain(door.Cell, TerrainCategories.Door, door.Id);
-                doors.Add(new DoorInfo(door.Id, door.Cell, Outward(door.Direction), door.Role));
-            }
+                foreach (var door in data.Doors)
+                {
+                    if (!room.Inside(door.Cell)) throw new FormatException("门 " + door.Id + " 的格子 " + door.Cell + " 超出房间");
+                    room.SetTerrain(door.Cell, TerrainCategories.Door, door.Id);
+                    doors.Add(new DoorInfo(door.Id, door.Cell, Outward(door.Direction), door.Role));
+                }
 
-            foreach (var box in data.Boxes) room.AddObject(box.Id, ObjectCategories.Box, box.Cell, box.RecoveryCell);
-            foreach (var target in data.Targets) room.AddObject(target.Id, ObjectCategories.Target, target.Cell);
-            if (data.Spawn != null) room.AddObject(data.Spawn.Id, ObjectCategories.Spawn, data.Spawn.Cell);
+                foreach (var box in data.Boxes) room.AddObject(box.Id, ObjectCategories.Box, box.Cell, box.RecoveryCell);
+                foreach (var target in data.Targets) room.AddObject(target.Id, ObjectCategories.Target, target.Cell);
+                if (data.Spawn != null) room.AddObject(data.Spawn.Id, ObjectCategories.Spawn, data.Spawn.Cell);
+            }
+            catch (ArgumentException e)
+            {
+                throw new FormatException(e.Message, e);
+            }
             return new RoomDraftModel(room, doors, data.PrimaryEntranceId);
         }
 

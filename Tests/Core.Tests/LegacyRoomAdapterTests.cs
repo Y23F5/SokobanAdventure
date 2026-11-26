@@ -99,6 +99,22 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
+        public void DuplicateIdIsReportedAsFormatException()
+        {
+            var data = Warehouse();
+            data.Boxes = new[] { new LegacyEntity("box-1", new Cell(4, 2)), new LegacyEntity("box-1", new Cell(3, 2)) };
+            Assert.Throws<System.FormatException>(() => LegacyRoomAdapter.ToDraft(data));
+        }
+
+        [Fact]
+        public void EmptyIdIsReportedAsFormatException()
+        {
+            var data = Warehouse();
+            data.Targets = new[] { new LegacyEntity("", new Cell(6, 2)) };
+            Assert.Throws<System.FormatException>(() => LegacyRoomAdapter.ToDraft(data));
+        }
+
+        [Fact]
         public void UnknownTerrainCharacterIsRejected()
         {
             var data = Warehouse();

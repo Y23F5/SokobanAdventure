@@ -4,6 +4,7 @@
  * Find/Select 按稳定 ID 或格定位，Click 将当前工具翻译为编辑命令，Place/Move 校验并提交，
  * MarkerOccupied 经 Core 的 PlacementRules.Occupied 判定设置出生点与门时的占用，再补判门格（旧侧把门当对象）与装饰物（Core 没有），LegacyMarkerOccupied 保留旧判定供比对；
  * DoorDirection 经 Core 的 DoorPlacement 为地板格选门朝向，LegacyDoorDirection 保留旧逐向判定供比对；
+ * TryCoreDraft 供 PlacementError、MarkerOccupied、DoorDirection 共用，缓存转换结果，旧数据无法转换时返回空，三者据此回退到各自的旧判定；
  * PlacementError 把旧房间转成的 Core 草稿按 Room 引用与 Revision 缓存，悬停时不再每帧整房转换，并经 Core 的 PlacementRules 判定越界、墙、门预留与对象占用，再补判 Core 没有的装饰物占格；LegacyPlacementError 保留旧逐项判定供比对，旧房间数据无法转换时也回退到它；Commit 记修改前后选择与数据，Undo/Redo 经 Restore 在历史栈之间移动快照。
  */
 using System;
@@ -108,9 +109,8 @@ namespace Sokoban
         Sokoban.Core.RoomDraftModel coreDraft;
         JObject coreRoom;
         int coreRevision;
-        public string PlacementError(bool box, Vector2Int cell, string ignore = null)
+        Sokoban.Core.RoomDraftModel TryCoreDraft()
         {
-            string error;
             try
             {
                 if (!ReferenceEquals(coreRoom, Room) || coreRevision != Revision)
@@ -119,11 +119,16 @@ namespace Sokoban
                     coreRoom = Room;
                     coreRevision = Revision;
                 }
-                var core = coreDraft;
-                error = Sokoban.Core.PlacementRules.Error(core, box ? Sokoban.Core.ObjectCategories.Box : Sokoban.Core.ObjectCategories.Target,
-                    new Sokoban.Core.Cell(cell.x, cell.y), ignore);
+                return coreDraft;
             }
-            catch (FormatException) { coreRoom = null; return LegacyPlacementError(box, cell, ignore); }
+            catch (FormatException) { coreRoom = null; return null; }
+        }
+        public string PlacementError(bool box, Vector2Int cell, string ignore = null)
+        {
+            var core = TryCoreDraft();
+            if (core == null) return LegacyPlacementError(box, cell, ignore);
+            string error = Sokoban.Core.PlacementRules.Error(core, box ? Sokoban.Core.ObjectCategories.Box : Sokoban.Core.ObjectCategories.Target,
+                new Sokoban.Core.Cell(cell.x, cell.y), ignore);
             if (error != null) return error;
             var decorations = Room["decorations"] as JArray;
             if (decorations != null && decorations.Any(o => (string)o["id"] != ignore && RoomFile.At(o) == cell)) return "格子已占用";
@@ -169,7 +174,8 @@ namespace Sokoban
         }
         public bool MarkerOccupied(Vector2Int cell, JToken previous)
         {
-            var core = Sokoban.Core.LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(Room));
+            var core = TryCoreDraft();
+            if (core == null) return LegacyMarkerOccupied(cell, previous);
             if (Sokoban.Core.PlacementRules.Occupied(core, new Sokoban.Core.Cell(cell.x, cell.y), (string)previous?["id"])) return true;
             if (core.Doors.Any(d => d.Cell.X == cell.x && d.Cell.Y == cell.y)) return true;
             var decorations = Room["decorations"] as JArray;
@@ -179,7 +185,8 @@ namespace Sokoban
             RoomFile.Objects(Room).Any(item => item != previous && RoomFile.At(item) == cell);
         public string DoorDirection(Vector2Int cell)
         {
-            var core = Sokoban.Core.LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(Room));
+            var core = TryCoreDraft();
+            if (core == null) return LegacyDoorDirection(cell);
             var outward = Sokoban.Core.DoorPlacement.Outward(core.Room, new Sokoban.Core.Cell(cell.x, cell.y));
             if (!outward.HasValue) return null;
             var value = outward.Value;
