@@ -34,6 +34,9 @@ namespace Sokoban
         public Sprite sliderKnobSprite;
         public Sprite checkOffSprite;
         public Sprite checkOnSprite;
+        public Sprite buttonHoverSprite, buttonPressedSprite, buttonSelectedSprite, buttonPrimarySprite, buttonDangerSprite, buttonDisabledSprite;
+        public Sprite panelSmallSprite, panelErrorSprite, cardSprite, cardSelectedSprite, cardDashedSprite;
+        public Sprite bookmarkSprite, bookmarkSelectedSprite, tagOkSprite, tagBadSprite, warnLineSprite, thumbSprite, warningIcon;
         internal int Revision { get; private set; }
 
         public ColorBlock Controls => new ColorBlock

@@ -14,11 +14,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   font: {fileID: 12800000, guid: 0d589ebb16bb3e9db3e8137e960078dc, type: 3}
   titleFont: {fileID: 12800000, guid: 7519c14adad47baad5034556a4975d3a, type: 3}
-  ink: {r: 0.32941177, g: 0.21568628, b: 0.16862746, a: 1}
+  ink: {r: 0.290196, g: 0.207843, b: 0.141176, a: 1}
   parchment: {r: 1, g: 0.89411765, b: 0.7137255, a: 1}
-  active: {r: 1, g: 0.8, b: 0.4509804, a: 1}
-  panel: {r: 1, g: 0.9372549, b: 0.8039216, a: 1}
-  field: {r: 0.972549, g: 0.84705883, b: 0.6509804, a: 1}
+  active: {r: 1.0, g: 0.764706, b: 0.407843, a: 1}
+  panel: {r: 1.0, g: 0.945098, b: 0.839216, a: 1}
+  field: {r: 1.0, g: 0.980392, b: 0.941176, a: 1}
   hover: {r: 1, g: 0.9529412, b: 0.83137256, a: 1}
   pressed: {r: 0.8784314, g: 0.74509805, b: 0.59607846, a: 1}
   focus: {r: 0.98039216, g: 0.8235294, b: 0.5411765, a: 1}
@@ -34,3 +34,21 @@ MonoBehaviour:
   sliderKnobSprite: {fileID: 21300000, guid: 3158aa956a8f7352e2f6d9408cd5a133, type: 3}
   checkOffSprite: {fileID: 21300000, guid: cedcfb76ddd03943a1a05d3380b8f819, type: 3}
   checkOnSprite: {fileID: 21300000, guid: 724625def39c4b5aa83553f4c9a90e67, type: 3}
+  buttonHoverSprite: {fileID: 21300000, guid: 4bf9bea2ff21aecfcfc8ad898f2ed165, type: 3}
+  buttonPressedSprite: {fileID: 21300000, guid: 8b142ab58c171df28159ccfdabc9a923, type: 3}
+  buttonSelectedSprite: {fileID: 21300000, guid: 61b2e3c6e20d4a27c770994c20ba7699, type: 3}
+  buttonPrimarySprite: {fileID: 21300000, guid: 8ed22ac889a447ae89a60620e6fd5b2e, type: 3}
+  buttonDangerSprite: {fileID: 21300000, guid: b243faaffc9bfb40945ec4279c3cb683, type: 3}
+  buttonDisabledSprite: {fileID: 21300000, guid: 3d980e765c5d79612842c553537b3ece, type: 3}
+  panelSmallSprite: {fileID: 21300000, guid: 7789303fc9a314668e6def40af9c58c2, type: 3}
+  panelErrorSprite: {fileID: 21300000, guid: 8f0633525e13c681d24a6c800963ef3a, type: 3}
+  cardSprite: {fileID: 21300000, guid: e71f379eb757eabe5433137e4efd80e7, type: 3}
+  cardSelectedSprite: {fileID: 21300000, guid: 17945c8633308c612c6dc67cd1643c38, type: 3}
+  cardDashedSprite: {fileID: 21300000, guid: e29591459b0dfe9bd8e1e9c8e00ee42a, type: 3}
+  bookmarkSprite: {fileID: 21300000, guid: bdd3328882d5b632d2bed07a2f042f44, type: 3}
+  bookmarkSelectedSprite: {fileID: 21300000, guid: b0957e70cb70b6cac92ccaef4fa05dd8, type: 3}
+  tagOkSprite: {fileID: 21300000, guid: 060f4d044cbf2411b54c270e40c6bf01, type: 3}
+  tagBadSprite: {fileID: 21300000, guid: 4f03b030c6c274a61fe5ab1788c7cd5b, type: 3}
+  warnLineSprite: {fileID: 21300000, guid: f6b6ddca46503d61fc8b6fb9989a4adc, type: 3}
+  thumbSprite: {fileID: 21300000, guid: 02cb282b2b815d9248af6ea9e504dfa6, type: 3}
+  warningIcon: {fileID: 21300000, guid: ec1cc28079d181b11c8382ce4744094a, type: 3}

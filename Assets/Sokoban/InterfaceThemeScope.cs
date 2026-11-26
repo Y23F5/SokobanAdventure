@@ -107,7 +107,7 @@ namespace Sokoban
                 }
                 var image = control.targetGraphic as Image;
                 if (!image) continue;
-                if (control is Button || control is Dropdown) ApplySurface(image, theme.parchment, theme.buttonSprite);
+                if (control is Button || control is Dropdown) ApplySurface(image, theme.parchment, ButtonSprite(control));
                 else if (control is InputField)
                 {
                     ApplySurface(image, theme.field, theme.inputSprite);
@@ -117,6 +117,18 @@ namespace Sokoban
                     field.selectionColor = theme.active;
                 }
             }
+        }
+
+        Sprite ButtonSprite(Selectable control)
+        {
+            var label = control.GetComponentInChildren<Text>(true);
+            string text = label ? label.text : null;
+            if (!string.IsNullOrEmpty(text))
+            {
+                if (text.Contains("退出") && theme.buttonDangerSprite) return theme.buttonDangerSprite;
+                if ((text.StartsWith("继续") || text.Contains("保存并返回") || text.Contains("覆盖并开始")) && theme.buttonPrimarySprite) return theme.buttonPrimarySprite;
+            }
+            return theme.buttonSprite;
         }
 
         void ApplySlider(Slider slider)
