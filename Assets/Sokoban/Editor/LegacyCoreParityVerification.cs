@@ -57,6 +57,14 @@ namespace Sokoban.Editor
                             string newError = PlacementRules.Error(draft, ObjectCategories.Box, new Sokoban.Core.Cell(px, py), null);
                             if (oldError != newError) failures.Add(name + " 放置预检不一致 (" + px + "," + py + ")：旧=" + oldError + " 新=" + newError);
                         }
+                    for (int dy = 0; dy < original.Height; dy++)
+                        for (int dx = 0; dx < original.Width; dx++)
+                        {
+                            var dcell = new Vector2Int(dx, dy);
+                            string oldDirection = legacyDraft.LegacyDoorDirection(dcell);
+                            string newDirection = legacyDraft.DoorDirection(dcell);
+                            if (oldDirection != newDirection) failures.Add(name + " 门朝向不一致 " + dcell + "：旧=" + oldDirection + " 新=" + newDirection);
+                        }
                     var freeCell = Enumerable.Range(0, original.Width * original.Height).Select(i => new Vector2Int(i % original.Width, i / original.Width)).First(p => legacyDraft.PlacementError(true, p) == null);
                     legacyDraft.Place(true, freeCell, "parity-cache-probe");
                     string afterPlace = legacyDraft.PlacementError(true, freeCell);

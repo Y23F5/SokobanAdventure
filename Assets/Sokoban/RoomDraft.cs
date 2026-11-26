@@ -2,6 +2,7 @@
  * @file RoomDraft.cs
  * @brief 两端共用单房编辑会话。RoomDraft 解析初始数据；Open 预读候选文件再替换现场，Save 区分工作文件与交换副本；
  * Find/Select 按稳定 ID 或格定位，Click 将当前工具翻译为编辑命令，Place/Move 校验并提交，
+ * DoorDirection 经 Core 的 DoorPlacement 为地板格选门朝向，LegacyDoorDirection 保留旧逐向判定供比对；
  * PlacementError 把旧房间转成的 Core 草稿按 Room 引用与 Revision 缓存，悬停时不再每帧整房转换，并经 Core 的 PlacementRules 判定越界、墙、门预留与对象占用，再补判 Core 没有的装饰物占格；LegacyPlacementError 保留旧逐项判定供比对，旧房间数据无法转换时也回退到它；Commit 记修改前后选择与数据，Undo/Redo 经 Restore 在历史栈之间移动快照。
  */
 using System;
@@ -155,11 +156,7 @@ namespace Sokoban
             }
             else
             {
-                string direction = new[] { "N", "E", "S", "W" }.FirstOrDefault(side =>
-                {
-                    var inward = RoomFile.Inward(new JObject { ["direction"] = side });
-                    return RoomFile.Terrain(Room, cell - inward) == RoomFile.Void && RoomFile.Floor(Room, cell + inward);
-                });
+                string direction = DoorDirection(cell);
                 RoomFile.Check(direction != null, "门需要朝向空地，且内侧有可通行地板");
                 marker["id"] = FreshMarkerId(role);
                 marker["role"] = role;
@@ -169,6 +166,19 @@ namespace Sokoban
             }
             Commit(next, (string)marker["id"]);
         }
+        public string DoorDirection(Vector2Int cell)
+        {
+            var core = Sokoban.Core.LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(Room));
+            var outward = Sokoban.Core.DoorPlacement.Outward(core.Room, new Sokoban.Core.Cell(cell.x, cell.y));
+            if (!outward.HasValue) return null;
+            var value = outward.Value;
+            return value.Equals(Sokoban.Core.Cell.Up) ? "N" : value.Equals(Sokoban.Core.Cell.Right) ? "E" : value.Equals(Sokoban.Core.Cell.Down) ? "S" : "W";
+        }
+        public string LegacyDoorDirection(Vector2Int cell) => new[] { "N", "E", "S", "W" }.FirstOrDefault(side =>
+        {
+            var inward = RoomFile.Inward(new JObject { ["direction"] = side });
+            return RoomFile.Terrain(Room, cell - inward) == RoomFile.Void && RoomFile.Floor(Room, cell + inward);
+        });
         string FreshMarkerId(string role) => Find(role) == null ? role : role + "-" + Guid.NewGuid().ToString("N");
         public void Place(bool box, Vector2Int cell) => Place(box, cell, (box ? "box-" : "target-") + Guid.NewGuid().ToString("N"));
         public void Place(bool box, Vector2Int cell, string id)
