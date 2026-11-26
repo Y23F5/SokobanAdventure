@@ -112,7 +112,7 @@ namespace Sokoban
             panels.itemLabel.text = ItemName + (Run.Recovering ? "　归位中" : "　滚轮切换 · R 使用");
             if (Run.PendingItem != null) panels.ShowDiscovery("获得「" + ItemName + "」\n\n在本房按 R，使箱子回到预设位置。\n滚轮切换已获得的装置，已完成的探索会保留。");
         }
-        public void AcceptDiscovery() { Run.AcceptItem(); Persist(); }
+        public void AcceptDiscovery() { Run.AcceptItem(); Persist(); ShowEntryHint(); }
         void TickRecovery(float seconds)
         {
             if (Run.AdvanceRecovery(seconds))

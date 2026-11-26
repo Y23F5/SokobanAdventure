@@ -53,6 +53,7 @@ namespace Sokoban
             }
             if (!transitioned && effects.Count == 0) return false;
 
+            string message = null;
             foreach (var effect in effects)
             {
                 var node = effect.node;
@@ -71,6 +72,9 @@ namespace Sokoban
                     case BehaviorNodeKinds.SetTerrainState:
                         Run.SetTerrainState(targetRoom, ObjectBehavior.Parameter(node, "targetTerrain") ?? effect.owner,
                             ObjectBehavior.Parameter(node, "state") == "on");
+                        break;
+                    case BehaviorNodeKinds.ShowText:
+                        message = ObjectBehavior.Parameter(node, "text");
                         break;
                     case BehaviorNodeKinds.StartRecovery:
                         Run.BeginScriptedRecovery(ObjectBehavior.Parameter(node, "recovery"));
@@ -95,6 +99,7 @@ namespace Sokoban
             actor.position = Position(Run.Player);
             RefreshFeedback();
             ShowInventory();
+            if (Run.PendingItem == null && !string.IsNullOrWhiteSpace(message)) panels.ShowInformation(Run.Room.Meta.Name, message);
             Persist();
             return true;
         }

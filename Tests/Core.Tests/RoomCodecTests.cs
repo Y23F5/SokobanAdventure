@@ -50,6 +50,20 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
+        public void RoomTextSurvivesRoundTripAndThemeChange()
+        {
+            var draft = Sample();
+            draft.Meta = new RoomMeta("仓库", "warehouse", "这里堆放备件。", "从入口向前。", "先推右侧木箱。")
+                .WithIdentity("货仓", "factory");
+            var reopened = RoomCodec.Decode(RoomCodec.Encode(draft)).Meta;
+            Assert.Equal("货仓", reopened.Name);
+            Assert.Equal("factory", reopened.ThemeId);
+            Assert.Equal("这里堆放备件。", reopened.Description);
+            Assert.Equal("从入口向前。", reopened.EntryHint);
+            Assert.Equal("先推右侧木箱。", reopened.PlayHint);
+        }
+
+        [Fact]
         public void RoundTripKeepsTerrainObjectsAndDoors()
         {
             var back = RoomCodec.Decode(RoomCodec.Encode(Sample()));

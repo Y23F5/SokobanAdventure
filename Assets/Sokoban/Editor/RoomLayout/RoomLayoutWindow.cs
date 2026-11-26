@@ -307,6 +307,15 @@ namespace Sokoban.Editor
                 name.SetValueWithoutNotify(draft.Model.Meta.Name);
             });
             area.Add(name);
+            var description = new TextField("说明") { isDelayed = true, multiline = true, value = draft.Model.Meta.Description };
+            var entryHint = new TextField("进房提示") { isDelayed = true, multiline = true, value = draft.Model.Meta.EntryHint };
+            var playHint = new TextField("玩法提示") { isDelayed = true, multiline = true, value = draft.Model.Meta.PlayHint };
+            foreach (var field in new[] { description, entryHint, playHint })
+            {
+                field.RegisterValueChangedCallback(_ => Panel.Run(
+                    () => draft.SetRoomText(description.value, entryHint.value, playHint.value), "已更新房间文本"));
+                area.Add(field);
+            }
             AddButton(area, Panel.ThemeLabel, Panel.CycleTheme);
             AddButton(area, Panel.RecoveryLabel + (draft.Model.RecoveryItems.Count == 0 ? " · 添加预设" : ""), Panel.CycleRecovery);
 

@@ -110,7 +110,7 @@ namespace Sokoban
                 model.Extras.TryGetValue("name", out var name);
                 model.Extras.TryGetValue("themeId", out var theme);
                 if (string.IsNullOrEmpty(model.Meta.Name) || model.Meta.ThemeId == null)
-                    model.Meta = new RoomMeta(string.IsNullOrEmpty(model.Meta.Name) ? name ?? entry.LevelId : model.Meta.Name, model.Meta.ThemeId ?? theme);
+                    model.Meta = model.Meta.WithIdentity(string.IsNullOrEmpty(model.Meta.Name) ? name ?? entry.LevelId : model.Meta.Name, model.Meta.ThemeId ?? theme);
                 models.Add(entry.LevelId, model);
             }
             return Assemble(world, models, world.Start.LevelId);

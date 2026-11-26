@@ -6,6 +6,7 @@
  * ShowDiscovery 接收标题与说明两段文字，标题写入 discoveryTitle，说明写入 discoveryText 后显示获得道具页；只传说明的重载使用默认标题。
  * FocusPage 为菜单和模态面板提供初始键盘焦点，游玩 HUD 不占用导航。
  */
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
@@ -35,6 +36,8 @@ namespace Sokoban
         public PuzzleHost host;
         GameObject current;
         int changedFrame = -1;
+        bool information;
+        GameObject informationReturn;
         public bool Modal => current || changedFrame == Time.frameCount;
 
         void Awake()
@@ -86,7 +89,13 @@ namespace Sokoban
         }
         public void Pause() => Show(pause);
         public void Confirm() => Show(confirm);
-        public void Help() => Show(help);
+        public void Help()
+        {
+            var meta = host ? host.Run?.Room.Meta : null;
+            if (meta == null || (meta.Description.Length == 0 && meta.PlayHint.Length == 0)) { Show(help); return; }
+            string text = string.Join("\n\n", new[] { meta.Description, meta.PlayHint }.Where(value => value.Length > 0));
+            ShowInformation(meta.Name, text, pause);
+        }
         public void Settings()
         {
             Show(settings);
@@ -109,15 +118,28 @@ namespace Sokoban
         }
         public void ShowError(string message) { errorText.text = message; Show(error); }
         public void ShowDiscovery(string message) => ShowDiscovery("获得道具", message);
+        public void ShowInformation(string title, string message, GameObject returnTo = null)
+        {
+            ShowDiscovery(title, message);
+            information = true;
+            informationReturn = returnTo;
+        }
+
         public void ShowDiscovery(string title, string message)
         {
+            information = false;
             if (discoveryTitle) discoveryTitle.text = title;
             discoveryText.text = message;
             Show(discovery);
         }
         public void Back()
         {
-            if (discovery && current == discovery) { host.AcceptDiscovery(); Show(null); }
+            if (discovery && current == discovery)
+            {
+                bool acceptDiscovery = !information;
+                Show(acceptDiscovery ? null : informationReturn);
+                if (acceptDiscovery) host.AcceptDiscovery();
+            }
             else Show(host && current != pause ? pause : null);
         }
         public void Accept() { if (menu) menu.NewCampaign(); }

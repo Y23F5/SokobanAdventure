@@ -187,6 +187,9 @@ namespace Sokoban.Core
                 ["objectStates"] = objectStates,
                 ["uiImage"] = draft.UiImageAssetId,
             };
+            if (draft.Meta.Description.Length > 0) root["description"] = draft.Meta.Description;
+            if (draft.Meta.EntryHint.Length > 0) root["entryHint"] = draft.Meta.EntryHint;
+            if (draft.Meta.PlayHint.Length > 0) root["playHint"] = draft.Meta.PlayHint;
             if (draft.Extras.Count > 0)
             {
                 var extras = new Dictionary<string, object>();
@@ -310,7 +313,8 @@ namespace Sokoban.Core
                     extras[pair.Key] = pair.Value as string ?? throw new FormatException("extras 字段 " + pair.Key + " 不是字符串");
             }
             var draft = new RoomDraftModel(room, doors, primary, extras, recovery);
-            draft.Meta = new RoomMeta(OptStr(root, "name") ?? "", OptStr(root, "themeId"));
+            draft.Meta = new RoomMeta(OptStr(root, "name") ?? "", OptStr(root, "themeId"),
+                OptStr(root, "description"), OptStr(root, "entryHint"), OptStr(root, "playHint"));
             ReadRest(root, draft);
             return draft;
         }

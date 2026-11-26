@@ -402,15 +402,15 @@ namespace Sokoban
             }
         }
 
-        sealed class RenameCommand : ICommand
+        sealed class RoomMetaCommand : ICommand
         {
             readonly RoomDraftModel draft;
-            readonly string name;
+            readonly RoomMeta after;
             RoomMeta before;
 
-            public RenameCommand(RoomDraftModel draft, string name) { this.draft = draft; this.name = name; }
+            public RoomMetaCommand(RoomDraftModel draft, RoomMeta after) { this.draft = draft; this.after = after; }
 
-            public void Apply() { before = draft.Meta; draft.Meta = new RoomMeta(name, before.ThemeId); }
+            public void Apply() { before = draft.Meta; draft.Meta = after; }
 
             public void Revert() => draft.Meta = before;
         }
@@ -424,7 +424,13 @@ namespace Sokoban
         public void Rename(string name)
         {
             RoomFile.Check(!string.IsNullOrWhiteSpace(name), "房间名称不能为空");
-            Commit(new RenameCommand(Model, name), Selected);
+            Commit(new RoomMetaCommand(Model, Model.Meta.WithIdentity(name, Model.Meta.ThemeId)), Selected);
+        }
+
+        public void SetRoomText(string description, string entryHint, string playHint)
+        {
+            var meta = Model.Meta;
+            Commit(new RoomMetaCommand(Model, new RoomMeta(meta.Name, meta.ThemeId, description, entryHint, playHint)), Selected);
         }
 
         public void Open(string path, bool import)

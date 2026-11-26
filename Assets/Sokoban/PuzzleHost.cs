@@ -66,6 +66,13 @@ namespace Sokoban
             ShowInventory();
             RefreshFeedback();
             RestoreMotion();
+            ShowEntryHint();
+        }
+
+        void ShowEntryHint()
+        {
+            string hint = Run.Room.Meta.EntryHint;
+            if (Run.PendingItem == null && !string.IsNullOrWhiteSpace(hint)) panels.ShowInformation(Run.Room.Meta.Name, hint);
         }
 
         void RestoreMotion()
@@ -198,6 +205,7 @@ namespace Sokoban
                 }
                 RefreshFeedback();
                 ShowInventory();
+                ShowEntryHint();
                 Persist();
                 return true;
             }

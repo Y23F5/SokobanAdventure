@@ -240,7 +240,7 @@ namespace Sokoban
             var model = Model;
             var room = Room;
             var beforeMeta = model.Meta;
-            var afterMeta = new RoomMeta(beforeMeta?.Name, theme);
+            var afterMeta = beforeMeta.WithIdentity(beforeMeta.Name, theme);
             var frozenCells = new List<(Cell cell, AppearanceRef look)>();
             for (int x = 0; x < room.Width; x++)
                 for (int y = 0; y < room.Height; y++)
