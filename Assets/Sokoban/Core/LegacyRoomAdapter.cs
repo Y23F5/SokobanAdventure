@@ -5,7 +5,7 @@
  * LegacyDoor：旧房间里的门（ID、格子、方向字母 N/E/S/W、角色）。
  * LegacyRoomData：旧房间拆出的数据（房间 ID、尺寸、由北向南的地形行、门、主入口、箱、目标、出生点，以及 string 到 string 的透传字段包 Extras，Core 不解释，默认为空，可为 null）。
  * LegacyRoomAdapter.ToDraft(data)：行序转为原点在左下角，# 为墙，. 为地板，_ 为空格；门格改写为 door 地形并以门 ID 作实体 ID；
- * 方向字母转为向外偏移（N 上、E 右、S 下、W 左）；箱、目标、出生点转为对象，装饰物不进房内对象表、只随 Extras 透传，Extras 原样复制进草稿的 Extras。未知地形字符、未知方向、行宽或行数与尺寸不符、ID 为空、仅含空白或重复（含门、对象与装饰同名）均抛 FormatException。
+ * 方向字母转为向外偏移（N 上、E 右、S 下、W 左）；箱、目标、出生点转为对象，装饰物不进房内对象表、只随 Extras 透传，Extras 原样复制进草稿的 Extras。未知地形字符、未知方向、尺寸非正、levelId 为空或仅含空白、行宽或行数与尺寸不符、ID 为空、仅含空白或重复（含门、对象与装饰同名）均抛 FormatException。
  */
 using System;
 using System.Collections.Generic;
@@ -59,6 +59,8 @@ namespace Sokoban.Core
     {
         public static RoomDraftModel ToDraft(LegacyRoomData data)
         {
+            if (string.IsNullOrWhiteSpace(data.LevelId)) throw new FormatException("levelId 为空或仅含空白");
+            if (data.Width <= 0 || data.Height <= 0) throw new FormatException("房间尺寸必须为正");
             var rows = data.RowsNorthToSouth;
             if (rows == null || rows.Length != data.Height || rows.Any(r => r == null || r.Length != data.Width))
                 throw new FormatException("地形行与房间尺寸不一致");

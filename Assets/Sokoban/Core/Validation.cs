@@ -9,6 +9,8 @@
  * RoomValidator.HasErrors(issues)：判断结果中是否存在错误，发布级存在错误时阻止试玩、保存与导出。
  * entry 为主入口内侧的入口缓冲格，缺主入口时传 null。
  * RoomValidator.ValidateDraft(draft, stage)：在 Validate 之上，为草稿模型追加 recovery.none（没有恢复道具）、door.geometry（门格不是门地形、外侧不是空格或内侧不是地板，两档均为错误）与 boundary.open（入口缓冲格上的出生点不算占用；非门格的地板紧邻空格或房间边缘，草稿提示、发布错误）两条规则。
+ * RoomValidator.LoadErrors(draft)：读入硬错误白名单档，只返回 object.sharedCell 与 object.notOnFloor，均为错误；取自 Validate 的结果并按规则 ID 过滤，不含任何结构或内容规则。
+ * RoomValidator.StructureErrors(draft)：发布结构错误白名单档，只返回 spawn.missing、door.geometry、entry.occupied、entry.missing、boundary.open，不论阶段一律为错误；取自发布级 ValidateDraft 的结果并按规则 ID 过滤，不含 recovery.none、target.none、target.exceedsBoxes。
  */
 using System;
 using System.Collections.Generic;
@@ -130,6 +132,25 @@ namespace Sokoban.Core
                 }
             return issues;
         }
+
+        static readonly HashSet<string> LoadRuleIds = new HashSet<string> { "object.sharedCell", "object.notOnFloor" };
+
+        static readonly HashSet<string> StructureRuleIds = new HashSet<string>
+        {
+            "spawn.missing", "door.geometry", "entry.occupied", "entry.missing", "boundary.open",
+        };
+
+        public static List<Issue> LoadErrors(RoomDraftModel draft) =>
+            Validate(draft.Room, ValidationStage.Publish, null)
+                .Where(i => LoadRuleIds.Contains(i.RuleId))
+                .Select(i => new Issue(i.RuleId, Severity.Error, i.Location, i.Message))
+                .ToList();
+
+        public static List<Issue> StructureErrors(RoomDraftModel draft) =>
+            ValidateDraft(draft, ValidationStage.Publish)
+                .Where(i => StructureRuleIds.Contains(i.RuleId))
+                .Select(i => new Issue(i.RuleId, Severity.Error, i.Location, i.Message))
+                .ToList();
 
         public static bool HasErrors(IEnumerable<Issue> issues) => issues.Any(i => i.Severity == Severity.Error);
     }
