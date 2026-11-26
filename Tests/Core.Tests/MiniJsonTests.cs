@@ -60,6 +60,37 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
+        public void ParsesBooleanLiterals()
+        {
+            var back = (List<object>)MiniJson.Parse("[true,false,{\"k\":true}]");
+            Assert.Equal(true, back[0]);
+            Assert.Equal(false, back[1]);
+            Assert.Equal(true, ((Dictionary<string, object>)back[2])["k"]);
+        }
+
+        [Fact]
+        public void WritesBooleanLiterals()
+        {
+            Assert.Equal("[true,false]", MiniJson.Write(new List<object> { true, false }));
+        }
+
+        [Fact]
+        public void BooleanRoundTrip()
+        {
+            var root = new Dictionary<string, object> { ["a"] = true, ["b"] = false };
+            var back = (Dictionary<string, object>)MiniJson.Parse(MiniJson.Write(root));
+            Assert.Equal(true, back["a"]);
+            Assert.Equal(false, back["b"]);
+        }
+
+        [Fact]
+        public void TruncatedBooleanIsStillRejected()
+        {
+            foreach (var bad in new[] { "tru", "fals", "[tr]", "truex" })
+                Assert.Throws<FormatException>(() => MiniJson.Parse(bad));
+        }
+
+        [Fact]
         public void WriteRejectsUnsupportedType()
         {
             Assert.Throws<ArgumentException>(() => MiniJson.Write(1.5));

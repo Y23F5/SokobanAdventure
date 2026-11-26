@@ -127,6 +127,31 @@ namespace Sokoban.Editor
                         Debug.Log("PARITY BASELINE " + name + " 发布级错误 " + issue.RuleId + " " + issue.Location + " " + issue.Message);
                     Debug.Log("PARITY " + name + " legacyGaps=" + legacy.Count + " coreGaps=" + core.Count + " publishErrors=" + issues.Count(i => i.Severity == Severity.Error));
                 }
+                var worldPath = Path.Combine(Application.streamingAssetsPath, "World/main.world.json");
+                var catalog = new Newtonsoft.Json.Linq.JObject();
+                var legacyWorld = WorldLayout.Read(worldPath, catalog);
+                var coreWorld = WorldCodec.Decode(File.ReadAllText(worldPath));
+                var sizes = new Dictionary<string, Sokoban.Core.Cell>();
+                foreach (var roomRef in coreWorld.Rooms)
+                {
+                    var roomSize = RoomFile.Size((Newtonsoft.Json.Linq.JObject)catalog[roomRef.LevelId]);
+                    sizes[roomRef.LevelId] = new Sokoban.Core.Cell(roomSize.x, roomSize.y);
+                }
+                int worldChecks = 0;
+                foreach (var roomRef in coreWorld.Rooms)
+                {
+                    var size = sizes[roomRef.LevelId];
+                    for (int wy = coreWorld.Min.Y - 3; wy <= coreWorld.Max.Y + 3; wy++)
+                        for (int wx = coreWorld.Min.X - 3; wx <= coreWorld.Max.X + 3; wx++)
+                            foreach (bool moving in new[] { true, false })
+                            {
+                                string oldIssue = WorldLayout.PlacementIssue(legacyWorld, catalog, roomRef.LevelId, new Vector2Int(wx, wy), moving);
+                                string newIssue = WorldValidator.Placement(coreWorld, sizes, roomRef.LevelId, new Sokoban.Core.Cell(wx, wy), moving, size);
+                                worldChecks++;
+                                if (oldIssue != newIssue) failures.Add("世界放置检查不一致 " + roomRef.LevelId + " (" + wx + "," + wy + ") moving=" + moving + "：旧=" + oldIssue + " 新=" + newIssue);
+                            }
+                }
+                Debug.Log("PARITY WORLD-PLACEMENT 比对点数=" + worldChecks);
             }
             catch (Exception ex)
             {

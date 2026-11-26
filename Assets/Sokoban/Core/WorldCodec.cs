@@ -5,7 +5,7 @@
  * WorldRoomRef：世界中的一个房间引用（房间 ID、相对世界文件的文件名、整数原点、前进所需已解开的房间 ID 列表）。
  * WorldConnection：一条门连接（唯一 ID、模式 direct 或 teleport、源端点、目标端点、是否允许回退）。
  * WorldDocument：世界文件的内存形态，含边界、房间引用、连接、起点、终点端点与终点所需已解开的房间。
- * WorldCodec.Encode(doc)：写成 JSON 文本，写完先调用 Decode 试读，失败抛 InvalidOperationException，调用方不应写入文件。
+ * 起点按 levelId 加 spawnId 读写（读入时也接受 doorId）；WorldCodec.Encode(doc)：写成 JSON 文本（allowReturn 写为布尔值，读入时布尔与 0、1 都接受），写完先调用 Decode 试读，失败抛 InvalidOperationException，调用方不应写入文件。
  * WorldCodec.Decode(text)：校验种类、格式号、边界方向、房间 ID 唯一、连接 ID 唯一、模式合法、连接与起终点引用的房间存在、前置房间存在，任何问题统一抛 FormatException。
  */
 using System;
@@ -114,7 +114,7 @@ namespace Sokoban.Core
                 ["mode"] = c.Mode,
                 ["forwardFrom"] = endpoint(c.From),
                 ["forwardTo"] = endpoint(c.To),
-                ["allowReturn"] = c.AllowReturn ? 1L : 0L,
+                ["allowReturn"] = c.AllowReturn,
             }).ToList();
             var root = new Dictionary<string, object>
             {
@@ -125,7 +125,7 @@ namespace Sokoban.Core
                 ["bounds"] = new Dictionary<string, object> { ["min"] = pair(doc.Min), ["max"] = pair(doc.Max) },
                 ["rooms"] = rooms,
                 ["connections"] = connections,
-                ["start"] = endpoint(doc.Start),
+                ["start"] = new Dictionary<string, object> { ["levelId"] = doc.Start.LevelId, ["spawnId"] = doc.Start.DoorId },
                 ["finish"] = new Dictionary<string, object>
                 {
                     ["endpoint"] = endpoint(doc.FinishEndpoint),
@@ -149,6 +149,16 @@ namespace Sokoban.Core
 
         static List<object> Arr(Dictionary<string, object> d, string key) =>
             d.TryGetValue(key, out var v) && v is List<object> a ? a : throw new FormatException("缺少数组 " + key);
+
+        static bool Flag(Dictionary<string, object> d, string key)
+        {
+            if (d.TryGetValue(key, out var v))
+            {
+                if (v is bool b) return b;
+                if (v is long l && (l == 0 || l == 1)) return l == 1;
+            }
+            throw new FormatException("字段 " + key + " 不是布尔值");
+        }
 
         static string Str(Dictionary<string, object> d, string key) =>
             d.TryGetValue(key, out var v) && v is string s ? s : throw new FormatException("缺少字符串 " + key);
@@ -180,6 +190,15 @@ namespace Sokoban.Core
         {
             var o = Obj(d, key);
             return new WorldEndpoint(Str(o, "levelId"), Str(o, "doorId"));
+        }
+
+        static WorldEndpoint StartOf(Dictionary<string, object> root)
+        {
+            var o = Obj(root, "start");
+            string id = o.TryGetValue("spawnId", out var s) && s is string spawn ? spawn
+                : o.TryGetValue("doorId", out var d) && d is string door ? door
+                : throw new FormatException("起点缺少 spawnId");
+            return new WorldEndpoint(Str(o, "levelId"), id);
         }
 
         static WorldDocument Build(Dictionary<string, object> root)
@@ -216,10 +235,10 @@ namespace Sokoban.Core
                 var from = EndpointOf(c, "forwardFrom");
                 var to = EndpointOf(c, "forwardTo");
                 if (!known.Contains(from.LevelId) || !known.Contains(to.LevelId)) throw new FormatException("连接 " + id + " 引用了不存在的房间");
-                connections.Add(new WorldConnection(id, mode, from, to, Int(c, "allowReturn") != 0));
+                connections.Add(new WorldConnection(id, mode, from, to, Flag(c, "allowReturn")));
             }
 
-            var start = EndpointOf(root, "start");
+            var start = StartOf(root);
             if (!known.Contains(start.LevelId)) throw new FormatException("起点引用了不存在的房间");
             var finish = Obj(root, "finish");
             var finishEndpoint = EndpointOf(finish, "endpoint");

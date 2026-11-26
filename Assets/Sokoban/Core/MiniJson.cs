@@ -1,7 +1,7 @@
 /**
  * @file MiniJson.cs
  * @brief 极小的 JSON 读写器，只覆盖存档用到的结构，不依赖任何外部库，使 Core 在 Unity 与 dotnet 两侧都能编译。
- * MiniJson.Parse(text)：解析为 null、string、long、List<object>、Dictionary<string, object>；语法错误或多余内容抛 FormatException。
+ * MiniJson.Parse(text)：解析为 null、bool、string、long、List<object>、Dictionary<string, object>；语法错误或多余内容抛 FormatException。
  * MiniJson.Write(value)：把上述类型写成紧凑 JSON 文本，字符串按需转义，不支持的类型抛 ArgumentException。
  * Reader：递归下降解析器，逐字符前进，数字只支持整数。
  */
@@ -36,6 +36,7 @@ namespace Sokoban.Core
             switch (value)
             {
                 case null: sb.Append("null"); break;
+                case bool b: sb.Append(b ? "true" : "false"); break;
                 case string s: WriteString(sb, s); break;
                 case int i: sb.Append(i.ToString(CultureInfo.InvariantCulture)); break;
                 case long l: sb.Append(l.ToString(CultureInfo.InvariantCulture)); break;
@@ -111,6 +112,8 @@ namespace Sokoban.Core
                 if (c == '"') return ReadString();
                 if (c == '-' || (c >= '0' && c <= '9')) return ReadNumber();
                 if (Match("null")) return null;
+                if (Match("true")) return true;
+                if (Match("false")) return false;
                 throw new FormatException($"JSON 位置 {pos} 出现意外字符 '{c}'");
             }
 
