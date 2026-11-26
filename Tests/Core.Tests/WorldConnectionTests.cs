@@ -122,6 +122,21 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
+        public void StartInRoomWithoutSpawnIsReported()
+        {
+            var world = World(Both(5), new WorldConnection[0]);
+            var noSpawn = new WorldRoomInfo("a", null, new[] { Door("exit", 4, 2, 1, 0, "exit") });
+            Assert.Equal(new[] { "世界起点无效 a" }, WorldValidator.Endpoints(world, Rooms(noSpawn, RoomB())).ToArray());
+        }
+
+        [Fact]
+        public void StartRoomMissingFromCatalogIsReported()
+        {
+            var world = World(Both(5), new WorldConnection[0]);
+            Assert.Contains("世界起点无效 a", WorldValidator.Endpoints(world, Rooms(RoomB())));
+        }
+
+        [Fact]
         public void StartInUnplacedRoomIsReported()
         {
             var world = World(new[] { Ref("a", 0, 0) }, new WorldConnection[0], new WorldEndpoint("b", "spawn"));
