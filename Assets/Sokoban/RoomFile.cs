@@ -5,6 +5,8 @@
  * Size/At 分别读取尺寸及实体格，Inside/Floor 按北到南行序检查格子，Inward 计算门内侧位置，
  * Validate 检查字段、地形与身份；StructureIssues 定位边界缺口、门及入口预留错误。
  * ToLegacyData 把旧 JObject 房间抽成 Core 的 LegacyRoomData，供 Core 校验器与转换适配器使用；
+ * BoundaryGaps 经 LegacyRoomAdapter.ToDraft 与 Core 的 boundary.open 规则取边界缺口，ParseCoreCell 把规则定位文本还原成格坐标；
+ * LegacyBoundaryGaps 保留旧的逐格判定，仅供新旧比对脚本对照；
  * RequireStructure 在正式文件入口拒绝这些错误；Write 转调 Core 的 AtomicFile.Write，先写同目录临时文件再替换目标。
  */
 using System;
@@ -180,6 +182,21 @@ namespace Sokoban
         }
 
         public static IEnumerable<Vector2Int> BoundaryGaps(JObject room)
+        {
+            var draft = Sokoban.Core.LegacyRoomAdapter.ToDraft(ToLegacyData(room));
+            return Sokoban.Core.RoomValidator.ValidateDraft(draft, Sokoban.Core.ValidationStage.Publish)
+                .Where(issue => issue.RuleId == "boundary.open")
+                .Select(issue => ParseCoreCell(issue.Location))
+                .ToList();
+        }
+
+        static Vector2Int ParseCoreCell(string text)
+        {
+            var parts = text.Trim('(', ')').Split(',');
+            return new Vector2Int(int.Parse(parts[0]), int.Parse(parts[1]));
+        }
+
+        public static IEnumerable<Vector2Int> LegacyBoundaryGaps(JObject room)
         {
             var size = Size(room);
             var openings = new HashSet<Vector2Int>(room["doors"].Select(At));

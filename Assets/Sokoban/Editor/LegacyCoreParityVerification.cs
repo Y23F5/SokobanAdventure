@@ -35,7 +35,7 @@ namespace Sokoban.Editor
                     var room = RoomFile.Parse(File.ReadAllText(Path.Combine(Application.streamingAssetsPath, "World/" + name + ".room.json")), true);
                     var draft = LegacyRoomAdapter.ToDraft(RoomFile.ToLegacyData(room));
                     var issues = RoomValidator.ValidateDraft(draft, ValidationStage.Publish);
-                    var legacy = new HashSet<Vector2Int>(RoomFile.BoundaryGaps(room));
+                    var legacy = new HashSet<Vector2Int>(RoomFile.LegacyBoundaryGaps(room));
                     var core = Gaps(issues);
                     foreach (var cell in legacy.Except(core)) failures.Add(name + " 旧实现有缺口而 Core 没有：" + cell);
                     foreach (var cell in core.Except(legacy)) failures.Add(name + " Core 有缺口而旧实现没有：" + cell);
