@@ -2,8 +2,8 @@
  * @file RoomCodec.cs
  * @brief 房间文件的数据与编解码：类型化地形网格、对象、门、主入口与恢复道具，用 MiniJson 读写，不依赖外部库。
  * RecoveryItem：恢复道具（道具 ID、脚本引用、时长秒、数值参数表），ID 与房内对象共用同一份 ID 空间。
- * RoomDocument：房间文件的内存形态，含 Room、门列表、主入口门 ID（可为空）与恢复道具列表。
- * 对象记录可带可选的 recoveryX、recoveryY（箱子恢复格），缺省表示没有；
+ * RoomDocument：房间文件的内存形态，含 Room、门列表、主入口门 ID（可为空）、恢复道具列表与 Extras 透传字段包（可省略，默认为空）。
+ * 对象记录可带可选的 recoveryX、recoveryY（箱子恢复格）与 decorationKind、appearanceRef（旧房间装饰类型与外观引用），缺省表示没有；根可带可选的 extras（string 到 string 的透传字段包，Core 不解释，读写原样保留，缺省为空，值不是字符串时抛 FormatException）；
  * RoomCodec.Encode(doc)：写成 JSON 文本；小数不进 JSON，时长与参数按千分之一取整数；写完先调用 Decode 试读，失败抛 InvalidOperationException，调用方不应写入文件。
  * RoomCodec.Decode(text)：解析并校验格式号、尺寸、地形类别、对象类别、格子范围、ID 唯一、时长为正与主入口引用，任何问题统一抛 FormatException。
  */
@@ -35,13 +35,18 @@ namespace Sokoban.Core
         public IReadOnlyList<DoorInfo> Doors { get; }
         public string PrimaryEntranceId { get; }
         public IReadOnlyList<RecoveryItem> RecoveryItems { get; }
+        public IReadOnlyDictionary<string, string> Extras { get; }
 
-        public RoomDocument(Room room, IReadOnlyList<DoorInfo> doors, string primaryEntranceId, IReadOnlyList<RecoveryItem> recoveryItems)
+        public RoomDocument(Room room, IReadOnlyList<DoorInfo> doors, string primaryEntranceId, IReadOnlyList<RecoveryItem> recoveryItems, IEnumerable<KeyValuePair<string, string>> extras = null)
         {
             Room = room;
             Doors = doors ?? new List<DoorInfo>();
             PrimaryEntranceId = primaryEntranceId;
             RecoveryItems = recoveryItems ?? new List<RecoveryItem>();
+            var bag = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (extras != null)
+                foreach (var pair in extras) bag[pair.Key] = pair.Value;
+            Extras = bag;
         }
     }
 
@@ -79,7 +84,11 @@ namespace Sokoban.Core
                 ["id"] = o.Id, ["category"] = o.CategoryId, ["x"] = (long)o.Cell.X, ["y"] = (long)o.Cell.Y
             }).ToList();
             foreach (var (o, rec) in room.Objects.Zip(objects, (o, rec) => (o, (Dictionary<string, object>)rec)))
+            {
                 if (o.RecoveryCell.HasValue) { rec["recoveryX"] = (long)o.RecoveryCell.Value.X; rec["recoveryY"] = (long)o.RecoveryCell.Value.Y; }
+                if (o.DecorationKind != null) rec["decorationKind"] = o.DecorationKind;
+                if (o.AppearanceRef != null) rec["appearanceRef"] = o.AppearanceRef;
+            }
             var doors = doc.Doors.Select(d => (object)new Dictionary<string, object>
             {
                 ["id"] = d.Id, ["x"] = (long)d.Cell.X, ["y"] = (long)d.Cell.Y,
@@ -107,6 +116,12 @@ namespace Sokoban.Core
                 ["primaryEntranceId"] = doc.PrimaryEntranceId,
                 ["recovery"] = items,
             };
+            if (doc.Extras.Count > 0)
+            {
+                var extras = new Dictionary<string, object>();
+                foreach (var pair in doc.Extras) extras[pair.Key] = pair.Value;
+                root["extras"] = extras;
+            }
             string text = MiniJson.Write(root);
             try { Decode(text); }
             catch (FormatException e) { throw new InvalidOperationException("房间文件试读失败：" + e.Message, e); }
@@ -181,7 +196,7 @@ namespace Sokoban.Core
                     recoveryCell = new Cell(Int(rec, "recoveryX"), Int(rec, "recoveryY"));
                     if (!room.Inside(recoveryCell.Value)) throw new FormatException("对象恢复格 " + recoveryCell.Value + " 超出房间");
                 }
-                room.AddObject(Str(rec, "id"), category, CellOf(room, rec, "对象"), recoveryCell);
+                room.AddObject(Str(rec, "id"), category, CellOf(room, rec, "对象"), recoveryCell, OptStr(rec, "decorationKind"), OptStr(rec, "appearanceRef"));
             }
 
             var doors = new List<DoorInfo>();
@@ -208,7 +223,13 @@ namespace Sokoban.Core
             string primary = OptStr(root, "primaryEntranceId");
             if (primary != null && !doors.Any(d => d.Id == primary && d.Role == "entry"))
                 throw new FormatException("主入口 " + primary + " 不是入口门");
-            return new RoomDocument(room, doors, primary, recovery);
+            var extras = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (root.TryGetValue("extras", out var rawExtras) && rawExtras != null)
+            {
+                foreach (var pair in Obj(rawExtras, "extras"))
+                    extras[pair.Key] = pair.Value as string ?? throw new FormatException("extras 字段 " + pair.Key + " 不是字符串");
+            }
+            return new RoomDocument(room, doors, primary, recovery, extras);
         }
     }
 }

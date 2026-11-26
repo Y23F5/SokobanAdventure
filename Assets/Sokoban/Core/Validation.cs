@@ -5,7 +5,7 @@
  * ValidationStage：草稿级与发布级两个档位。
  * Issue：一条校验结果，带规则 ID、定位（格子或对象 ID）与原因文字。
  * Rule：一条规则，声明规则 ID、草稿级与发布级严重级别以及判定函数。
- * RoomValidator.Validate(room, stage, entry)：运行全部规则并按档位映射严重级别，返回结果列表。
+ * RoomValidator.Validate(room, stage, entry)：运行全部规则并按档位映射严重级别，返回结果列表；object.notOnFloor 与 object.sharedCell 同样覆盖装饰物（custom 类别对象）。
  * RoomValidator.HasErrors(issues)：判断结果中是否存在错误，发布级存在错误时阻止试玩、保存与导出。
  * entry 为主入口内侧的入口缓冲格，缺主入口时传 null。
  * RoomValidator.ValidateDraft(draft, stage)：在 Validate 之上，为草稿模型追加 recovery.none（没有恢复道具）、door.geometry（门格不是门地形、外侧不是空格或内侧不是地板，两档均为错误）与 boundary.open（非门格的地板紧邻空格或房间边缘，草稿提示、发布错误）两条规则。

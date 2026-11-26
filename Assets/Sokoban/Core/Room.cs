@@ -2,11 +2,11 @@
  * @file Room.cs
  * @brief Room 是房间的类型化编辑模型：每格一条地形记录的网格，加每格最多一个对象的对象表，对象与地形实体共用每房唯一的 ID 空间。
  * TerrainCell：一格地形的数据（类别 ID、可选实体 ID、初始状态）。
- * PlacedObject：一个对象（ID、类别 ID、格子、可选的恢复格 RecoveryCell，仅箱子使用，默认为空）。
+ * PlacedObject：一个对象（ID、类别 ID、格子、可选的恢复格 RecoveryCell，仅箱子使用，默认为空；可选的装饰类型 DecorationKind 与外观引用 AppearanceRef，仅旧房间装饰使用，默认为空，Core 不解释）。
  * Room(id, width, height)：构造全空格（void）的房间。
  * TerrainAt(cell)、Inside(cell)：读取地形与判断是否在房间矩形内，越界读取返回 void 记录。
  * SetTerrain(cell, categoryId, entityId, state)：写入一格地形，实体 ID 非空时登记到 ID 空间。
- * AddObject(id, categoryId, cell, recoveryCell)：登记对象，recoveryCell 可省略，ID 重复抛 ArgumentException。
+ * AddObject(id, categoryId, cell, recoveryCell, decorationKind, appearanceRef)：登记对象，后三项可省略，ID 重复抛 ArgumentException。
  * RemoveObject(id)：移除对象并释放 ID。
  * ObjectAt(cell)、ObjectsOf(categoryId)：按格子与类别查询对象。
  */
@@ -36,13 +36,17 @@ namespace Sokoban.Core
         public string CategoryId { get; }
         public Cell Cell { get; }
         public Cell? RecoveryCell { get; }
+        public string DecorationKind { get; }
+        public string AppearanceRef { get; }
 
-        public PlacedObject(string id, string categoryId, Cell cell, Cell? recoveryCell = null)
+        public PlacedObject(string id, string categoryId, Cell cell, Cell? recoveryCell = null, string decorationKind = null, string appearanceRef = null)
         {
             Id = id;
             CategoryId = categoryId;
             Cell = cell;
             RecoveryCell = recoveryCell;
+            DecorationKind = decorationKind;
+            AppearanceRef = appearanceRef;
         }
     }
 
@@ -85,10 +89,10 @@ namespace Sokoban.Core
             grid[cell.X, cell.Y] = new TerrainCell(categoryId, entityId, state);
         }
 
-        public PlacedObject AddObject(string id, string categoryId, Cell cell, Cell? recoveryCell = null)
+        public PlacedObject AddObject(string id, string categoryId, Cell cell, Cell? recoveryCell = null, string decorationKind = null, string appearanceRef = null)
         {
             Ids.Add(id, categoryId);
-            var placed = new PlacedObject(id, categoryId, cell, recoveryCell);
+            var placed = new PlacedObject(id, categoryId, cell, recoveryCell, decorationKind, appearanceRef);
             objects.Add(placed);
             return placed;
         }
