@@ -279,7 +279,7 @@ namespace Sokoban.Editor
                     Choice(node, item, "地形开关", "state", new[] { "on", "off" });
                     break;
                 case BehaviorNodeKinds.ShowText: Field(node, item, "文字", "text", true); break;
-                case BehaviorNodeKinds.PlaySound: Field(node, item, "音效名", "sound"); break;
+                case BehaviorNodeKinds.PlaySound: Choice(node, item, "音效", "sound", PuzzleHost.BuiltinSounds); break;
                 case BehaviorNodeKinds.Lua: Field(node, item, "Lua 脚本", "script", true); break;
             }
         }

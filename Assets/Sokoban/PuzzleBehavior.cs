@@ -7,6 +7,7 @@
  */
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using Sokoban.Core;
 using UnityEngine;
 
@@ -72,6 +73,9 @@ namespace Sokoban
                         Run.SetTerrainState(targetRoom, ObjectBehavior.Parameter(node, "targetTerrain") ?? effect.owner,
                             ObjectBehavior.Parameter(node, "state") == "on");
                         break;
+                    case BehaviorNodeKinds.PlaySound:
+                        PlaySound(ObjectBehavior.Parameter(node, "sound"));
+                        break;
                     case BehaviorNodeKinds.ShowText:
                         message = ObjectBehavior.Parameter(node, "text");
                         break;
@@ -101,6 +105,24 @@ namespace Sokoban
             if (Run.PendingItem == null && !string.IsNullOrWhiteSpace(message)) panels.ShowInformation(Run.Room.Meta.Name, message);
             Persist();
             return true;
+        }
+
+        public static IReadOnlyList<string> BuiltinSounds { get; } = Array.AsReadOnly(new[]
+            { "interact", "push", "gateOpen", "gateClose", "recoveryStart", "recoveryEnd" });
+        AudioSource effectAudio;
+
+        void PlaySound(string name)
+        {
+            if (!BuiltinSounds.Contains(name)) return;
+            var clip = Resources.Load<AudioClip>("PuzzleAudio/" + name);
+            if (!clip) return;
+            if (!effectAudio)
+            {
+                effectAudio = gameObject.AddComponent<AudioSource>();
+                effectAudio.playOnAwake = false;
+                effectAudio.spatialBlend = 0;
+            }
+            effectAudio.PlayOneShot(clip);
         }
 
         void SyncTerrainGates(string roomId, Transform group)
