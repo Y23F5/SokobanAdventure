@@ -45,7 +45,8 @@ namespace Sokoban.Editor
             node["target"]=new JObject{["levelId"]="factory",["objectId"]="box-1"};draft.SetBehavior(new Vector2Int(2,0),graph);
             var bound=draft.Room["events"].Single().DeepClone();draft.Save(Path.Combine(Folder,"before.world.json"),true);draft.UseRoom("factory");
             var target=draft.Find("box-1").DeepClone();var before=draft.Catalog.DeepClone();
-            Check(draft.Brush(new[]{RoomFile.At(target)},RoomTool.Erase)==null && draft.Find("box-1")==null,"erase removes actual target box");
+            Check(draft.Brush(new[]{RoomFile.At(target)},RoomTool.Erase)!=null && draft.Find("box-1")!=null && JToken.DeepEquals(before,draft.Catalog),"erase over an object is refused and leaves the draft unchanged");
+            draft.RemoveObject("box-1"); Check(draft.Find("box-1")==null,"remove deletes actual target box");
             Check(JToken.DeepEquals(bound,draft.Catalog["warehouse"]["events"].Single()),"source graph retains cross-room reference after erase");
             var rejected=Path.Combine(Folder,"rejected.world.json");try{draft.Save(rejected,true);throw new Exception("dangling export accepted");}
             catch(InvalidDataException ex){Check(ex.Message.Contains("factory/box-1") && ex.Message.Contains((string)node["id"]) && !File.Exists(rejected),"rejected export: "+ex.Message);}

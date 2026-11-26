@@ -2,7 +2,7 @@
  * @file WorkspaceDraft.cs
  * @brief Reset/NewRoom 初始化工作区。Design/State/Apply、Snapshot/Recover 保存与还原设计、选择及双向历史。
  * Remember 在命令提交前记录，UseRoom/RoomAt 切换房间。BeginWorld、Attach、PlaceRoom 和 RemoveRoom 管理房间清单。
- * Brush 提交整笔地形或对象擦除；Rename 修改名称。Origin 将世界格转换到当前房间。
+ * Brush 先经 Core 的 BrushPlanner 整笔预检，任一格非法即整笔拒绝，擦除只改地形、格上有对象则拒绝；RemoveObject 删除箱、目标或装饰并连带删除其行为图；Rename 修改名称。Origin 将世界格转换到当前房间。
  */
 using System;
 using System.IO;
@@ -172,8 +172,26 @@ namespace Sokoban
             }
             return tool == RoomTool.Wall && NeedsFloor(Room, cell) ? "对象或门内侧占用 " + cell : null;
         }
+        public void RemoveObject(string id)
+        {
+            var item = Find(id);
+            RoomFile.Check(item != null && (item.Parent == Room["boxes"] || item.Parent == Room["targets"] || item.Parent == Room["decorations"]), "请选择箱子、目标或装饰");
+            var next = (JObject)Room.DeepClone();
+            var obj = RoomFile.Objects(next).First(o => (string)o["id"] == id);
+            if (obj["definitionId"] != null)
+                foreach (var graph in next["events"].Where(graph => (string)graph["ownerId"] == id).ToArray()) graph.Remove();
+            obj.Remove();
+            Commit(next, null);
+        }
         public string Brush(IEnumerable<Vector2Int> cells,RoomTool tool) {
             var points = cells.Distinct().ToArray();
+            var core = tool == RoomTool.Wall || tool == RoomTool.Floor || tool == RoomTool.Erase ? TryCoreDraft() : null;
+            if (core != null)
+            {
+                var plan = Sokoban.Core.BrushPlanner.Preflight(core, points.Select(p => new Sokoban.Core.Cell(p.x, p.y)),
+                    tool == RoomTool.Wall ? Sokoban.Core.BrushTool.Wall : tool == RoomTool.Floor ? Sokoban.Core.BrushTool.Floor : Sokoban.Core.BrushTool.Erase);
+                if (plan.Error != null) return plan.Error;
+            }
             var size = RoomFile.Size(Room);
             var min = Vector2Int.zero;
             var max = size - Vector2Int.one;

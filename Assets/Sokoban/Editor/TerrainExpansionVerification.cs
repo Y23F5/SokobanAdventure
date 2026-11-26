@@ -144,10 +144,18 @@ namespace Sokoban.Editor
             var blocked = draft.Brush(new[] { new Vector2Int(3, 4) }, RoomTool.Erase);
             Require(blocked != null && JToken.DeepEquals(initial, draft.Snapshot()), "擦掉箱子恢复格");
             var cell = RoomFile.At(draft.Find("box-a"));
+            var beforeErase = draft.Snapshot();
+            var refused = draft.Brush(new[] { cell }, RoomTool.Erase);
+            Require(refused != null && JToken.DeepEquals(beforeErase, draft.Snapshot()) && draft.Find("box-a") != null, "擦除跨对象格应整笔拒绝且草稿不变");
+            var free = Enumerable.Range(0, RoomFile.Size(draft.Room).x * RoomFile.Size(draft.Room).y)
+                .Select(i => new Vector2Int(i % RoomFile.Size(draft.Room).x, i / RoomFile.Size(draft.Room).x))
+                .First(p => draft.PlacementError(true, p, "box-a") == null);
+            draft.Select(cell);
+            draft.Tool = RoomTool.Move;
+            draft.Move(free);
+            Require(draft.Find("box-a") != null && RoomFile.At(draft.Find("box-a")) == free && RoomFile.Floor(draft.Room, cell), "箱子未能移出原格");
             Paint(draft, cell, RoomTool.Erase);
-            Require(draft.Find("box-a") == null && RoomFile.Floor(draft.Room, cell), "对象与脚下地板未分层擦除");
-            Paint(draft, cell, RoomTool.Erase);
-            Require(RoomFile.Terrain(draft.Room, cell) == RoomFile.Void, "第二笔没有擦除地板");
+            Require(RoomFile.Terrain(draft.Room, cell) == RoomFile.Void, "对象移走后擦除地板失败");
         }
 
         static RoomDraft Blank()
