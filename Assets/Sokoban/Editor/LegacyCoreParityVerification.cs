@@ -160,6 +160,30 @@ namespace Sokoban.Editor
                             }
                 }
                 Debug.Log("PARITY WORLD-PLACEMENT 比对点数=" + worldChecks);
+                var coreRooms = WorldLayout.ToCoreRooms(catalog);
+                int linkChecks = 0;
+                string Join(IEnumerable<string> lines) => string.Join(" | ", lines);
+                string oldBase = Join(WorldLayout.LegacyConnectionIssues(legacyWorld, catalog));
+                string routedBase = Join(WorldLayout.ConnectionIssues(legacyWorld, catalog));
+                if (routedBase != oldBase) failures.Add("转调后的 ConnectionIssues 与旧判定不一致（原样）：旧=" + oldBase + " 转调=" + routedBase);
+                string newBase = Join(WorldValidator.Connections(coreWorld, coreRooms));
+                linkChecks++;
+                if (oldBase != newBase) failures.Add("世界连接检查不一致（原样）：旧=" + oldBase + " 新=" + newBase);
+                foreach (var roomRef in coreWorld.Rooms)
+                    for (int lx = -2; lx <= 24; lx++)
+                        for (int ly = -1; ly <= 3; ly++)
+                        {
+                            string oldMove = Join(WorldLayout.LegacyConnectionIssues(legacyWorld, catalog, roomRef.LevelId, new Vector2Int(lx, ly)));
+                            string routedMove = Join(WorldLayout.ConnectionIssues(legacyWorld, catalog, roomRef.LevelId, new Vector2Int(lx, ly)));
+                            if (routedMove != oldMove) failures.Add("转调后的 ConnectionIssues 平移预演不一致 " + roomRef.LevelId + " (" + lx + "," + ly + ")：旧=" + oldMove + " 转调=" + routedMove);
+                            string newMove = Join(WorldValidator.Connections(coreWorld, coreRooms, roomRef.LevelId, new Sokoban.Core.Cell(lx, ly)));
+                            linkChecks++;
+                            if (oldMove != newMove) failures.Add("世界连接平移预演不一致 " + roomRef.LevelId + " (" + lx + "," + ly + ")：旧=" + oldMove + " 新=" + newMove);
+                        }
+                var oldEnds = WorldLayout.Issues(legacyWorld, catalog).Where(i => i.StartsWith("世界起点") || i.StartsWith("世界终点门")).ToList();
+                var newEnds = WorldValidator.Endpoints(coreWorld, coreRooms).ToList();
+                if (oldEnds.Count != newEnds.Count) failures.Add("起终点检查条数不一致：旧=" + oldEnds.Count + " 新=" + newEnds.Count);
+                Debug.Log("PARITY WORLD-LINKS 比对点数=" + linkChecks + " 起终点问题=" + newEnds.Count);
             }
             catch (Exception ex)
             {

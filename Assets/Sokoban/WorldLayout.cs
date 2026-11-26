@@ -88,6 +88,18 @@ namespace Sokoban
         }
         public static IEnumerable<string> ConnectionIssues(JObject world,JObject rooms,string movingRoom=null,Vector2Int candidate=default)
         {
+            List<string> routed = null;
+            try
+            {
+                var core = Sokoban.Core.WorldCodec.Decode(world.ToString(Newtonsoft.Json.Formatting.None));
+                routed = Sokoban.Core.WorldValidator.Connections(core, ToCoreRooms(rooms), movingRoom, new Sokoban.Core.Cell(candidate.x, candidate.y)).ToList();
+            }
+            catch (FormatException) { }
+            catch (InvalidDataException) { }
+            return routed ?? LegacyConnectionIssues(world, rooms, movingRoom, candidate).ToList();
+        }
+        public static IEnumerable<string> LegacyConnectionIssues(JObject world,JObject rooms,string movingRoom=null,Vector2Int candidate=default)
+        {
             var ids=new HashSet<string>();
             var endpoints=new HashSet<(string,string)>();
             foreach(var link in world["connections"]) {
@@ -107,6 +119,17 @@ namespace Sokoban
                         yield return label+" 直连门不相邻或朝向不匹配";
                 } else if((string)link["mode"]!="teleport") yield return label+" 连接方式无效";
             }
+        }
+        public static Dictionary<string, Sokoban.Core.WorldRoomInfo> ToCoreRooms(JObject rooms)
+        {
+            var result = new Dictionary<string, Sokoban.Core.WorldRoomInfo>();
+            foreach (var pair in rooms)
+            {
+                var data = RoomFile.ToLegacyData((JObject)pair.Value);
+                var draft = Sokoban.Core.LegacyRoomAdapter.ToDraft(data);
+                result[pair.Key] = new Sokoban.Core.WorldRoomInfo(pair.Key, data.Spawn?.Id, draft.Doors);
+            }
+            return result;
         }
         static void RequireValid(JObject world,JObject rooms)
         {
