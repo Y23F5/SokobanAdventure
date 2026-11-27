@@ -866,7 +866,9 @@ namespace Sokoban.Editor
         void RotateShortcut(int turns)
         {
             var draft = Panel.Draft;
-            if (draft.Tool == RoomTool.Select) Rotate(turns);
+            if (draft.Tool == RoomTool.Select && !draft.SelectedCell.HasValue && draft.Model.RecoveryDevice != null)
+                Panel.Run(() => draft.RotateRecoveryDevice(turns), "已旋转恢复装置");
+            else if (draft.Tool == RoomTool.Select) Rotate(turns);
             else if (draft.Tool != RoomTool.Move && draft.Tool != RoomTool.Erase) draft.RotateBrush(turns);
         }
 

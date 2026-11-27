@@ -319,7 +319,9 @@ namespace Sokoban.Editor
                 : ev.keyCode == KeyCode.RightBracket || ev.character == ']' ? 1 : 0;
             if (turns != 0 && !ev.control && !ev.command)
             {
-                if (draft.Tool == RoomTool.Select) Panel.Run(() => draft.RotateSelection(turns), "已旋转所选内容");
+                if (draft.Tool == RoomTool.Select && !draft.SelectedCell.HasValue && draft.Model.RecoveryDevice != null)
+                    Panel.Run(() => draft.RotateRecoveryDevice(turns), "已旋转恢复装置");
+                else if (draft.Tool == RoomTool.Select) Panel.Run(() => draft.RotateSelection(turns), "已旋转所选内容");
                 else if (draft.Tool != RoomTool.Move && draft.Tool != RoomTool.Erase) draft.RotateBrush(turns);
                 return true;
             }
