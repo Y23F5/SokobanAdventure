@@ -506,6 +506,8 @@ namespace Sokoban.Editor
             if (tab == PaletteTabs.Other)
             {
                 AddCard(area, draft, "提示物件", null, false, () => UseTool(RoomTool.Hint), draft.Tool == RoomTool.Hint);
+                AddCard(area, draft, "入口（主入口会自动生成出生点）", "LayoutModels/Door", true, () => UseTool(RoomTool.Entry), draft.Tool == RoomTool.Entry);
+                AddCard(area, draft, "出口", "LayoutModels/Door", true, () => UseTool(RoomTool.Exit), draft.Tool == RoomTool.Exit);
                 DrawRecoveryDevice(area, draft);
             }
 

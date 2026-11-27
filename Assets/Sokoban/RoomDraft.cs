@@ -280,6 +280,13 @@ namespace Sokoban
             var error = DoorMarkerError(cell, turns);
             RoomFile.Check(error == null, error);
             var outward = MarkerOutward(cell, turns).Value;
+            if (role == "entry" && Model.PrimaryEntranceId == null)
+            {
+                var inwardCell = cell - outward;
+                RoomFile.Check(Room.TerrainAt(inwardCell).CategoryId == TerrainCategories.Floor, "入口内侧须为地板，无法生成出生点");
+                var inwardOccupant = Room.ObjectAt(inwardCell);
+                RoomFile.Check(inwardOccupant == null || inwardOccupant.CategoryId == ObjectCategories.Spawn, "入口内侧被对象占用 " + inwardCell + "，无法生成出生点");
+            }
             string id = FreshMarkerId(role);
             Commit(new AddDoorCommand(holders[ActiveId], new DoorInfo(id, cell, outward, role), BrushCategory == role ? BrushAppearance : null), id);
             NotifyPlacement(id);
@@ -347,6 +354,11 @@ namespace Sokoban
                 if (after == null)
                 {
                     after = CloneWith(before, before.Doors.Append(door), primary);
+                    if (before.PrimaryEntranceId == null && door.Role == "entry")
+                    {
+                        foreach (var oldSpawn in after.Room.ObjectsOf(ObjectCategories.Spawn).ToList()) after.Room.RemoveObject(oldSpawn.Id);
+                        after.Room.AddObject("spawn", ObjectCategories.Spawn, door.Cell - door.Outward, null, 0);
+                    }
                     if (appearance != null) after.Room.SetAppearance(door.Cell, appearance);
                 }
                 holder.Draft = after;
