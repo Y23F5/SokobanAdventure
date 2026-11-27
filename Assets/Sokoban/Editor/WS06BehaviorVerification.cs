@@ -254,10 +254,12 @@ namespace Sokoban.Editor
             editor.Panel.Draft.Open(path, false);
             var trigger = ObjectBehavior.Node(TriggerIds.RoomSolved, null, "solved");
             var recoveryStart = ObjectBehavior.Node(TriggerIds.RecoveryStart, null, "started");
-            var recovery = ObjectBehavior.Node(BehaviorNodeKinds.StartRecovery, new Dictionary<string, string> { ["recovery"] = "ignored-legacy-item" }, "recover");
+            var recovery = ObjectBehavior.Node(ObjectBehavior.Lua,
+                new Dictionary<string, string> { ["script"] = "self.startRecovery()" }, "recover");
+            var repeat = ObjectBehavior.Node(BehaviorNodeKinds.StartRecovery, id: "repeat");
             editor.Panel.Draft.SetBehavior(new Cell(4, 3), new BehaviorGraph("solve-recovery", null,
-                new[] { trigger, recoveryStart, recovery }, new[] { new BehaviorEdge("solved", "out", "recover", "in"),
-                    new BehaviorEdge("started", "out", "recover", "in") }));
+                new[] { trigger, recoveryStart, recovery, repeat }, new[] { new BehaviorEdge("solved", "out", "recover", "in"),
+                    new BehaviorEdge("started", "out", "repeat", "in") }));
             editor.StartTrial();
             yield return null; yield return null;
             var chained = Object.FindObjectOfType<PuzzleHost>();
@@ -266,7 +268,7 @@ namespace Sokoban.Editor
             yield return null;
             Check(chained.Move(Vector2Int.right) && chained.Run.Recovering && !chained.Busy &&
                 chained.panels.Modal && chained.panels.discoveryText.text == "recovery start",
-                "solved graph starts and dispatches recovery immediately; start cannot re-enter recovery");
+                "solved graph calls self.startRecovery() and dispatches immediately; start node cannot re-enter recovery");
         }
     }
 }

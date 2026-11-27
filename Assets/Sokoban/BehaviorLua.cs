@@ -29,7 +29,13 @@ namespace Sokoban
                 return DynValue.Nil;
             }));
             AddTextAction(self, condition, effects, BehaviorNodeKinds.SetState, "state");
-            AddTextAction(self, condition, effects, BehaviorNodeKinds.StartRecovery, "recovery");
+            self.Set(BehaviorNodeKinds.StartRecovery, DynValue.NewCallback((ctx, args) =>
+            {
+                if (condition || effects == null || args.Count != 0)
+                    throw new ScriptRuntimeException("self.startRecovery 不接收参数且只能用于动作");
+                effects.Add(ObjectBehavior.Node(BehaviorNodeKinds.StartRecovery));
+                return DynValue.Nil;
+            }));
             AddTextAction(self, condition, effects, BehaviorNodeKinds.ShowText, "text");
             AddTextAction(self, condition, effects, BehaviorNodeKinds.PlaySound, "sound");
             self.Set(BehaviorNodeKinds.SetTerrainState, DynValue.NewCallback((ctx, args) =>
