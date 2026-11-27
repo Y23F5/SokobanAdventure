@@ -17,7 +17,7 @@ using UnityEngine.UIElements;
 
 namespace Sokoban.Editor
 {
-    internal sealed class BehaviorGraphWindow : EditorWindow
+    public sealed class BehaviorGraphWindow : EditorWindow
     {
         static readonly Dictionary<string, string> Labels = new Dictionary<string, string>
         {
@@ -55,9 +55,12 @@ namespace Sokoban.Editor
         Cell? cell;
         BehaviorGraph graph;
         int revision = -1, selectionCount;
+        string selectedId;
         bool readOnly = true;
+        bool deviceSelected;
+        Button poseButton, templateButton;
 
-        internal static void Open()
+        public static void Open()
         {
             var panel = WorldSceneSession.Panel;
             if (!WorldSceneSession.Active || panel == null || panel.Modal || !panel.Draft.SelectedCell.HasValue) return;
@@ -66,6 +69,14 @@ namespace Sokoban.Editor
             window.Show();
             window.Focus();
             window.Update();
+        }
+
+        public static void OpenRecoveryDevice()
+        {
+            var panel = WorldSceneSession.Panel;
+            if (!WorldSceneSession.Active || panel == null || panel.Modal || panel.Draft.Model.RecoveryDevice == null) return;
+            panel.Draft.Select(panel.Draft.Model.RecoveryDevice.Anchor);
+            Open();
         }
 
         public static void VerifyRoundTrip()
@@ -134,6 +145,46 @@ namespace Sokoban.Editor
             finally { DestroyImmediate(window); layout.Close(); }
         }
 
+        public static void VerifyRecoveryDeviceAuthoring()
+        {
+            var layout = RoomLayoutWindow.Open();
+            var draft = layout.Panel.Draft;
+            BehaviorGraphWindow window = null;
+            try
+            {
+                draft.Open("Docs/关卡样例/WS-01.json", true);
+                if (draft.Model.RecoveryDevice == null) throw new InvalidOperationException("验证房间缺少恢复装置");
+                OpenRecoveryDevice();
+                window = GetWindow<BehaviorGraphWindow>();
+                window.Update();
+                if (!window.deviceSelected || !window.CanEdit() || window.graph.OwnerId != draft.Model.RecoveryDevice.Id)
+                    throw new InvalidOperationException("恢复装置行为图未绑定");
+                string id = window.graph.Id;
+                var items = window.graph.Nodes.Concat(new[] { ObjectBehavior.Node(BehaviorNodeKinds.ShowText,
+                    new Dictionary<string, string> { ["text"] = "verification" }) }).ToArray();
+                if (!window.Commit(items, window.graph.Edges)) throw new InvalidOperationException("装置图未写入");
+                if (!draft.RecoveryDeviceGraphs().Any(item => item.Id == id && item.Nodes.Any(node => ObjectBehavior.Parameter(node, "text") == "verification")))
+                    throw new InvalidOperationException("装置图内容错误");
+                window.OpenPose();
+                LuaEditorWindow.VerifyRecoveryPoseEditor(draft);
+                const string path = "Docs/验收证据/重建/阶段3/device-authoring-room.json";
+                draft.Save(path, false);
+                draft.Open(path, false);
+                OpenRecoveryDevice();
+                window.Update();
+                if (!window.deviceSelected || !draft.RecoveryDeviceGraphs().Any(item => item.Id == id && item.Nodes.Any(node => ObjectBehavior.Parameter(node, "text") == "verification")))
+                    throw new InvalidOperationException("重新打开后装置图未恢复");
+                if (!draft.GetRecoveryPoseSource().Contains("function pose(t, ctx) return {{id=ctx.boxId, x=1, y=0, z=2}} end"))
+                    throw new InvalidOperationException("重新打开后姿态脚本未恢复");
+                Debug.Log("DEVICE AUTHORING PASS 装置图、姿态校验、撤销重做与保存重开");
+            }
+            finally
+            {
+                if (window) window.Close();
+                layout.Close();
+            }
+        }
+
         public void CreateGUI()
         {
             rootVisualElement.Clear();
@@ -146,6 +197,10 @@ namespace Sokoban.Editor
             bar.Add(new ToolbarButton(() => History(false)) { text = "撤销" });
             bar.Add(new ToolbarButton(() => History(true)) { text = "重做" });
             bar.Add(new ToolbarButton(() => canvas.FrameAll()) { text = "显示全部" });
+            templateButton = new ToolbarButton(UseDeviceTemplate) { text = "装置默认图" };
+            poseButton = new ToolbarButton(OpenPose) { text = "编辑恢复姿态 Lua" };
+            bar.Add(templateButton);
+            bar.Add(poseButton);
             rootVisualElement.Add(bar);
             canvas = new Canvas { style = { flexGrow = 1 } };
             var grid = new GridBackground();
@@ -199,24 +254,56 @@ namespace Sokoban.Editor
             var next = WorldSceneSession.Active ? WorldSceneSession.Panel : null;
             var draft = next?.Draft;
             if (panel == next && model == draft?.Model && cell == draft?.SelectedCell && revision == (draft?.Revision ?? -1)
-                && selectionCount == (draft?.Selection.Count ?? 0)) return;
+                && selectionCount == (draft?.Selection.Count ?? 0) && selectedId == draft?.Selected) return;
             panel = next;
             model = draft?.Model;
             cell = draft?.SelectedCell;
             revision = draft?.Revision ?? -1;
             selectionCount = draft?.Selection.Count ?? 0;
-            bool selected = cell.HasValue && draft.Room.TerrainAt(cell.Value).CategoryId != TerrainCategories.Void;
-            string owner = selected ? draft.OwnerAt(cell.Value) : null;
-            graph = selected ? draft.GraphOf(cell.Value) : null;
+            selectedId = draft?.Selected;
+            deviceSelected = draft != null && draft.Model.RecoveryDevice != null && draft.Selected == draft.Model.RecoveryDevice.Id;
+            bool selected = deviceSelected || cell.HasValue && draft.Room.TerrainAt(cell.Value).CategoryId != TerrainCategories.Void;
+            string owner = deviceSelected ? draft.Model.RecoveryDevice.Id : selected ? draft.OwnerAt(cell.Value) : null;
+            graph = deviceSelected ? draft.RecoveryDeviceGraphs().FirstOrDefault() : selected ? draft.GraphOf(cell.Value) : null;
             readOnly = !selected || owner != null && model.Instances.Any(item => item.Id == owner) && !model.Graphs.Any(item => item.OwnerId == owner);
             if (selected && graph == null)
-                graph = new BehaviorGraph(Guid.NewGuid().ToString("N"), owner, Array.Empty<BehaviorNode>(), Array.Empty<BehaviorEdge>());
+                graph = deviceSelected ? draft.RecoveryDeviceGraphTemplate() : new BehaviorGraph(Guid.NewGuid().ToString("N"), owner, Array.Empty<BehaviorNode>(), Array.Empty<BehaviorEdge>());
+            templateButton.SetEnabled(deviceSelected && !readOnly);
+            poseButton.SetEnabled(deviceSelected && !readOnly);
             title.text = selected ? $"{draft.ActiveId}  ·  {owner ?? cell.Value.ToString()}" + BatchLabel() : "在 Scene View 选择地形或物件";
             status.text = selected && readOnly ? "此物件继承模板行为。" : "";
             Rebuild();
         }
 
-        string BatchLabel() => selectionCount > 1 ? $"  ·  {selectionCount} 格，分别保存独立副本" : "";
+        string BatchLabel() => !deviceSelected && selectionCount > 1 ? $"  ·  {selectionCount} 格，分别保存独立副本" : "";
+
+        void UseDeviceTemplate()
+        {
+            if (!CanEdit() || !deviceSelected) return;
+            if (panel.Draft.RecoveryDeviceGraphs().Any(item => item.Id == graph.Id) &&
+                !EditorUtility.DisplayDialog("替换装置行为图", "载入默认图会替换当前图的节点和连线。", "替换", "取消")) return;
+            var template = panel.Draft.RecoveryDeviceGraphTemplate();
+            if (Commit(template.Nodes, template.Edges)) Rebuild();
+        }
+
+        void OpenPose()
+        {
+            if (!CanEdit() || !deviceSelected) return;
+            var draft = panel.Draft;
+            var boundModel = draft.Model;
+            string roomId = draft.ActiveId, deviceId = boundModel.RecoveryDevice.Id;
+            bool Bound() => WorldSceneSession.Active && WorldSceneSession.Panel == panel && panel.Draft == draft
+                && draft.Model == boundModel && draft.ActiveId == roomId && draft.Model.RecoveryDevice?.Id == deviceId;
+            try
+            {
+                LuaEditorWindow.OpenRecoveryPose(roomId + " · " + deviceId + " · 恢复姿态", draft.GetRecoveryPoseSource(),
+                    () => Bound() ? draft.Revision + "/" + draft.Model.RecoveryDevice.ScriptRef : null,
+                    () => Bound() ? draft.GetRecoveryPoseSource() : null,
+                    () => Bound() ? draft.GetDefaultRecoveryPoseSource() : null,
+                    text => { if (!Bound()) throw new InvalidOperationException("装置或房间已切换，请重新打开编辑器"); draft.SetRecoveryPoseSource(text); });
+            }
+            catch (Exception error) { status.text = error.Message; }
+        }
 
         void Rebuild()
         {
@@ -408,13 +495,18 @@ namespace Sokoban.Editor
         }
 
         bool CanEdit() => !readOnly && graph != null && panel != null && !panel.Modal && model == panel.Draft.Model
-            && cell == panel.Draft.SelectedCell && revision == panel.Draft.Revision;
+            && cell == panel.Draft.SelectedCell && revision == panel.Draft.Revision
+            && (!deviceSelected || panel.Draft.Selected == model.RecoveryDevice?.Id);
 
         bool Commit(IReadOnlyList<BehaviorNode> items, IReadOnlyList<BehaviorEdge> edges)
         {
             var draft = panel.Draft;
             string id = graph.Id;
-            panel.Run(() => draft.SetBehavior(cell.Value, new BehaviorGraph(id, graph.OwnerId, items, edges)), "已更新行为图");
+            panel.Run(() =>
+            {
+                var value = new BehaviorGraph(id, graph.OwnerId, items, edges);
+                if (deviceSelected) draft.SetRecoveryDeviceGraph(value); else draft.SetBehavior(cell.Value, value);
+            }, "已更新行为图");
             status.text = panel.Status;
             if (draft.Revision == revision) return false;
             revision = draft.Revision;
