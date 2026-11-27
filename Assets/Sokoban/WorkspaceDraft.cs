@@ -332,6 +332,11 @@ namespace Sokoban
         {
             if (tool != RoomTool.Wall && tool != RoomTool.Floor && tool != RoomTool.Erase) return "当前工具不是地形画刷";
             if (World != null && Placement == null) return "房间尚未放置";
+            if (tool == RoomTool.Erase)
+            {
+                var inside = cells.Where(cell => Room.Inside(cell)).ToArray();
+                if (inside.Length == cells.Count() && EraseContent(inside)) return null;
+            }
             var plan = BrushPlanner.Preflight(Model, cells, tool == RoomTool.Wall ? BrushTool.Wall : tool == RoomTool.Floor ? BrushTool.Floor : BrushTool.Erase, rotation: BrushRotation,
                 appearance: tool == RoomTool.Erase ? null : TerrainBrush(tool == RoomTool.Wall ? TerrainCategories.Wall : TerrainCategories.Floor));
             if (plan.Error != null) return plan.Error;

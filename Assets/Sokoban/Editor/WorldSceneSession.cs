@@ -334,14 +334,7 @@ namespace Sokoban.Editor
 
         static void DeleteAt(RoomDraft draft, Sokoban.Core.Cell cell)
         {
-            var placed = draft.Room.ObjectAt(cell);
-            if (placed != null && placed.CategoryId == Sokoban.Core.ObjectCategories.Box || System.Linq.Enumerable.Any(draft.Model.Doors, door => door.Cell == cell))
-            {
-                Panel.Status = "擦除不会删除箱子或门，请选中后用移动或专用入口处理";
-                Refresh();
-                return;
-            }
-            var id = placed?.Id ?? draft.Model.Decorations.Find(item => item.Cell == cell)?.Id;
+            var id = draft.Model.Decorations.Find(item => item.Cell == cell)?.Id;
             if (id != null) Panel.Run(() => draft.RemoveObject(id), "已删除");
             else
             {

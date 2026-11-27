@@ -109,7 +109,9 @@ namespace Sokoban.Editor
             draft.UseRoom("factory");
             var target = draft.Find("box-1");
             string factoryBefore = Encoded(draft.Model), warehouseBefore = Encoded(warehouse);
-            Check(draft.Brush(new[] { target.Cell }, RoomTool.Erase) != null && draft.Find("box-1") != null && Encoded(draft.Model) == factoryBefore, "erase over an object is refused and leaves the draft unchanged");
+            Check(draft.Brush(new[] { target.Cell }, RoomTool.Erase) == null && draft.Find("box-1") == null, "erase over an object removes it");
+            draft.Undo();
+            Check(draft.Find("box-1") != null && Encoded(draft.Model) == factoryBefore, "undoing the erase restores the object and leaves the draft unchanged");
             draft.RemoveObject("box-1");
             Check(draft.Find("box-1") == null, "remove deletes actual target box");
             Check(ReferenceEquals(bound, warehouse.Graphs.Single()) && Encoded(warehouse) == warehouseBefore, "source graph retains cross-room reference after removal");

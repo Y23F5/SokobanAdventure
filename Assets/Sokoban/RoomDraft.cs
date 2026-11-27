@@ -77,6 +77,7 @@ namespace Sokoban
         public Decoration FindDecoration(string id) => id == null ? null : Model.Decorations.FirstOrDefault(d => d.Id == id);
 
         string IdAt(Cell cell) => Room.ObjectAt(cell)?.Id ?? Model.Decorations.FirstOrDefault(d => d.Cell == cell)?.Id
+            ?? Model.Doors.FirstOrDefault(d => d.Cell == cell)?.Id
             ?? (Model.RecoveryDevice?.Anchor == cell ? Model.RecoveryDevice.Id : null);
 
         public void Select(Cell cell) => Select(cell, false);

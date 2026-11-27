@@ -290,11 +290,13 @@ namespace Sokoban
             }
             foreach (string category in PaletteTabs.CategoriesOf(tab))
             {
-                foreach (var item in pack.Where(item => item.category == category).OrderByDescending(item => item.theme == theme)
-                    .ThenBy(item => item.asset.Name, StringComparer.Ordinal))
-                    items.Add(new PaletteItem(tab, category, item.asset.Id, packNames[item.asset.Id], null, item.asset.Id, null, item.theme));
+                var bucket = new List<PaletteItem>();
+                foreach (var item in pack.Where(item => item.category == category).OrderBy(item => item.asset.Name, StringComparer.Ordinal))
+                    bucket.Add(new PaletteItem(tab, category, item.asset.Id, packNames[item.asset.Id], null, item.asset.Id, null, item.theme));
                 foreach (var entry in AppearanceLibrary.Entries(category, theme))
-                    items.Add(new PaletteItem(tab, category, entry.Id, entry.Name, entry.Prefab(), null, null, entry.Theme));
+                    bucket.Add(new PaletteItem(tab, category, entry.Id, entry.Name, entry.Prefab(), null, null, entry.Theme));
+                items.AddRange(bucket.OrderByDescending(candidate => candidate.Theme != null && candidate.Theme == theme)
+                    .ThenBy(candidate => candidate.Theme ?? "~", StringComparer.Ordinal));
                 if (tab == PaletteTabs.Decoration)
                     foreach (var asset in ModelAssets().Where(asset => !pack.Any(item => item.asset.Id == asset.Id)))
                         items.Add(new PaletteItem(tab, category, asset.Id, asset.Name, null, asset.Id));

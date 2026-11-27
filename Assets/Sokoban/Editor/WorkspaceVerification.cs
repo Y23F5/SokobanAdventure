@@ -182,9 +182,14 @@ namespace Sokoban.Editor
             reader.Undo(); Check(reader.Room.TerrainAt(strokeA).CategoryId == TerrainCategories.Floor && reader.Room.TerrainAt(strokeB).CategoryId == TerrainCategories.Floor, "一次撤销恢复整笔");
             string stable = RoomCodec.Encode(reader.Model);
             Check(reader.Brush(new[] { strokeA, protectedDoor.Cell }, RoomTool.Wall) != null && RoomCodec.Encode(reader.Model) == stable, "笔划含门格时整笔拒绝，合法格也不提交");
-            Check(reader.Brush(new[] { strokeA, protectedDoor.Cell }, RoomTool.Floor) != null && reader.Brush(new[] { strokeA, protectedDoor.Cell }, RoomTool.Erase) != null && RoomCodec.Encode(reader.Model) == stable, "门格对地板与擦除工具同样受保护，整笔拒绝");
+            Check(reader.Brush(new[] { strokeA, protectedDoor.Cell }, RoomTool.Floor) != null && RoomCodec.Encode(reader.Model) == stable, "门格对地板工具仍受保护，整笔拒绝");
+            Check(reader.Brush(new[] { protectedDoor.Cell }, RoomTool.Erase) == null && !reader.Model.Doors.Any(d => d.Id == protectedDoor.Id), "擦除工具可以清除门");
+            reader.Undo();
+            Check(RoomCodec.Encode(reader.Model) == stable, "撤销擦除门后房间与擦除前一致");
             var placedBox = reader.Room.ObjectsOf(ObjectCategories.Box).First();
-            Check(reader.Brush(new[] { strokeA, placedBox.Cell }, RoomTool.Erase) != null && RoomCodec.Encode(reader.Model) == stable, "擦除遇对象整笔拒绝，不连带删除对象");
+            Check(reader.Brush(new[] { placedBox.Cell }, RoomTool.Erase) == null && reader.Find(placedBox.Id) == null, "擦除工具可以清除地板上的箱子");
+            reader.Undo();
+            Check(reader.Find(placedBox.Id) != null && RoomCodec.Encode(reader.Model) == stable, "撤销擦除箱子后房间与擦除前一致");
             VerifyRecovery(source); VerifyFiles(source);
             var result = BuildPipeline.BuildPlayer(new[] { "Assets/Scenes/MainMenu.unity", "Assets/Scenes/Game.unity", "Assets/Scenes/RuntimeEditor.unity" }, "Builds/WS-02/Sokoban.exe", BuildTarget.StandaloneWindows64, BuildOptions.None);
             Check(result.summary.result == BuildResult.Succeeded && result.summary.totalErrors == 0, "Windows x64 构建");
