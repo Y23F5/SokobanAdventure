@@ -278,11 +278,16 @@ namespace Sokoban
                     AddPaletteCard("import", "＋ 新增" + AppearanceLibrary.TypeName(CategoryId(paletteCategory)) + "模型", null,
                         () => { pickedAsset = pickedBuiltin = null; Tool(paletteCategory); Panel.ChooseFile("导入模型"); }, false, true);
                     if (paletteCategory == RoomTool.Decoration)
+                    {
+                        AddPaletteCard("tool-entry", "入口", "LayoutModels/Door", () => { pickedAsset = pickedBuiltin = null; Tool(RoomTool.Entry); Panel.Status = "点击墙边地板放置入口，主入口会自动生成出生点"; }, true);
+                        AddPaletteCard("tool-exit", "出口", "LayoutModels/Door", () => { pickedAsset = pickedBuiltin = null; Tool(RoomTool.Exit); Panel.Status = "点击墙边地板放置出口"; }, true);
+                        AddPaletteCard("tool-hint", "提示物件", null, () => { pickedAsset = pickedBuiltin = null; Tool(RoomTool.Hint); Panel.Status = "左键放置提示物件"; });
                         foreach (var kind in DeviceKinds)
                         {
                             var chosenKind = kind;
                             AddPaletteCard("device-" + kind.kind, "恢复装置 · " + kind.name, null, () => PlaceDevice(chosenKind.kind, chosenKind.script, chosenKind.theme, chosenKind.name), false, true);
                         }
+                    }
                     foreach (var entry in AppearanceLibrary.Entries(CategoryId(paletteCategory), theme))
                         AddPaletteCard(entry.Id, entry.Name, entry.Prefab(0), () =>
                         {
@@ -1038,7 +1043,7 @@ namespace Sokoban
                 message.text=string.IsNullOrEmpty(Panel.Status) ? "可输入完整文件路径" : Panel.Status;
             }
             lastDialog=dialog;
-            if(Panel.Confirming)confirmMessage.text=Panel.Status;
+            if(Panel.Confirming)confirmMessage.text=Panel.Status==LayoutPanel.DefaultStatus?"":Panel.Status;
             if(workspace.activeSelf)
             {
                 var d=Panel.Draft;

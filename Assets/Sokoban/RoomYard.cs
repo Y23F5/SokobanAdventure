@@ -42,6 +42,9 @@ namespace Sokoban
             part.name = device.Id;
             part.transform.localPosition = new Vector3(device.Anchor.X, 0, device.Anchor.Y);
             part.transform.localRotation = RoomPreview.CellRotation(device.Rotation);
+            var ground = ObjectStateView.Create(model.Assets, group, "LayoutModels/Floor", null);
+            ground.name = device.Id + "-ground";
+            ground.transform.localPosition = new Vector3(device.Anchor.X, 0, device.Anchor.Y);
         }
 
         static void Ground(RoomDraftModel model, Vector2Int origin, Transform group, WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog)

@@ -255,7 +255,7 @@ namespace Sokoban
                 else if (draft.Tool == RoomTool.Select) Panel.Run(() => draft.RotateSelection(turns), "已旋转所选内容");
                 else if (draft.Tool != RoomTool.Move && draft.Tool != RoomTool.Erase) draft.RotateBrush(turns);
             }
-            if (Input.GetKeyDown(KeyCode.Escape)) { rectangleStart=null; Panel.CancelTool(); gesture = -1; }
+            if (Input.GetKeyDown(KeyCode.Escape)) { bool idle = Panel.Draft.Tool == RoomTool.Select && !Panel.Draft.SelectedCell.HasValue && !Panel.PlacingRoom && !Panel.Painting; rectangleStart=null; Panel.CancelTool(); gesture = -1; if (idle) Leave(); }
             if (hovering && Input.mouseScrollDelta.y != 0)
             {
                 zoom = Mathf.Clamp(zoom * Mathf.Pow(1.12f,-Input.mouseScrollDelta.y),.1f,5);
