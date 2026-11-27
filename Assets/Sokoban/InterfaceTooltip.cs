@@ -31,6 +31,7 @@ namespace Sokoban
             var target = (RectTransform)transform;
             label.text = description;
             tooltip.gameObject.SetActive(true);
+            UiLayers.SetTooltipOrder(tooltip.gameObject);
             Vector2 position = bounds.InverseTransformPoint(target.TransformPoint(new Vector3(target.rect.center.x, target.rect.yMin)));
             var area = bounds.rect;
             var size = tooltip.rect.size;

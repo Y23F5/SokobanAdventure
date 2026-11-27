@@ -12,8 +12,10 @@ namespace Sokoban
 {
     internal sealed class UiLayers
     {
+        internal const int Persistent = 5;
         internal const int Dropdown = 10;
         internal const int Modal = 20;
+        internal const int Tooltip = 30;
         readonly GameObject owner;
         readonly List<RaycastResult> hits = new List<RaycastResult>();
         readonly List<InterfaceTooltip> tips = new List<InterfaceTooltip>();
@@ -27,6 +29,13 @@ namespace Sokoban
             canvas.overrideSorting = true;
             canvas.sortingOrder = order;
             if (!root.TryGetComponent<GraphicRaycaster>(out _)) root.AddComponent<GraphicRaycaster>();
+        }
+
+        internal static void SetTooltipOrder(GameObject root)
+        {
+            SetOrder(root, Tooltip);
+            if (root.TryGetComponent<GraphicRaycaster>(out var raycaster)) Object.Destroy(raycaster);
+            foreach (var graphic in root.GetComponentsInChildren<Graphic>(true)) graphic.raycastTarget = false;
         }
 
         internal bool PointerOverUi(Vector3 position)

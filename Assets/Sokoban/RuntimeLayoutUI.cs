@@ -83,6 +83,7 @@ namespace Sokoban
             BuildConfirmButtons();
             BuildIssueList();
             layers = new UiLayers(gameObject);
+            UiLayers.SetOrder(must.gameObject, UiLayers.Persistent);
             UiLayers.SetOrder(fileMenu, UiLayers.Dropdown);
             UiLayers.SetOrder(workspace, UiLayers.Modal);
             UiLayers.SetOrder(checkOverlay, UiLayers.Modal);
@@ -869,6 +870,7 @@ namespace Sokoban
             propCard.pivot = source.pivot;
             propCard.offsetMin = source.offsetMin;
             propCard.offsetMax = source.offsetMax;
+            propCard.GetComponent<ContentSizeFitter>().horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             var stack = propCard.gameObject.GetComponent<VerticalLayoutGroup>() ?? propCard.gameObject.AddComponent<VerticalLayoutGroup>();
             stack.padding = new RectOffset(12, 12, 10, 12);
             stack.spacing = 10;
@@ -924,7 +926,9 @@ namespace Sokoban
             propKey = key;
             bool box = obj.CategoryId == Sokoban.Core.ObjectCategories.Box, target = obj.CategoryId == Sokoban.Core.ObjectCategories.Target;
             propTitle.text = AppearanceLibrary.TypeName(obj.CategoryId);
-            propId.text = "编号 #" + obj.Id + " · 位置 " + obj.Cell;
+            string shortId = obj.Id.Length > 8 ? obj.Id.Substring(0, 8) + "…" : obj.Id;
+            propId.horizontalOverflow = HorizontalWrapMode.Wrap;
+            propId.text = "编号 #" + shortId + " · 位置 " + obj.Cell;
             propThumb.color = box ? new Color32(183, 126, 83, 255) : target ? new Color32(57, 151, 134, 255) : new Color32(154, 167, 181, 255);
         }
 
