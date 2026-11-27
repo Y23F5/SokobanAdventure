@@ -3,35 +3,58 @@ local function phase(t, a, b)
   return x * x * (3 - 2 * x)
 end
 
+local function mix(a, b, t) return a + (b - a) * t end
+
 function pose(t, ctx)
-  local n = #ctx.route
-  local from = ctx.route[1]
-  local home = ctx.route[n]
-  local dx = home.x - from.x
-  local dz = home.y - from.y
-  local dist = math.sqrt(dx * dx + dz * dz)
-  local length = dist + 0.72
+  local from, home = ctx.route[1], ctx.route[#ctx.route]
   local travel = phase(t, 0.30, 0.78)
-  local lift = phase(t, 0.17, 0.30) * (1 - phase(t, 0.79, 0.91))
-  local extension = phase(t, 0.04, 0.24) * (1 - phase(t, 0.84, 0.99))
-  local grabScale = phase(t, 0, 0.1) * (1 - phase(t, 0.91, 1))
-  local cx = from.x + dx * travel
-  local cz = from.y + dz * travel
-  local yaw = 0
-  if dist > 0 then yaw = math.atan2(dx, dz) * 180 / math.pi end
-  local gaps = math.ceil(length / 0.18)
+  local lift = phase(t, 0.17, 0.30) * (1 - phase(t, 0.86, 0.96))
+  local cx, cz = mix(from.x, home.x, travel), mix(from.y, home.y, travel)
+  local beltY = 1.48
+  local cargoY = lift * (beltY + 0.19)
+  local cargo = { id = ctx.boxId, x = cx, y = cargoY, z = cz }
+  local device = ctx.device
+  if not device then return { cargo } end
+
+  local ax, az = device.start.x, device.start.z
+  local inward = device.wallInward
+  local ext = phase(t, 0.22, 0.33) * (1 - phase(t, 0.76, 0.86))
+  local reach = phase(t, 0.03, 0.14) * (1 - phase(t, 0.96, 1))
+  local lower = phase(t, 0.12, 0.17) * (1 - phase(t, 0.96, 1))
+  local bx, bz = ax - inward.x * 0.25, az - inward.z * 0.25
+  local dx, dz = cx - bx, cz - bz
+  local dist = math.sqrt(dx * dx + dz * dz)
+  local ux, uz = inward.x, inward.z
+  if dist > 0.0001 then ux, uz = dx / dist, dz / dist end
+  local yaw = math.atan2(-uz, ux) * 180 / math.pi
+  local beltLength = (dist + 0.36) * ext
+  local armLength = mix(0.23, dist, reach)
+  local top, floor = 3.48, -0.74
+  local jaw = mix(top - 0.92, 0.66 + cargoY, lower)
+  local endX, endZ = bx + ux * armLength, bz + uz * armLength
+  local rig = 'Diorama/FactoryRecoveryRig'
   local parts = {
-    { id = 'belt', resource = 'Diorama/Conveyor', x = from.x + dx / 2, y = 0, z = from.y + dz / 2, yaw = yaw,
-      sx = 1, sy = math.max(0.001, extension), sz = math.max(0.001, extension) * length },
-    { id = 'grabber', resource = 'Diorama/Conveyor', child = 'arm', x = cx, y = 0.65 + 0.46 * (1 - lift) + 0.34 * math.sin(travel * math.pi), z = cz,
-      scale = math.max(0.001, grabScale) },
-    { id = ctx.boxId, resource = 'Diorama/Machinery', x = cx, y = lift * 0.26, z = cz }
+    { id = 'mount', resource = rig, child = 'mount', x = bx, y = (top + floor) / 2, z = bz, sy = top - floor, yaw = yaw },
+    { id = 'boom', resource = rig, child = 'arm', x = bx + ux * armLength / 2, y = top, z = bz + uz * armLength / 2, sx = armLength, yaw = yaw },
+    { id = 'mast', resource = rig, child = 'mast', x = endX, y = (top + jaw + 0.82) / 2, z = endZ,
+      sy = math.max(0.04, top - jaw - 0.82), yaw = yaw },
+    { id = 'grabber', resource = 'Diorama/FactoryRecoveryGrabber', x = endX, y = jaw, z = endZ, yaw = yaw },
+    { id = 'belt', resource = rig, child = 'rails', x = bx + ux * beltLength / 2, y = beltY, z = bz + uz * beltLength / 2,
+      sx = math.max(0.001, beltLength), yaw = yaw, visible = ext > 0.001 },
+    cargo
   }
-  for i = 0, gaps do
-    local f = i / gaps
-    parts[#parts + 1] = { id = 'roller-' .. i, resource = 'Diorama/Conveyor', child = 'roller',
-      x = from.x + dx * f, y = 0.14, z = from.y + dz * f, yaw = yaw, roll = 90 - travel * (length - 0.72) * 180 / math.pi / 0.06,
-      visible = extension > 0.01 }
+  local maxX, maxZ = math.abs(from.x - bx), math.abs(from.y - bz)
+  local homeX, homeZ = math.abs(home.x - bx), math.abs(home.y - bz)
+  local limit = math.sqrt(math.max(maxX, homeX)^2 + math.max(maxZ, homeZ)^2) + 0.36
+  local count = math.min(96, math.ceil(limit / 0.17))
+  local moved = travel * math.sqrt((home.x - from.x)^2 + (home.y - from.y)^2)
+  for i = 0, count do
+    local offset = i * (limit / count)
+    parts[#parts + 1] = {
+      id = 'roller-' .. i, resource = rig, child = i % 2 == 0 and 'roller' or 'roller-alt',
+      x = bx + ux * offset, y = beltY + 0.108, z = bz + uz * offset, yaw = yaw,
+      roll = -moved / 0.06 * 180 / math.pi, visible = ext > 0.001 and offset < beltLength
+    }
   end
   return parts
 end

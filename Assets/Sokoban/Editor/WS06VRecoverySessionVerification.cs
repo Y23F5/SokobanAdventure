@@ -97,13 +97,30 @@ namespace Sokoban.Editor
             Require(Part(lift.Pose(.1f, ctx), "fork").ScaleX < .2f && Part(lift.Pose(.55f, ctx), "fork").ScaleX > .7f && Part(lift.Pose(.96f, ctx), "fork").ScaleX < .2f, "叉车脚本货叉在中段伸出、结束收回");
 
             var belt = Method("factory-belt");
-            var rollers0 = belt.Pose(0, ctx).Where(p => p.PartId.StartsWith("roller-")).ToArray();
-            var rollersFull = belt.Pose(.29f, ctx).Where(p => p.PartId.StartsWith("roller-")).ToArray();
-            Require(rollers0.Length == 17 && rollersFull.Length == 17 && rollers0.All(p => !p.Visible) && rollersFull.All(p => p.Visible), "输送带脚本滚筒数量固定为 17，伸出前不可见、伸出后可见");
-            Require(Math.Abs(Part(belt.Pose(.29f, ctx), "belt").ScaleZ - 2.72f) < .001f && Part(belt.Pose(1, ctx), "belt").ScaleZ < 2.72f * .025f, "输送带脚本导轨伸出到全长并在结束收回");
-            var beltEnd = Part(belt.Pose(1, ctx), "box-1");
-            Require(beltEnd.X == home.X && beltEnd.Z == home.Y && beltEnd.Y == 0 && Part(belt.Pose(.5f, ctx), "box-1").Y > .25f, "输送带脚本货物中段抬起、结束落回初始格");
-            Require(belt.Pose(.5f, ctx).First(p => p.PartId == "roller-0").Roll < belt.Pose(.4f, ctx).First(p => p.PartId == "roller-0").Roll, "输送带脚本货物前进时滚筒同向转动");
+            var arm = new RecoveryDevice("arm", RecoveryDeviceKind.Arm, new Cell(-1, 2), 1, "factory-belt", RecoveryItem.DefaultDuration);
+            var factoryContext = new RecoveryContext("qa", "box-1", route, RecoveryItem.DefaultDuration, device: arm);
+            var retracted = belt.Pose(0, factoryContext);
+            var deployed = belt.Pose(.34f, factoryContext);
+            var rails = Part(deployed, "belt");
+            var mount = Part(deployed, "mount");
+            Require(!Part(retracted, "belt").Visible && rails.Visible && !Part(belt.Pose(1, factoryContext), "belt").Visible &&
+                Math.Abs(rails.X - rails.ScaleX / 2 - mount.X) < .001f && mount.X < arm.Anchor.X && rails.Y > 1f,
+                "导轨从墙外底座伸出并在结束收回，长度作用在模型 X 轴");
+            Require(retracted.Where(p => p.PartId.StartsWith("roller-")).All(p => !p.Visible) &&
+                deployed.Count(p => p.PartId.StartsWith("roller-") && p.Visible) > 10,
+                "输送带只在伸展范围内显示滚筒");
+            var beltEnd = Part(belt.Pose(1, factoryContext), "box-1");
+            Require(beltEnd.X == home.X && beltEnd.Z == home.Y && beltEnd.Y == 0 &&
+                Part(belt.Pose(.5f, factoryContext), "box-1").Y > rails.Y, "输送带脚本货物抬过导轨，结束落回初始格");
+            Require(Part(belt.Pose(.5f, factoryContext), "roller-0").Roll < Part(belt.Pose(.4f, factoryContext), "roller-0").Roll, "货物前进时滚筒同向转动");
+            foreach (var part in deployed.Where(p => p.Resource != null).GroupBy(p => (p.Resource, p.Child)).Select(g => g.First()))
+            {
+                var model = Resources.Load<GameObject>(part.Resource);
+                var resource = model && part.Child != null
+                    ? model.GetComponentsInChildren<Transform>(true).FirstOrDefault(child => child.name == part.Child)?.gameObject : model;
+                Require(resource && resource.GetComponentsInChildren<Renderer>(true).Any(r => r.sharedMaterial),
+                    "工厂演出零件已导入并绑定材质 " + (part.Child ?? part.PartId));
+            }
 
             var decay = Method("forest-decay");
             var d0 = decay.Pose(0, ctx);
@@ -273,6 +290,10 @@ namespace Sokoban.Editor
                 editor.Panel.Draft.PlaceRecoveryDevice(new RecoveryDevice("qa-west-lift", RecoveryDeviceKind.Forklift,
                     new Cell(-1, 1), 1, "warehouse-lift", RecoveryItem.DefaultDuration),
                     replaceExisting: editor.Panel.Draft.Model.RecoveryDevice != null);
+            if (RoomId == "factory")
+                editor.Panel.Draft.PlaceRecoveryDevice(new RecoveryDevice("qa-north-arm", RecoveryDeviceKind.Arm,
+                    new Cell(4, editor.Panel.Draft.Room.Height), 2, "factory-belt", RecoveryItem.DefaultDuration),
+                    replaceExisting: editor.Panel.Draft.Model.RecoveryDevice != null);
             editor.StartTrial();
             yield return null; yield return null;
             host = Object.FindObjectOfType<PuzzleHost>();
@@ -298,6 +319,23 @@ namespace Sokoban.Editor
                 yield return null;
                 Check(parked.gameObject.activeSelf && !trialRoom.Find("truck") && !trialRoom.Find("fork"),
                     "authored model restored and temporary rig removed after recovery");
+            }
+            if (RoomId == "factory")
+            {
+                var trialRoom = host.transform.Find(RoomId);
+                var parked = trialRoom.Find("qa-north-arm");
+                while (host.Run.RecoveryFraction < .46f) yield return null;
+                var mount = trialRoom.Find("mount");
+                var belt = trialRoom.Find("belt");
+                var grabber = trialRoom.Find("grabber");
+                Check(mount && belt && grabber && parked && !parked.gameObject.activeSelf &&
+                    belt.gameObject.activeSelf && mount.localPosition.z > host.Run.Room.Room.Height &&
+                    grabber.localPosition.z < host.Run.Room.Room.Height - 1,
+                    "authored north-side arm stays mounted outside and deploys its belt and grabber into the room");
+                while (host.Run.Recovering) yield return null;
+                yield return null;
+                Check(parked.gameObject.activeSelf && !trialRoom.Find("belt") && !trialRoom.Find("grabber"),
+                    "factory belt only exists during recovery");
             }
             yield return null; yield return null;
             host.Leave();
