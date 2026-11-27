@@ -2,7 +2,8 @@
  * @file RecoveryPresenter.cs
  * @brief 恢复演出的表现层：只调用恢复方法取每帧零件姿态并应用到零件池，不按主题名分支，不读写规则状态。
  * Sample(run, group, boxOf, t)：对每个需要归位的箱子，用恢复道具的脚本在进度 t 取姿态；id 等于箱子 ID 的零件驱动真箱子，其余零件按 resource 加 child 从零件池取实例；默认外观的可开合地形格用默认外观脚本取姿态，格位与朝向作为 params（gateX、gateZ、yaw）传入。
- * Sample 将房间的装置锚点与朝向传给箱子和地形演出脚本。
+ * Sample 将房间装置和墙面法线传给箱子与地形演出脚本。
+ * SampleWarehouse(run, group, boxOf, method, device, moves, t)：多箱时依次复用同一套叉车，已处理箱子固定在原始格。
  * Clear(boxOf)：销毁零件池并恢复被隐藏的箱子渲染器，恢复完成或读档重建时调用。
  * Part(task, part, group)：按 resource 实例化预制件，child 非空时取该子节点作为零件；预制件或子节点找不到时 LogWarning 并跳过该零件，恢复照常提交。
  * Apply、ApplyBox：把位置、欧拉角、缩放与可见度写到变换上，动画剪辑按脚本给出的时刻（秒，不超过剪辑长度）采样。
@@ -19,6 +20,8 @@ namespace Sokoban
 {
     internal sealed class RecoveryPresenter
     {
+        const string WarehouseScript = "warehouse-lift";
+        GameObject parkedForklift;
         readonly LuaHost host = new LuaHost();
         readonly Dictionary<string, IRecoveryMethod> methods = new Dictionary<string, IRecoveryMethod>();
         readonly Dictionary<string, GameObject> pool = new Dictionary<string, GameObject>();
@@ -47,11 +50,29 @@ namespace Sokoban
             var item = run.RunningRecoveryItem;
             if (item == null) return;
             var method = Method(item.ScriptRef);
-            var device = run.Models[run.ActiveId].RecoveryDevice;
-            foreach (var move in run.RecoveryMoves())
+            var model = run.Models[run.ActiveId];
+            var device = model.RecoveryDevice;
+            var moves = run.RecoveryMoves();
+            if (item.ScriptRef == WarehouseScript && moves.Count > 0)
             {
-                var ctx = new RecoveryContext(run.ActiveId, move.BoxId, RecoveryRules.Route(move.From, move.Home), run.RecoveryDuration, item.Params, device);
-                Play(method, ctx, move.BoxId, boxOf(move.BoxId), group, t);
+                var yardDevice = device == null ? null : group.Find(device.Id);
+                if (yardDevice && yardDevice.gameObject.activeSelf)
+                {
+                    parkedForklift = yardDevice.gameObject;
+                    parkedForklift.SetActive(false);
+                }
+                var origin = device ?? new RecoveryDevice(item.Id, RecoveryDeviceKind.Forklift,
+                    new Cell(model.Room.Width, model.Room.Height / 2), 3, WarehouseScript, item.Duration);
+                SampleWarehouse(run, group, boxOf, method, origin, moves, t);
+            }
+            else
+            {
+                foreach (var move in moves)
+                {
+                    var ctx = new RecoveryContext(run.ActiveId, move.BoxId, RecoveryRules.Route(move.From, move.Home),
+                        run.RecoveryDuration, item.Params, device);
+                    Play(method, ctx, move.BoxId, boxOf(move.BoxId), group, t);
+                }
             }
             var gates = run.RecoveryGates();
             if (gates.Count == 0) return;
@@ -63,6 +84,24 @@ namespace Sokoban
                 var ctx = new RecoveryContext(run.ActiveId, task, new List<Cell> { gate.Cell }, run.RecoveryDuration, parameters, device);
                 Play(gateMethod, ctx, task, null, group, t);
             }
+        }
+
+        void SampleWarehouse(PuzzleRun run, Transform group, Func<string, Transform> boxOf, IRecoveryMethod method,
+            RecoveryDevice device, IReadOnlyList<RecoveryMove> moves, float t)
+        {
+            float progress = Mathf.Clamp01(t) * moves.Count;
+            int active = Mathf.Min((int)progress, moves.Count - 1);
+            for (int index = 0; index < active; index++)
+            {
+                var move = moves[index];
+                var box = boxOf(move.BoxId);
+                if (box) ApplyBox(box, new RecoveryPart(move.BoxId, null, move.Home.X, 0, move.Home.Y));
+            }
+            var current = moves[active];
+            var inward = RecoveryDeviceRules.WallInward(run.Room.Room, device.Anchor);
+            var context = new RecoveryContext(run.ActiveId, current.BoxId, RecoveryRules.Route(current.From, current.Home),
+                run.RecoveryDuration / moves.Count, run.RunningRecoveryItem.Params, device, inward);
+            Play(method, context, WarehouseScript, boxOf(current.BoxId), group, progress - active);
         }
 
         void Play(IRecoveryMethod method, RecoveryContext ctx, string task, Transform box, Transform group, float t)
@@ -165,6 +204,8 @@ namespace Sokoban
 
         internal void Clear()
         {
+            if (parkedForklift) parkedForklift.SetActive(true);
+            parkedForklift = null;
             foreach (var go in pool.Values) if (go) { go.SetActive(false); Object.Destroy(go); }
             pool.Clear();
             skipped.Clear();

@@ -1,6 +1,6 @@
 /**
  * @file LuaHost.cs
- * LuaRecoveryMethod.DeviceTable(script, device)：将墙外锚点、演出起点、朝向及进入方向写入 Lua 的 ctx.device，坐标采用房间 x/z。
+ * LuaRecoveryMethod.DeviceTable(script, device, wallInward)：将墙外锚点、演出起点、朝向及进入方向写入 Lua 的 ctx.device，坐标采用房间 x/z。
  * @brief Lua 宿主：行为入口与恢复入口共用 MoonSharp 解释器，每个入口 = 入口名 + 构造 _ENV 环境表的函数，权限就是环境表里有哪些名字。
  * LuaEntry：一个入口，声明入口名与环境表构造函数。
  * LuaHost.Register(entry)：登记入口，名字重复抛 ArgumentException。
@@ -117,7 +117,7 @@ namespace Sokoban.Core
             return env;
         });
 
-        static Table DeviceTable(Script script, RecoveryDevice device)
+        static Table DeviceTable(Script script, RecoveryDevice device, Cell wallInward)
         {
             Table Point(Cell cell)
             {
@@ -131,6 +131,7 @@ namespace Sokoban.Core
             table.Set("anchor", DynValue.NewTable(Point(device.Anchor)));
             table.Set("start", DynValue.NewTable(Point(device.Anchor)));
             table.Set("direction", DynValue.NewTable(Point(device.EntryDirection)));
+            table.Set("wallInward", DynValue.NewTable(Point(wallInward)));
             table.Set("rotation", DynValue.NewNumber(device.Rotation));
             table.Set("yaw", DynValue.NewNumber(device.Rotation * 90));
             return table;
@@ -157,7 +158,7 @@ namespace Sokoban.Core
                 var parameters = new Table(script);
                 foreach (var pair in ctx.Params) parameters.Set(pair.Key, DynValue.NewNumber(pair.Value));
                 table.Set("params", DynValue.NewTable(parameters));
-                if (ctx.Device != null) table.Set("device", DynValue.NewTable(DeviceTable(script, ctx.Device)));
+                if (ctx.Device != null) table.Set("device", DynValue.NewTable(DeviceTable(script, ctx.Device, ctx.WallInward.Value)));
                 return new[] { DynValue.NewNumber(t), DynValue.NewTable(table) };
             });
             if (result.Type != DataType.Table) throw new InvalidOperationException("pose 必须返回零件表");

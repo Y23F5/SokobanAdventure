@@ -3,31 +3,53 @@ local function phase(t, a, b)
   return x * x * (3 - 2 * x)
 end
 
+local function mix(a, b, t) return a + (b - a) * t end
+
 function pose(t, ctx)
-  local n = #ctx.route
-  local from = ctx.route[1]
-  local home = ctx.route[n]
+  local device = ctx.device
+  local from, home = ctx.route[1], ctx.route[#ctx.route]
+  local carry = phase(t, 0.47, 0.64)
+  local loadX = mix(from.x, home.x, carry)
+  local loadZ = mix(from.y, home.y, carry)
+  local lift = phase(t, 0.38, 0.47) - phase(t, 0.64, 0.73)
+  local cargoY = 1.52 * lift
+  local cargo = { id = ctx.boxId, x = loadX, y = cargoY, z = loadZ }
+  if not device then return { cargo } end
+
+  local dx, dz = device.wallInward.x, device.wallInward.z
+  local tx, tz = -dz, dx
+  local ax, az = device.start.x, device.start.z
+  local across = (loadX - ax) * tx + (loadZ - az) * tz
+  local depth = (loadX - ax) * dx + (loadZ - az) * dz
   local raise = phase(t, 0, 0.13) - phase(t, 0.93, 1)
   local reach = phase(t, 0.12, 0.23) - phase(t, 0.86, 0.94)
   local lower = phase(t, 0.23, 0.32) - phase(t, 0.79, 0.86)
-  local insertion = phase(t, 0.32, 0.38) - phase(t, 0.73, 0.79)
-  local lift = phase(t, 0.38, 0.47) - phase(t, 0.64, 0.73)
-  local move = phase(t, 0.47, 0.64)
-  local lx = from.x + (home.x - from.x) * move
-  local lz = from.y + (home.y - from.y) * move
-  local cargoY = 1.52 * lift
-  local parkedX = -1.2
-  local truckX = parkedX + (lx - parkedX) * raise
-  local topY = 1.45 + (2.74 - 1.45) * raise
-  local tipX = truckX + 0.4 + (lx - truckX - 0.4) * reach
-  local forkY = (topY - 0.16) + ((cargoY + 0.09) - (topY - 0.16)) * lower
-  local forkLen = 0.018 + (0.78 - 0.018) * insertion
+  local insert = phase(t, 0.32, 0.38) - phase(t, 0.73, 0.79)
+  local railX, railZ = ax + tx * across * raise, az + tz * across * raise
+  local truckY = -0.74
+  local mounting, mountingY = 0.14, truckY + 1.24
+  local tip = mix(mounting + 0.2, math.max(mounting + 0.2, depth - 0.46), reach)
+  local topY = mix(mountingY + 0.21, 2.74, raise)
+  local forkY = mix(topY - 0.16, cargoY + 0.0935, lower)
+  local length = mix(0.018, 0.78, insert)
+  local rigYaw = math.atan2(-dz, dx) * 180 / math.pi
+
+  local function rig(id, distance, height, sx, sy)
+    return {
+      id = id, resource = 'Diorama/WarehouseRecoveryRig', child = id,
+      x = railX + dx * distance, y = height, z = railZ + dz * distance,
+      yaw = rigYaw, sx = sx, sy = sy
+    }
+  end
+
   return {
-    { id = 'truck', resource = 'Diorama/Lift', x = truckX, y = 0, z = lz },
-    { id = 'tower', resource = 'Diorama/Lift', child = 'tower', x = truckX + 0.4, y = (1.24 + topY) / 2, z = lz, sy = topY - 1.24 },
-    { id = 'boom', resource = 'Diorama/Lift', child = 'boom', x = (truckX + 0.4 + tipX) / 2, y = topY, z = lz, sx = math.max(0.001, tipX - truckX - 0.4) },
-    { id = 'mast', resource = 'Diorama/Lift', child = 'mast', x = tipX, y = (topY + forkY) / 2, z = lz, sy = math.max(0.001, topY - forkY) },
-    { id = 'fork', resource = 'Diorama/Lift', child = 'fork', x = tipX + forkLen / 2, y = forkY, z = lz, sx = forkLen },
-    { id = ctx.boxId, resource = 'Diorama/Cargo', x = lx, y = cargoY, z = lz }
+    { id = 'truck', resource = 'Diorama/WarehouseRecoveryTruck',
+      x = railX - dx * 0.26, y = truckY, z = railZ - dz * 0.26, yaw = device.yaw, scale = 1.48 },
+    rig('tower', mounting, (mountingY + topY) / 2, 1, topY - mountingY),
+    rig('boom', (mounting + tip) / 2, topY, tip - mounting, 1),
+    rig('mast', tip, (topY + forkY) / 2, 1, topY - forkY),
+    rig('crossbar', tip, forkY, 1, 1),
+    rig('fork', tip + length / 2, forkY, length, 1),
+    cargo
   }
 end

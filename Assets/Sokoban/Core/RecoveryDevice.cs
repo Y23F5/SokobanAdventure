@@ -3,6 +3,7 @@
  * @brief 房间恢复装置及其墙外放置规则。
  * RecoveryDevice(id, kind, anchor, rotation, scriptRef, duration, parameters, itemName, itemDescription, itemAcquiredHint)：构造不可变装置并快照参数。
  * WithPlacement(anchor, rotation)：保留 ID 和配置，返回更新位置和朝向后的装置。
+ * WallInward(room, anchor)：由相邻的房间边界返回墙面向内法线。
  * IsValidAnchor(room, anchor)：仅允许矩形四边外紧邻的一格，不含角格。
  * Validate(draft, stage)：检查装置是否存在及锚点是否合法，缺失严重级别与出生点一致。
  */
@@ -75,6 +76,14 @@ namespace Sokoban.Core
         public static bool IsValidAnchor(Room room, Cell anchor) =>
             ((anchor.X == -1 || anchor.X == room.Width) && anchor.Y >= 0 && anchor.Y < room.Height) ||
             ((anchor.Y == -1 || anchor.Y == room.Height) && anchor.X >= 0 && anchor.X < room.Width);
+
+        public static Cell WallInward(Room room, Cell anchor)
+        {
+            if (!IsValidAnchor(room, anchor)) throw new ArgumentOutOfRangeException(nameof(anchor));
+            if (anchor.X == -1) return Cell.Right;
+            if (anchor.X == room.Width) return Cell.Left;
+            return anchor.Y == -1 ? Cell.Up : Cell.Down;
+        }
 
         public static Issue Validate(RoomDraftModel draft, ValidationStage stage)
         {

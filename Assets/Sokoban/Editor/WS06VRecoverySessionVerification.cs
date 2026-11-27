@@ -1,5 +1,6 @@
 /**
  * @file WS06VRecoverySessionVerification.cs
+ * VerifyPoses()：批处理验证三套 Lua 姿态、叉车导入模型层级和恢复会话。
  * @brief Run 先在编辑器内离线核对恢复脚本姿态与恢复会话规则，再在隔离档案里进入主菜单，Observe 检查静止箱子、重复恢复、三次菜单存读与试玩隔离；Tick 在真实 Play 帧里推进检查。
  * PoseChecks：经 LuaHost 与 LuaRecoveryMethod 调用四个随项目发布的恢复脚本，核对零件 ID、位姿范围、占用区、完成后归位与确定性。
  * SessionChecks：RecoverySession 完成后箱子只提交一次，重复完成与继续推进都不再改变状态。
@@ -70,14 +71,29 @@ namespace Sokoban.Editor
             }
 
             var lift = Method("warehouse-lift");
-            Require(lift.Pose(0, ctx).Select(p => p.PartId).OrderBy(s => s, StringComparer.Ordinal).SequenceEqual(new[] { "boom", "box-1", "fork", "mast", "tower", "truck" }), "叉车脚本零件 ID 为 truck、tower、boom、mast、fork 与箱子");
+            var device = new RecoveryDevice("forklift", RecoveryDeviceKind.Forklift, new Cell(-1, 1), 1, "warehouse-lift", RecoveryItem.DefaultDuration);
+            var liftContext = new RecoveryContext("qa", "box-1", route, RecoveryItem.DefaultDuration, device: device);
+            ctx = liftContext;
+            Require(lift.Pose(0, ctx).Select(p => p.PartId).OrderBy(s => s, StringComparer.Ordinal).SequenceEqual(new[] { "boom", "box-1", "crossbar", "fork", "mast", "tower", "truck" }), "叉车脚本含车身、塔柱、吊臂、滑架、横梁、双叉与箱子");
             var liftStart = Part(lift.Pose(0, ctx), "box-1");
             var liftEnd = Part(lift.Pose(1, ctx), "box-1");
             var liftMid = Part(lift.Pose(.55f, ctx), "box-1");
             Require(liftStart.X == from.X && liftStart.Z == from.Y && liftStart.Y == 0, "叉车脚本 t=0 箱子在当前格地面");
             Require(liftEnd.X == home.X && liftEnd.Z == home.Y && liftEnd.Y == 0, "叉车脚本 t=1 箱子落回初始格地面");
             Require(liftMid.Y > 1.45f && liftMid.X < from.X && liftMid.X > home.X, "叉车脚本中段箱子抬起并在两格之间");
-            Require(Part(lift.Pose(0, ctx), "truck").X == -1.2f && Part(lift.Pose(1, ctx), "truck").X == -1.2f, "叉车脚本开始与结束都停回房外停车位");
+            var truckStart = Part(lift.Pose(0, ctx), "truck");
+            var truckMid = Part(lift.Pose(.55f, ctx), "truck");
+            var truckEnd = Part(lift.Pose(1, ctx), "truck");
+            Require(truckStart.X < device.Anchor.X && truckMid.X == truckStart.X && truckEnd.X == truckStart.X &&
+                truckMid.Z != truckStart.Z && truckEnd.Z == truckStart.Z, "叉车沿墙平移并返回墙外停放点");
+            foreach (var part in lift.Pose(.55f, ctx).Where(p => p.Resource != null))
+            {
+                var model = Resources.Load<GameObject>(part.Resource);
+                var resource = model && part.Child != null
+                    ? model.GetComponentsInChildren<Transform>(true).FirstOrDefault(child => child.name == part.Child)?.gameObject : model;
+                Require(resource && resource.GetComponentsInChildren<Renderer>(true).Any(r => r.sharedMaterial),
+                    "叉车演出零件已导入并绑定材质 " + part.PartId);
+            }
             Require(Part(lift.Pose(.1f, ctx), "fork").ScaleX < .2f && Part(lift.Pose(.55f, ctx), "fork").ScaleX > .7f && Part(lift.Pose(.96f, ctx), "fork").ScaleX < .2f, "叉车脚本货叉在中段伸出、结束收回");
 
             var belt = Method("factory-belt");
@@ -120,10 +136,15 @@ namespace Sokoban.Editor
             Require(!session.Advance(1f) && session.CompletedCount == 1 && session.Boxes["box-1"] == new Cell(2, 2), "重复完成与继续推进都不再提交");
         }
 
-        public static void Run()
+        public static void VerifyPoses()
         {
             PoseChecks();
             SessionChecks();
+        }
+
+        public static void Run()
+        {
+            VerifyPoses();
             if (!Application.productName.StartsWith("RecoveryQA-") || File.Exists(CampaignSlot.PathName)) throw new InvalidOperationException("Use a fresh isolated RecoveryQA- product profile");
             EditorSceneManager.OpenScene("Assets/Scenes/MainMenu.unity");
             SessionState.SetBool(Key, true);
@@ -248,6 +269,10 @@ namespace Sokoban.Editor
             yield return null;
             var editor = Object.FindObjectOfType<LayoutHost>();
             editor.Panel.Draft.Open(Path.Combine(Application.streamingAssetsPath, "World", RoomId + ".room.json"), true);
+            if (RoomId == "warehouse")
+                editor.Panel.Draft.PlaceRecoveryDevice(new RecoveryDevice("qa-west-lift", RecoveryDeviceKind.Forklift,
+                    new Cell(-1, 1), 1, "warehouse-lift", RecoveryItem.DefaultDuration),
+                    replaceExisting: editor.Panel.Draft.Model.RecoveryDevice != null);
             editor.StartTrial();
             yield return null; yield return null;
             host = Object.FindObjectOfType<PuzzleHost>();
@@ -259,6 +284,21 @@ namespace Sokoban.Editor
                 while (host.Busy) yield return null;
             }
             Check(host.IsTrial && host.UseItem(), "trial recovery started");
+            if (RoomId == "warehouse")
+            {
+                var trialRoom = host.transform.Find(RoomId);
+                var parked = trialRoom.Find("qa-west-lift");
+                while (host.Run.RecoveryFraction < .46f) yield return null;
+                var truck = trialRoom.Find("truck");
+                var fork = trialRoom.Find("fork");
+                Check(truck && fork && parked && !parked.gameObject.activeSelf &&
+                    truck.localPosition.x < -1f && fork.localPosition.x >= 0f,
+                    "authored west-side fixture keeps the truck out and sends the forks in");
+                while (host.Run.Recovering) yield return null;
+                yield return null;
+                Check(parked.gameObject.activeSelf && !trialRoom.Find("truck") && !trialRoom.Find("fork"),
+                    "authored model restored and temporary rig removed after recovery");
+            }
             yield return null; yield return null;
             host.Leave();
             yield return null; yield return null;
