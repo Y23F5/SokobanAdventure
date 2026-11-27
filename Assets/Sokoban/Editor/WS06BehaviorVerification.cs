@@ -1,8 +1,8 @@
 /**
  * @file WS06BehaviorVerification.cs
  * @brief Run 用 Core.BehaviorGraph 构造两面内墙的夹具，绑定、保存并重开，断言身份、图的所有者、连线与实际触发结果；Tick 逐帧推进 Play 模式检查。
- * Fixture：在默认房间放两面内墙、箱子、目标并添加恢复道具，使其通过发布级校验。
- * RecoverySelection：用相同时长的两个道具验证脚本启动、存档读回与旧档选项。
+ * Fixture：放两列内墙，使图的主体和对照墙在默认镜头中可见，再放入箱子、目标及恢复道具。
+ * RecoverySelection：用相同时长的两个道具验证脚本启动、存档读回与旧档选项，用短时道具验证临近结束的恢复能续播。
  * Edges：把图内局部 ID 解析为 节点类型.端口 的语义连线。
  * Trial：用真实 PuzzleHost 推箱解开房间，比较主体墙与对照墙的渲染器，并尝试走向主体墙格。
  */
@@ -39,7 +39,8 @@ namespace Sokoban.Editor
 
         static void Fixture(RoomDraft draft, Cell a, Cell b)
         {
-            Check(draft.Brush(new[] { a, b }, RoomTool.Wall) == null, "constructed two interior walls");
+            Check(draft.Brush(new[] { a, b, a + Cell.Up, b + Cell.Up }, RoomTool.Wall) == null,
+                "constructed two interior wall fronts with solid cells behind them");
             draft.Place(true, new Cell(3, 2), "box-a");
             draft.Place(false, new Cell(4, 2), "target-a");
             draft.Commit(new AddRecoveryItemCommand(draft.Model, new RecoveryItem("recovery-1", "warehouse-lift", RecoveryItem.DefaultDuration)));
@@ -51,6 +52,7 @@ namespace Sokoban.Editor
             var cell = new Cell(3, 3);
             Fixture(draft, cell, new Cell(4, 3));
             draft.Commit(new AddRecoveryItemCommand(draft.Model, new RecoveryItem("recovery-2", "factory-belt", RecoveryItem.DefaultDuration)));
+            draft.Commit(new AddRecoveryItemCommand(draft.Model, new RecoveryItem("recovery-short", "warehouse-lift", .4f)));
             var run = PuzzleRun.FromDraft(draft);
             var initial = run.Snapshot();
             initial.Items.Clear();
@@ -71,6 +73,15 @@ namespace Sokoban.Editor
             restored.Restore(saved.Data);
             Check(restored.Snapshot().Presentation.RecoveryItemId == "recovery-1", "legacy save uses the bag selection when durations match");
             Check(restored.AdvanceRecovery(10f) && restored.Snapshot().Presentation.RecoveryItemId == null, "completion clears the saved recovery item");
+            Check((bool)begin.Invoke(restored, new object[] { "recovery-short" }) && !restored.AdvanceRecovery(.39996f),
+                "a short recovery remains active just before its end");
+            var almostDone = restored.Snapshot();
+            var replay = SaveCodec.Decode(SaveCodec.Encode(almostDone), almostDone.WorldId, almostDone.Hashes);
+            Check(replay.Status == SaveStatus.Ok && replay.Data.Presentation.RecoveryT == .999f,
+                "unfinished short recovery saves without rounding to completion");
+            restored.Restore(replay.Data);
+            Check(restored.Recovering && restored.Snapshot().Presentation.RecoveryItemId == "recovery-short"
+                && restored.AdvanceRecovery(.01f), "read back the short recovery and complete it once");
         }
 
         public static void Run()

@@ -7,7 +7,8 @@
  * ContentHash.Of(draft)：只覆盖玩法字段（地形类别网格、对象的 ID 类别与格子含目标、恢复道具的脚本引用时长与参数、行为图含对象模板内的图），不含外观、显示名与装饰，先规范化排序再取 SHA-256。
  * SaveStatus：Ok、NoSave、Corrupt、Incompatible 四种读档结果。
  * SaveLoad：读档结果状态与数据；Incompatible 与 Corrupt 带原因文字。
- * SaveCodec.ToJson(data)：用 MiniJson 把存档数据写成 JSON 文本，不做试读；小数（演出段）按千分之一取整数。
+ * SaveCodec.ToJson(data)：用 MiniJson 把存档数据写成 JSON 文本，不做试读；演出进度按千分之一取整数，进行中的段最多写为 999。
+ * ProgressMilli、ReadProgress：转换归一化进度，旧版本四舍五入得到的 1000 按 999 恢复。
  * SaveCodec.Encode(data)：序列化为 JSON 文本，保存前调用 Decode 试读，失败抛 InvalidOperationException、不应写入文件。
  * SaveCodec.Decode(text, worldId, currentHashes)：文本为空为无档；解析或字段校验失败为损坏；格式号、世界 ID 或任一房哈希不符为不兼容。
  */
@@ -124,6 +125,13 @@ namespace Sokoban.Core
     {
         static object Cells(int[] value) => value == null ? null : value.Select(v => (object)(long)v).ToList();
 
+        static long ProgressMilli(float fraction)
+        {
+            if (float.IsNaN(fraction) || fraction < 0 || fraction > 1)
+                throw new InvalidOperationException("进行中的演出进度须在 0 至 1 之间");
+            return Math.Min(999, ContentHash.Milli(fraction));
+        }
+
         public static string ToJson(SaveData data)
         {
             var boxes = new Dictionary<string, object>();
@@ -147,11 +155,11 @@ namespace Sokoban.Core
             var p = data.Presentation ?? new PresentationSegment();
             var presentation = new Dictionary<string, object>
             {
-                ["recoveryT"] = ContentHash.Milli(p.RecoveryT),
+                ["recoveryT"] = ProgressMilli(p.RecoveryT),
                 ["recoveryDuration"] = ContentHash.Milli(p.RecoveryDuration),
                 ["heading"] = ContentHash.Milli(p.Heading),
                 ["motionKind"] = p.MotionKind,
-                ["motionFraction"] = ContentHash.Milli(p.MotionFraction),
+                ["motionFraction"] = ProgressMilli(p.MotionFraction),
                 ["motionDx"] = (long)p.MotionDelta.X,
                 ["motionDy"] = (long)p.MotionDelta.Y,
                 ["motionPushed"] = p.MotionPushed,
@@ -199,6 +207,13 @@ namespace Sokoban.Core
         }
 
         static float Float(Dictionary<string, object> d, string key) => Int(d, key) / 1000f;
+
+        static float ReadProgress(Dictionary<string, object> data, string key)
+        {
+            int milli = Int(data, key);
+            if (milli < 0 || milli > 1000) throw new FormatException("演出进度无效：" + key);
+            return Math.Min(999, milli) / 1000f;
+        }
 
         static bool Flag(Dictionary<string, object> d, string key)
         {
@@ -277,20 +292,19 @@ namespace Sokoban.Core
             var p = MapOf(root, "presentation");
             var presentation = new PresentationSegment
             {
-                RecoveryT = Float(p, "recoveryT"),
+                RecoveryT = ReadProgress(p, "recoveryT"),
                 RecoveryDuration = Float(p, "recoveryDuration"),
                 RecoveryItemId = Str(p, "recoveryItemId"),
                 Heading = Float(p, "heading"),
                 MotionKind = Str(p, "motionKind") ?? throw new FormatException("缺少 motionKind"),
-                MotionFraction = Float(p, "motionFraction"),
+                MotionFraction = ReadProgress(p, "motionFraction"),
                 MotionDelta = new Cell(Int(p, "motionDx"), Int(p, "motionDy")),
                 MotionPushed = Flag(p, "motionPushed"),
             };
             if (p.ContainsKey("recoveryItemId") && (string.IsNullOrWhiteSpace(presentation.RecoveryItemId) || presentation.RecoveryDuration <= 0))
                 throw new FormatException("恢复项记录无效");
-            if (presentation.RecoveryT < 0 || presentation.RecoveryDuration < 0 || presentation.RecoveryT > presentation.RecoveryDuration)
+            if (presentation.RecoveryDuration < 0 || presentation.RecoveryDuration == 0 && presentation.RecoveryT != 0)
                 throw new FormatException("恢复进度无效");
-            if (presentation.MotionFraction < 0 || presentation.MotionFraction > 1) throw new FormatException("移动进度无效");
             data.Presentation = presentation;
             return data;
         }

@@ -60,7 +60,7 @@ namespace Sokoban.Core.Tests
             data.ObjectStates["r"] = new Dictionary<string, string> { ["box-1"] = "decayed" };
             data.Presentation = new PresentationSegment
             {
-                RecoveryT = 1.25f, RecoveryDuration = 3.7f, Heading = 90f, MotionKind = "push",
+                RecoveryT = 0.25f, RecoveryDuration = 3.7f, Heading = 90f, MotionKind = "push",
                 MotionFraction = 0.5f, MotionDelta = Cell.Right, MotionPushed = true
             };
             var load = SaveCodec.Decode(SaveCodec.Encode(data), "w", data.Hashes);
@@ -72,7 +72,7 @@ namespace Sokoban.Core.Tests
             Assert.Equal("recovery-1", back.PendingItem);
             Assert.True(back.EverSolved["r"]);
             Assert.Equal("decayed", back.ObjectStates["r"]["box-1"]);
-            Assert.Equal(1.25f, back.Presentation.RecoveryT, 3);
+            Assert.Equal(0.25f, back.Presentation.RecoveryT, 3);
             Assert.Equal(3.7f, back.Presentation.RecoveryDuration, 3);
             Assert.Equal(90f, back.Presentation.Heading, 3);
             Assert.Equal("push", back.Presentation.MotionKind);
@@ -98,9 +98,31 @@ namespace Sokoban.Core.Tests
         {
             var data = new SaveData { WorldId = "w", RoomId = "r" };
             data.Hashes["r"] = "h";
-            data.Presentation.RecoveryT = 5f;
+            data.Presentation.RecoveryT = .5f;
             data.Presentation.RecoveryDuration = 3.7f;
-            Assert.Equal(SaveStatus.Corrupt, SaveCodec.Decode(SaveCodec.ToJson(data), "w", data.Hashes).Status);
+            string invalid = SaveCodec.Encode(data).Replace("\"recoveryT\":500", "\"recoveryT\":1001");
+            Assert.Equal(SaveStatus.Corrupt, SaveCodec.Decode(invalid, "w", data.Hashes).Status);
+        }
+
+        [Fact]
+        public void ShortRecoveryAndUnfinishedMotionResumeFromRoundedProgress()
+        {
+            var data = new SaveData { WorldId = "w", RoomId = "r" };
+            data.Hashes["r"] = "h";
+            data.Presentation.RecoveryDuration = .4f;
+            data.Presentation.RecoveryT = .9999f;
+            data.Presentation.MotionKind = "turn";
+            data.Presentation.MotionDelta = Cell.Right;
+            data.Presentation.MotionFraction = .9999f;
+            string text = SaveCodec.Encode(data);
+            Assert.Contains("\"recoveryT\":999", text);
+            Assert.Contains("\"motionFraction\":999", text);
+            string old = text.Replace("\"recoveryT\":999", "\"recoveryT\":1000")
+                .Replace("\"motionFraction\":999", "\"motionFraction\":1000");
+            var load = SaveCodec.Decode(old, "w", data.Hashes);
+            Assert.Equal(SaveStatus.Ok, load.Status);
+            Assert.Equal(.999f, load.Data.Presentation.RecoveryT);
+            Assert.Equal(.999f, load.Data.Presentation.MotionFraction);
         }
 
         [Fact]
