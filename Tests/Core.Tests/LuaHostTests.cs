@@ -152,6 +152,33 @@ end";
             Assert.Equal(2f, part.Z, 3);
         }
 
+        [Theory]
+        [InlineData(0, 2, -1, 0, 1, 0)]
+        [InlineData(1, -1, 2, 1, 0, 90)]
+        [InlineData(2, 2, 5, 0, -1, 180)]
+        [InlineData(3, 8, 2, -1, 0, 270)]
+        public void DeviceContextUsesRoomCoordinates(int rotation, int x, int z, int dx, int dz, int yaw)
+        {
+            var device = new RecoveryDevice("lift", RecoveryDeviceKind.Forklift, new Cell(x, z), rotation, "warehouse-lift", 3.7f);
+            var context = new RecoveryContext("r", "box-1", new[] { new Cell(2, 2) }, device.Duration, device: device);
+            var method = new LuaRecoveryMethod(MakeHost(), @"function pose(t, ctx)
+                local d = ctx.device
+                return {
+                    { id = 'anchor', x = d.anchor.x, z = d.anchor.z, yaw = d.yaw },
+                    { id = 'step', x = d.start.x + d.direction.x, z = d.start.z + d.direction.z, y = d.rotation }
+                }
+            end");
+            var parts = method.Pose(0f, context);
+            var anchor = parts.Single(part => part.PartId == "anchor");
+            var step = parts.Single(part => part.PartId == "step");
+            Assert.Equal((float)x, anchor.X);
+            Assert.Equal((float)z, anchor.Z);
+            Assert.Equal((float)yaw, anchor.Yaw);
+            Assert.Equal((float)(x + dx), step.X);
+            Assert.Equal((float)(z + dz), step.Z);
+            Assert.Equal((float)rotation, step.Y);
+        }
+
         [Fact]
         public void MissingParamsIsAnEmptyTable()
         {

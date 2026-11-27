@@ -2,7 +2,7 @@
  * @file RecoveryMethod.cs
  * @brief 恢复方法的宿主接口：Pose(t, ctx) 是纯函数，返回此刻全部零件的完整描述，表现层只做零件池加姿态应用。
  * RecoveryPart：一个零件（零件 ID、资源引用、位置、偏航、俯仰、翻滚、统一缩放与分轴缩放、颜色、可见度、可选的动画剪辑名与采样时刻、可选的预制件子节点名）。
- * RecoveryContext：只读上下文（房间 ID、箱子 ID、路线格、时长、确定性种子、恢复道具的数值参数表，未提供时为空表）。
+ * RecoveryContext(roomId, boxId, route, duration, parameters, device)：记录房间、任务、路线、时长、数值参数和启动该演出的装置，未提供参数时用空表。
  * IRecoveryMethod.Pose(t, ctx)：t 取 0 到 1，只由进度与上下文决定姿态，不依赖前一帧。
  * RecoveryContext.SeedOf(roomId, objectId)：由房间 ID 加对象 ID 算出稳定种子（FNV-1a），读档重放结果一致。
  * RecoveryPoseCheck.Validate(parts, zone, isRoomPart)：房内零件的格位置必须落在占用区内，越界返回错误文字，房外零件不受限。
@@ -65,15 +65,17 @@ namespace Sokoban.Core
         public float Duration { get; }
         public uint Seed { get; }
         public IReadOnlyDictionary<string, float> Params { get; }
+        public RecoveryDevice Device { get; }
 
         public RecoveryContext(string roomId, string boxId, IReadOnlyList<Cell> route, float duration,
-            IReadOnlyDictionary<string, float> parameters = null)
+            IReadOnlyDictionary<string, float> parameters = null, RecoveryDevice device = null)
         {
             RoomId = roomId;
             BoxId = boxId;
             Route = route;
             Duration = duration;
             Params = parameters ?? new Dictionary<string, float>();
+            Device = device;
             Seed = SeedOf(roomId, boxId);
         }
 
