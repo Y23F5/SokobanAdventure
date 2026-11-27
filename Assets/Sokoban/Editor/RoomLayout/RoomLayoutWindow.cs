@@ -518,12 +518,32 @@ namespace Sokoban.Editor
             }
 
             string groupKey = null;
-            foreach (var item in draft.PaletteItems(tab))
+            VisualElement host = area;
+            var paletteItems = draft.PaletteItems(tab);
+            foreach (var item in paletteItems)
             {
                 if (item.AssetId != null && item.TemplateId == null && tab == PaletteTabs.Custom) continue;
-                string nextGroup = item.Theme == null || item.TemplateId != null ? null : item.Theme + "/" + item.CategoryId;
-                if (nextGroup != null && nextGroup != groupKey)
-                    Heading(area, AppearanceLibrary.ThemeName(item.Theme) + " · " + AppearanceLibrary.TypeName(item.CategoryId) + (item.Theme == draft.Theme ? "（当前主题）" : ""));
+                string nextGroup = item.Theme == null || item.TemplateId != null ? null : tab + "/" + item.Theme + "/" + item.CategoryId;
+                if (nextGroup != groupKey)
+                {
+                    host = area;
+                    if (nextGroup != null)
+                    {
+                        int variants = paletteItems.Count(other => other.Theme == item.Theme && other.CategoryId == item.CategoryId && other.TemplateId == null);
+                        var fold = new Foldout { text = AppearanceLibrary.ThemeName(item.Theme) + " · " + AppearanceLibrary.TypeName(item.CategoryId) + "（" + variants + " 种）" + (item.Theme == draft.Theme ? " · 当前主题" : "") };
+                        fold.SetValueWithoutNotify(openGroups.TryGetValue(nextGroup, out bool open) ? open : item.Theme == draft.Theme);
+                        string key = nextGroup;
+                        fold.RegisterValueChangedCallback(evt => { if (evt.target == fold) openGroups[key] = evt.newValue; });
+                        area.Add(fold);
+                        host = fold;
+                        RoomTool? randomTool = ToolForCategory(item.CategoryId);
+                        if (item.Theme != null && (randomTool == RoomTool.Floor || randomTool == RoomTool.Wall))
+                        {
+                            var random = AddButton(host, "随机变体", () => UseTool(randomTool.Value));
+                            random.tooltip = "不指定外观，按房间与格坐标在该主题的变体中固定随机";
+                        }
+                    }
+                }
                 groupKey = nextGroup;
                 RoomTool? tool = ToolForCategory(item.CategoryId);
                 Action choose = null;
@@ -548,14 +568,14 @@ namespace Sokoban.Editor
                     };
 
                 string preview = item.AssetId ?? item.Prefab;
-                var card = AddCard(area, draft, item.Name, preview, item.AssetId == null, choose,
+                var card = AddCard(host, draft, item.Name, preview, item.AssetId == null, choose,
                     item.TemplateId != null ? draft.BrushTemplate == item.TemplateId : draft.BrushAppearance?.Id == item.Id);
                 if (item.TemplateId == null && item.AssetId == null && draft.CanReplaceAppearance(item.Id))
                     AddButton(card, "替换", () => Panel.Run(() => draft.ReplaceAppearance(item.Id), "已替换所选外观")).AddToClassList("sl-small");
                 else if (item.TemplateId == null && item.AssetId != null && draft.CanBindAsset(item.AssetId, item.CategoryId))
                     AddButton(card, "替换", () => BindImported(draft, item.AssetId, item.CategoryId)).AddToClassList("sl-small");
                 if (item.TemplateId == null && item.AssetId != null)
-                    ModelSize(area, item.AssetId);
+                    ModelSize(host, item.AssetId);
             }
 
             if (tab == PaletteTabs.Custom)
@@ -610,6 +630,8 @@ namespace Sokoban.Editor
         static readonly (string name, int rotation)[] DeviceSides = { ("北侧", 2), ("东侧", 3), ("南侧", 0), ("西侧", 1) };
 
         RecoveryDeviceKind deviceKind = RecoveryDeviceKind.Forklift;
+
+        readonly Dictionary<string, bool> openGroups = new Dictionary<string, bool>(StringComparer.Ordinal);
 
         void DrawRecoveryDevice(VisualElement area, RoomDraft draft)
         {
