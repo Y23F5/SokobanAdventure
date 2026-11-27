@@ -101,17 +101,35 @@ namespace Sokoban.Editor
                 if (draft.GraphOf(wall).Edges.Count != 0) throw new InvalidOperationException("撤销后连线仍存在");
                 window.History(true);
                 if (draft.GraphOf(wall).Edges.Count != 2) throw new InvalidOperationException("重做未恢复两条连线");
+                const string multiline = "local a = 1\nlocal b = 2\nreturn a + b == 3";
+                draft.Select(wall);
+                window.Update();
+                if (window.graph == null) throw new InvalidOperationException("重做后行为图窗口没有绑定图：panel=" + (window.panel != null) + " cell=" + window.cell + " readOnly=" + window.readOnly);
+                if (!window.CanEdit()) throw new InvalidOperationException("重做后窗口不可编辑：revision=" + window.revision + " draft=" + draft.Revision + " readOnly=" + window.readOnly);
+                window.Set(window.graph.Nodes[1].Id, "expression", multiline);
+                window.Set(window.graph.Nodes[2].Id, "canvasW", "320");
+                window.Set(window.graph.Nodes[2].Id, "canvasH", "180");
                 var path = "Docs/验收证据/重建/阶段3/graphview-room.json";
                 draft.Save(path, false);
                 draft.Open(path, false);
                 draft.Select(wall);
                 window.Update();
                 if (window.canvas.nodes.Count() != 4 || window.canvas.edges.Count() != 2 ||
-                    ObjectBehavior.Parameter(window.graph.Nodes[1], "expression") != "true" ||
+                    ObjectBehavior.Parameter(window.graph.Nodes[1], "expression") != multiline ||
                     ObjectBehavior.Parameter(window.graph.Nodes[2], "visible") != "false" ||
                     ObjectBehavior.Parameter(window.graph.Nodes[0], "canvasX") != "150")
                     throw new InvalidOperationException("保存重开后图的结构、参数或位置变化");
-                Debug.Log("STAGE3 PASS 创建、连线、共享撤销重做、保存重开、参数与节点位置保持");
+                if (ObjectBehavior.Parameter(window.graph.Nodes[2], "canvasW") != "320" ||
+                    ObjectBehavior.Parameter(window.graph.Nodes[2], "canvasH") != "180")
+                    throw new InvalidOperationException("保存重开后节点宽高变化");
+                var resized = window.nodes[window.graph.Nodes[2].Id].GetPosition();
+                if (Mathf.Abs(resized.width - 320) > 1 || Mathf.Abs(resized.height - 180) > 1)
+                    throw new InvalidOperationException("重开后画布中的节点尺寸没有还原");
+                if (BehaviorLua.Check(multiline, false) != null) throw new InvalidOperationException("多行 Lua 脚本语法检查误报");
+                if (BehaviorLua.Check("1 + 1 == 2", true) != null) throw new InvalidOperationException("条件表达式语法检查误报");
+                if (BehaviorLua.Check(multiline, true) == null) throw new InvalidOperationException("多行语句用作条件表达式时应报错");
+                if (BehaviorLua.Check("return (", true) == null) throw new InvalidOperationException("语法错误没有被检出");
+                Debug.Log("STAGE3 PASS 创建、连线、共享撤销重做、保存重开、参数、节点位置与尺寸、多行 Lua 保持");
             }
             finally { DestroyImmediate(window); layout.Close(); }
         }
@@ -137,9 +155,21 @@ namespace Sokoban.Editor
             canvas.AddManipulator(new ContentDragger());
             canvas.AddManipulator(new SelectionDragger());
             canvas.AddManipulator(new RectangleSelector());
-            var map = new MiniMap { anchored = true };
-            map.SetPosition(new Rect(10, 10, 150, 94));
+            var map = new MiniMap { anchored = false };
+            map.style.position = Position.Absolute;
+            map.style.right = 10;
+            map.style.bottom = 10;
+            map.style.left = StyleKeyword.Auto;
+            map.style.top = StyleKeyword.Auto;
+            map.style.width = 160;
+            map.style.height = 100;
+            map.style.minWidth = 160;
+            map.style.maxWidth = 160;
+            map.style.minHeight = 100;
+            map.style.maxHeight = 100;
             canvas.Add(map);
+            bar.Add(new ToolbarToggle { text = "小地图", value = true });
+            ((ToolbarToggle)bar.Children().Last()).RegisterValueChangedCallback(evt => map.style.display = evt.newValue ? DisplayStyle.Flex : DisplayStyle.None);
             canvas.AddMenu = (menu, position) => FillMenu(menu, () => position);
             canvas.serializeGraphElements = Copy;
             canvas.canPasteSerializedData = text => CanEdit() && text == ClipboardKey && clipboard != null;
@@ -152,6 +182,7 @@ namespace Sokoban.Editor
                 evt.StopPropagation();
                 evt.PreventDefault();
             }, TrickleDown.TrickleDown);
+            canvas.RegisterCallback<MouseUpEvent>(_ => CommitSizes(), TrickleDown.NoTrickleDown);
             rootVisualElement.Add(canvas);
             issues = new ScrollView { style = { maxHeight = 100 } };
             status = new Label { style = { whiteSpace = WhiteSpace.Normal } };
@@ -226,7 +257,10 @@ namespace Sokoban.Editor
                 foreach (string id in definition.Inputs) PortFor(node, id, Direction.Input);
                 foreach (string id in definition.Outputs) PortFor(node, id, Direction.Output);
             }
-            node.SetPosition(new Rect(Coordinate(item, "canvasX", 180 + index % 3 * 270), Coordinate(item, "canvasY", 45 + index / 3 * 165), 230, 100));
+            if (!readOnly) node.capabilities |= Capabilities.Resizable;
+            node.SetPosition(new Rect(Coordinate(item, "canvasX", 180 + index % 3 * 270), Coordinate(item, "canvasY", 45 + index / 3 * 165),
+                Mathf.Max(180, Coordinate(item, "canvasW", 230)), Mathf.Max(100, Coordinate(item, "canvasH", 100))));
+            if (!readOnly) node.Add(new ResizableElement());
             Parameters(node, item);
             node.RefreshExpandedState();
             node.RefreshPorts();
@@ -287,10 +321,24 @@ namespace Sokoban.Editor
         void Field(Node node, BehaviorNode item, string label, string key, bool multiline = false)
         {
             var field = new TextField(label) { value = ObjectBehavior.Parameter(item, key) ?? "", isDelayed = true, multiline = multiline };
+            field.style.flexDirection = FlexDirection.Column;
+            field.labelElement.style.minWidth = 0;
+            field.labelElement.style.whiteSpace = WhiteSpace.Normal;
+            var input = field.Q(TextField.textInputUssName);
+            input.style.flexGrow = 1;
+            input.style.minWidth = 120;
             if (multiline) field.style.minHeight = 52;
             field.SetEnabled(!readOnly);
             field.RegisterValueChangedCallback(evt => Set(item.Id, key, string.IsNullOrEmpty(evt.newValue) ? null : evt.newValue));
             node.extensionContainer.Add(field);
+            if (key == "expression" || key == "script")
+            {
+                string heading = graph.OwnerId + " · " + label;
+                bool isCondition = key == "expression";
+                var expand = new Button(() => LuaEditorWindow.Open(heading, field.value, isCondition, text => field.value = text)) { text = "展开编辑" };
+                expand.SetEnabled(!readOnly);
+                node.extensionContainer.Add(expand);
+            }
         }
 
         void Choice(Node node, BehaviorNode item, string label, string key, IEnumerable<string> choices)
@@ -339,6 +387,23 @@ namespace Sokoban.Editor
             if (!Commit(updated, edges)) return default;
             foreach (var id in removedNodes) nodes.Remove(id);
             return change;
+        }
+
+        void CommitSizes()
+        {
+            if (!CanEdit()) return;
+            bool changed = false;
+            var updated = graph.Nodes.Select(item =>
+            {
+                if (!nodes.TryGetValue(item.Id, out var node)) return item;
+                var rect = node.GetPosition();
+                if (Mathf.Abs(rect.width - Mathf.Max(180, Coordinate(item, "canvasW", 230))) < 1 &&
+                    Mathf.Abs(rect.height - Mathf.Max(100, Coordinate(item, "canvasH", 100))) < 1) return item;
+                changed = true;
+                var sized = ObjectBehavior.WithParameter(item, "canvasW", Mathf.Round(rect.width).ToString(CultureInfo.InvariantCulture));
+                return ObjectBehavior.WithParameter(sized, "canvasH", Mathf.Round(rect.height).ToString(CultureInfo.InvariantCulture));
+            }).ToList();
+            if (changed) Commit(updated, graph.Edges);
         }
 
         bool CanEdit() => !readOnly && graph != null && panel != null && !panel.Modal && model == panel.Draft.Model

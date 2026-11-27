@@ -54,6 +54,14 @@ namespace Sokoban
             return result.Boolean;
         }
 
+        public static string Check(string source, bool condition)
+        {
+            if (string.IsNullOrWhiteSpace(source)) return null;
+            if (source.Length > 8192) return "Lua 脚本超过 8192 字符";
+            try { new Script(CoreModules.None).LoadString(condition ? "return (" + source + ")" : source); return null; }
+            catch (InterpreterException error) { return error.DecoratedMessage; }
+        }
+
         static void AddTextAction(Table self, bool condition, List<BehaviorNode> effects, string name, string key)
         {
             self.Set(name, DynValue.NewCallback((ctx, args) =>
