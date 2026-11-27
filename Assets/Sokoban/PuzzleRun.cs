@@ -8,6 +8,7 @@
  * Interact()：按朝向查找前格实体，触发其对象状态迁移并返回关联行为图。
  * Facing：按出生点旋转初始化，成功移动后更新。
  * Origin、Player、Boxes、Targets、HomeOf：活动房间的世界格视图，规则状态始终保存在房内坐标。
+ * BehaviorTriggered：将已发生的非交互事件交给游戏宿主。
  * Models、Hashes：各房草稿模型与内容哈希，供表现层读取装饰、供存档比对。
  * PuzzleMotion：进行中的一次移动或转向的演出进度，只进演出段，不进规则状态。
  */
@@ -27,6 +28,7 @@ namespace Sokoban
         public Vector2Int Delta;
         public int Direction;
         public string Pushed;
+        public string BehaviorMessage;
     }
 
     public sealed partial class PuzzleRun
@@ -37,6 +39,7 @@ namespace Sokoban
         public readonly IReadOnlyDictionary<string, string> Hashes;
         public readonly string WorldId;
         readonly Dictionary<string, RoomProgress> states = new Dictionary<string, RoomProgress>();
+        internal event Action<string, string, string> BehaviorTriggered;
         ExplorationSet exploration = new ExplorationSet();
         ItemBag bag = new ItemBag();
         Cell local;
@@ -177,7 +180,7 @@ namespace Sokoban
             Current.Session.RetryGateClosures(false);
             pushed = result.PushedBoxId;
             Current.RecordSolved();
-            if (pushed != null) Fire(ActiveId, TriggerIds.FirstPush, pushed);
+            if (pushed != null && Current.PushedSinceRecovery.Add(pushed)) Fire(ActiveId, TriggerIds.FirstPush, pushed);
             if (!wasSolved && Current.Solved) Fire(ActiveId, TriggerIds.RoomSolved);
             return true;
         }

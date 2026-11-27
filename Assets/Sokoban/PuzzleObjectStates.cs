@@ -23,7 +23,6 @@ namespace Sokoban
 
         void SyncObjectStates(string roomId, Transform group)
         {
-            ApplyBehavior();
             var states = Run.ObjectStatesIn(roomId);
             foreach (Transform part in group)
             {

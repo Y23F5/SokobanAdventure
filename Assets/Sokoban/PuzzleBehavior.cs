@@ -1,8 +1,13 @@
 /**
  * @file PuzzleBehavior.cs
- * @brief 运行时执行行为图的显示动作：房间解开时按 roomSolved 触发器隐藏目标，未解开时恢复显示。
- * ApplyBehavior()：逐房读取全部行为图，经 ObjectBehavior.Effects 取 roomSolved 触发的 setVisible 动作，已解开的房间按动作的 visible 参数设置目标渲染器，未解开则一律显示；目标缺省为图的所有者，targetRoom 缺省为图所在房间，Lua 抛出的异常只记日志不中断游戏。
- * Interact()：从前格实体图取 onInteract 动作，统一处理 Lua 与可视节点生成的动作描述。
+ * @brief 把 F 交互与运行事件接到同一个行为图动作执行入口。
+ * PrimeSolvedVisibility()：生成已载入房间的解题可见性规则，载入时只恢复显示，不重发解题动作。
+ * Display(roomId, id, visible)：更新目标的组件可见性。
+ * ApplyBehavior()：重算已解开房间的显示动作，并应用其他触发器已写入的可见状态。
+ * EnqueueBehavior(roomId, trigger, owner)：按事件来源房间和可选所有者收集要分派的图。
+ * DispatchBehavior(message)：按先后执行可视节点与 Lua 产生的动作，直到本次操作产生的事件处理完，再同步外观、地形与可见性。
+ * ShowBehaviorMessage(message)：无道具领取面板时显示动作或交互产生的文本。
+ * Interact()：取前格对象的图，经统一分派执行 onInteract，并刷新状态。
  * FindPart(roomId, id)：先按对象 ID 取房间下的同名子物体，取不到时按地形实体 ID 找到所在格，再取名称以该格结尾的地形物体。
  */
 using System;
@@ -15,94 +20,138 @@ namespace Sokoban
 {
     public sealed partial class PuzzleHost
     {
-        void ApplyBehavior()
+        readonly Queue<(string roomId, string trigger, IEnumerable<BehaviorGraph> graphs)> behaviorEvents =
+            new Queue<(string, string, IEnumerable<BehaviorGraph>)>();
+        readonly Dictionary<string, List<(string roomId, string id, bool visible)>> solvedVisibility =
+            new Dictionary<string, List<(string, string, bool)>>();
+
+        void PrimeSolvedVisibility()
         {
-            if (Run == null) return;
+            solvedVisibility.Clear();
             foreach (var pair in Run.Models)
             {
                 if (!Run.Rooms.ContainsKey(pair.Key) || !groups.ContainsKey(pair.Key)) continue;
-                bool solved = Run.SolvedIn(pair.Key);
+                var rules = solvedVisibility[pair.Key] = new List<(string, string, bool)>();
                 foreach (var graph in ObjectBehavior.AllGraphs(pair.Value))
                 {
                     try
                     {
                         foreach (var node in ObjectBehavior.Effects(graph, TriggerIds.RoomSolved).Where(n => n.Kind == ObjectBehavior.SetVisible))
-                        {
-                            string room = ObjectBehavior.Parameter(node, "targetRoom") ?? pair.Key;
-                            string id = ObjectBehavior.Parameter(node, "targetObject") ?? graph.OwnerId;
-                            bool visible = !solved || ObjectBehavior.Parameter(node, "visible") != "false";
-                            var part = FindPart(room, id);
-                            if (!part) continue;
-                            foreach (var renderer in part.GetComponentsInChildren<Renderer>(true)) renderer.enabled = visible;
-                        }
+                            rules.Add((ObjectBehavior.Parameter(node, "targetRoom") ?? pair.Key,
+                                ObjectBehavior.Parameter(node, "targetObject") ?? graph.OwnerId,
+                                ObjectBehavior.Parameter(node, "visible") != "false"));
                     }
                     catch (Exception error) { Debug.LogException(error); }
                 }
             }
         }
 
-        public bool Interact()
+        void ApplyBehavior()
         {
-            if (Run == null || leaving || panels.Modal || Busy || Run.Recovering) return false;
-            string roomId = Run.ActiveId;
-            var effects = new System.Collections.Generic.List<(string owner, BehaviorNode node)>();
-            var graphs = Run.Interact(out bool transitioned);
-            foreach (var graph in graphs)
+            foreach (var source in solvedVisibility.OrderBy(source => Run.SolvedIn(source.Key)))
             {
-                try { effects.AddRange(ObjectBehavior.Effects(graph, TriggerIds.OnInteract).Select(node => (graph.OwnerId, node)).ToArray()); }
-                catch (Exception error) { Debug.LogException(error); }
+                bool solved = Run.SolvedIn(source.Key);
+                foreach (var rule in source.Value) Display(rule.roomId, rule.id, !solved || rule.visible);
             }
-            string message = Run.HintAtPlayer(true);
-            if (!transitioned && effects.Count == 0 && string.IsNullOrWhiteSpace(message)) return false;
-            foreach (var effect in effects)
+            foreach (var room in groups)
+                foreach (var entry in Run.VisibilityIn(room.Key)) Display(room.Key, entry.Key, entry.Value);
+        }
+
+        void Display(string roomId, string id, bool visible)
+        {
+            var part = FindPart(roomId, id);
+            if (!part) return;
+            foreach (var renderer in part.GetComponentsInChildren<Renderer>(true)) renderer.enabled = visible;
+        }
+
+        void EnqueueBehavior(string roomId, string trigger, string owner)
+        {
+            var model = Run.Models[roomId];
+            var graphs = owner == null ? ObjectBehavior.AllGraphs(model) : ObjectBehavior.GraphsOf(model, owner);
+            behaviorEvents.Enqueue((roomId, trigger, graphs));
+        }
+
+        bool DispatchBehavior(ref string message)
+        {
+            bool hadEffects = false;
+            while (behaviorEvents.Count > 0)
             {
-                var node = effect.node;
-                var targetRoom = ObjectBehavior.Parameter(node, "targetRoom") ?? roomId;
-                var target = ObjectBehavior.Parameter(node, "targetObject") ?? effect.owner;
-                switch (node.Kind)
+                var pending = behaviorEvents.Dequeue();
+                var visibility = pending.trigger == TriggerIds.RoomSolved ? solvedVisibility[pending.roomId] : null;
+                visibility?.Clear();
+                foreach (var graph in pending.graphs)
                 {
-                    case BehaviorNodeKinds.SetState:
-                        if (!string.IsNullOrEmpty(target) && groups.ContainsKey(targetRoom) && Run.Models[targetRoom].ObjectStates.TryGetValue(target, out var table))
+                    BehaviorNode[] effects;
+                    try { effects = ObjectBehavior.Effects(graph, pending.trigger).ToArray(); }
+                    catch (Exception error) { Debug.LogException(error); continue; }
+                    foreach (var node in effects)
+                    {
+                        hadEffects = true;
+                        var targetRoom = ObjectBehavior.Parameter(node, "targetRoom") ?? pending.roomId;
+                        var target = ObjectBehavior.Parameter(node, "targetObject") ?? graph.OwnerId;
+                        switch (node.Kind)
                         {
-                            string state = ObjectBehavior.Parameter(node, "state");
-                            if (table.States.Contains(state))
-                                Run.SetObjectState(targetRoom, target, state == table.Initial ? null : state);
+                            case BehaviorNodeKinds.SetState:
+                                if (!string.IsNullOrEmpty(target) && groups.ContainsKey(targetRoom) && Run.Models[targetRoom].ObjectStates.TryGetValue(target, out var table))
+                                {
+                                    string state = ObjectBehavior.Parameter(node, "state");
+                                    if (table.States.Contains(state))
+                                        Run.SetObjectState(targetRoom, target, state == table.Initial ? null : state);
+                                }
+                                break;
+                            case BehaviorNodeKinds.SetTerrainState:
+                                Run.SetTerrainState(targetRoom, ObjectBehavior.Parameter(node, "targetTerrain") ?? graph.OwnerId,
+                                    ObjectBehavior.Parameter(node, "state") == "on");
+                                break;
+                            case BehaviorNodeKinds.PlaySound:
+                                PlaySound(ObjectBehavior.Parameter(node, "sound"));
+                                break;
+                            case BehaviorNodeKinds.ShowText:
+                                message = ObjectBehavior.Parameter(node, "text");
+                                break;
+                            case BehaviorNodeKinds.StartRecovery:
+                                Run.BeginScriptedRecovery(ObjectBehavior.Parameter(node, "recovery"));
+                                break;
+                            case BehaviorNodeKinds.SetVisible:
+                                if (target != null)
+                                {
+                                    bool visible = ObjectBehavior.Parameter(node, "visible") != "false";
+                                    visibility?.Add((targetRoom, target, visible));
+                                    Run.SetVisibility(targetRoom, target, visibility == null ? (bool?)visible : null);
+                                }
+                                break;
                         }
-                        break;
-                    case BehaviorNodeKinds.SetTerrainState:
-                        Run.SetTerrainState(targetRoom, ObjectBehavior.Parameter(node, "targetTerrain") ?? effect.owner,
-                            ObjectBehavior.Parameter(node, "state") == "on");
-                        break;
-                    case BehaviorNodeKinds.PlaySound:
-                        PlaySound(ObjectBehavior.Parameter(node, "sound"));
-                        break;
-                    case BehaviorNodeKinds.ShowText:
-                        message = ObjectBehavior.Parameter(node, "text");
-                        break;
-                    case BehaviorNodeKinds.StartRecovery:
-                        Run.BeginScriptedRecovery(ObjectBehavior.Parameter(node, "recovery"));
-                        break;
+                    }
                 }
             }
             foreach (var group in groups)
             {
+                if (!hadEffects && group.Key != Run.ActiveId) continue;
                 SyncObjectStates(group.Key, group.Value);
-                if (group.Key != roomId || !Run.Recovering) SyncTerrainGates(group.Key, group.Value);
+                if (group.Key != Run.ActiveId || !Run.Recovering) SyncTerrainGates(group.Key, group.Value);
             }
-            foreach (var effect in effects.Where(effect => effect.node.Kind == BehaviorNodeKinds.SetVisible))
-            {
-                var node = effect.node;
-                var targetRoom = ObjectBehavior.Parameter(node, "targetRoom") ?? roomId;
-                var target = ObjectBehavior.Parameter(node, "targetObject") ?? effect.owner;
-                var part = FindPart(targetRoom, target);
-                if (!part) continue;
-                bool visible = ObjectBehavior.Parameter(node, "visible") != "false";
-                foreach (var renderer in part.GetComponentsInChildren<Renderer>(true)) renderer.enabled = visible;
-            }
+            ApplyBehavior();
+            return hadEffects;
+        }
+
+        void ShowBehaviorMessage(string message)
+        {
+            if (!panels.Modal && !string.IsNullOrWhiteSpace(message)) panels.ShowInformation(Run.Room.Meta.Name, message);
+        }
+
+        public bool Interact()
+        {
+            if (Run == null || leaving || panels.Modal || Busy || Run.Recovering) return false;
+            string roomId = Run.ActiveId;
+            var graphs = Run.Interact(out bool transitioned);
+            behaviorEvents.Enqueue((roomId, TriggerIds.OnInteract, graphs));
+            string message = Run.HintAtPlayer(true);
+            bool hadEffects = DispatchBehavior(ref message);
+            if (!transitioned && !hadEffects && string.IsNullOrWhiteSpace(message)) return false;
             actor.position = Position(Run.Player);
             RefreshFeedback();
             ShowInventory();
-            if (Run.PendingItem == null && !string.IsNullOrWhiteSpace(message)) panels.ShowInformation(Run.Room.Meta.Name, message);
+            ShowBehaviorMessage(message);
             Persist();
             return true;
         }

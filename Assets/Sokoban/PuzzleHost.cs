@@ -56,8 +56,12 @@ namespace Sokoban
             IsTrial = trial;
             returnToEditor = onReturn;
             lens = Camera.main;
+            if (Run != null) Run.BehaviorTriggered -= EnqueueBehavior;
             Run = run;
+            run.BehaviorTriggered += EnqueueBehavior;
             BuildModels(run);
+            PrimeSolvedVisibility();
+            ApplyBehavior();
             BindRoom();
             lens.orthographic = true;
             angle = run.Heading * 90;
@@ -180,8 +184,14 @@ namespace Sokoban
         public bool UseItem()
         {
             if (leaving || panels.Modal || Busy || !Run.BeginRecovery()) return false;
+            string message = null;
+            DispatchBehavior(ref message);
             actor.position = Position(Run.Player);
-            ShowInventory(); Persist(); return true;
+            RefreshFeedback();
+            ShowInventory();
+            ShowBehaviorMessage(message);
+            Persist();
+            return true;
         }
 
         public void SelectItem(int direction)
@@ -196,6 +206,7 @@ namespace Sokoban
             var world = screen;
             for (int i = 0; i < Run.Heading; i++) world = new Vector2Int(world.y, -world.x);
             string oldRoom = Run.ActiveId;
+            var expectedPosition = Run.Player + world;
             if (!Run.Step(world, out string pushed)) return false;
             if (oldRoom != Run.ActiveId)
             {
@@ -206,14 +217,27 @@ namespace Sokoban
                 Persist();
                 return true;
             }
-            SyncObjectStates(Run.ActiveId, groups[Run.ActiveId]);
+            bool wasRecovering = Run.Recovering;
+            string message = null;
+            DispatchBehavior(ref message);
+            if ((!wasRecovering && Run.Recovering) || Run.Player != expectedPosition)
+            {
+                actor.position = Position(Run.Player);
+                actor.rotation = RoomPreview.PlayerRotation(Run.Facing);
+                foreach (var box in Run.Boxes) objects[box.Key].position = Position(box.Value);
+                RefreshFeedback();
+                ShowInventory();
+                ShowBehaviorMessage(message);
+                Persist();
+                return true;
+            }
             playerStart = actor.position;
             playerStartRotation = actor.rotation;
             movingBox = pushed == null ? null : objects[pushed];
             if (movingBox) boxStart = movingBox.position;
             elapsed = 0;
             duration = .22f;
-            Run.Motion = new PuzzleMotion { Kind = "move", Fraction = 0, Delta = world, Pushed = pushed };
+            Run.Motion = new PuzzleMotion { Kind = "move", Fraction = 0, Delta = world, Pushed = pushed, BehaviorMessage = message };
             Persist();
             return true;
         }
@@ -253,16 +277,17 @@ namespace Sokoban
                 angle = Run.Heading * 90;
             }
             bool walked = !turning;
+            string message = Run.Motion?.BehaviorMessage;
             turning = false;
             movingBox = null;
             duration = 0;
             Run.Motion = null;
             Persist();
             RefreshFeedback();
-            if (walked && !panels.Modal && !Run.Recovering)
+            if (walked)
             {
-                var hint = Run.HintAtPlayer();
-                if (!string.IsNullOrWhiteSpace(hint)) panels.ShowInformation(Run.Room.Meta.Name, hint);
+                if (message == null && !Run.Recovering) message = Run.HintAtPlayer();
+                ShowBehaviorMessage(message);
             }
         }
 

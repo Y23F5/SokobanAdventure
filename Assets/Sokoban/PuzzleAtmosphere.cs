@@ -145,11 +145,12 @@ namespace Sokoban
             {
                 presenter.Clear();
                 foreach (var box in Run.Boxes) { objects[box.Key].position = Position(box.Value); objects[box.Key].localScale = Vector3.one; }
-                SyncObjectStates(Run.ActiveId, groups[Run.ActiveId]);
+                string message = null;
+                DispatchBehavior(ref message);
                 actor.localScale = Vector3.one;
                 if (!turning && Busy) { duration = 0; movingBox = null; Run.Motion = null; }
                 actor.position = Position(Run.Player);
-                RefreshFeedback(); ShowInventory(); Persist();
+                RefreshFeedback(); ShowInventory(); ShowBehaviorMessage(message); Persist();
                 return;
             }
             float fraction = Run.RecoveryFraction;
@@ -159,6 +160,7 @@ namespace Sokoban
         }
         void OnDestroy()
         {
+            if (Run != null) Run.BehaviorTriggered -= EnqueueBehavior;
             lighting?.Dispose();
             presenter.Clear();
             if (artwork) Destroy(artwork);

@@ -31,6 +31,7 @@ namespace Sokoban
             segment.MotionFraction = Motion.Fraction;
             segment.MotionDelta = Motion.Kind == "turn" ? new Cell(Motion.Direction, 0) : new Cell(Motion.Delta.x, Motion.Delta.y);
             segment.MotionPushed = Motion.Pushed != null;
+            segment.MotionMessage = Motion.BehaviorMessage;
             return segment;
         }
 
@@ -51,6 +52,9 @@ namespace Sokoban
             {
                 data.Boxes[pair.Key] = pair.Value.Boxes.ToDictionary(b => b.Key, b => new[] { b.Value.X, b.Value.Y });
                 data.EverSolved[pair.Key] = pair.Value.EverSolved;
+                data.PushedSinceRecovery[pair.Key] = pair.Value.PushedSinceRecovery.ToList();
+                if (pair.Value.Visibility.Count > 0)
+                    data.ObjectVisibility[pair.Key] = new Dictionary<string, bool>(pair.Value.Visibility);
                 data.ObjectStates[pair.Key] = new Dictionary<string, string>(pair.Value.ObjectStates);
                 var session = pair.Value.Session;
                 var room = pair.Value.Validated.Room;
@@ -91,6 +95,8 @@ namespace Sokoban
         {
             var segment = data.Presentation ?? new PresentationSegment();
             Check(data.TerrainStates.Keys.All(states.ContainsKey), "存档地形状态房间无效");
+            Check(data.PushedSinceRecovery.Keys.All(states.ContainsKey), "存档首次推动房间无效");
+            Check(data.ObjectVisibility.Keys.All(states.ContainsKey), "存档对象可见性房间无效");
             foreach (var pair in states)
             {
                 var progress = pair.Value;
@@ -111,12 +117,26 @@ namespace Sokoban
                     && saved.Keys.All(progress.Boxes.ContainsKey) && saved.Values.All(v => v != null && v.Length == 2), "箱子记录与房间不符：" + pair.Key);
                 var cells = saved.ToDictionary(b => b.Key, b => new Cell(b.Value[0], b.Value[1]));
                 Check(cells.Values.Distinct().Count() == cells.Count && cells.Values.All(progress.Session.IsWalkable), "箱子占格无效：" + pair.Key);
+                if (data.PushedSinceRecovery.TryGetValue(pair.Key, out var pushedIds))
+                {
+                    Check(pushedIds.All(progress.Boxes.ContainsKey), "存档首次推动记录含未知箱子");
+                    progress.PushedSinceRecovery.UnionWith(pushedIds);
+                }
+                else
+                    progress.PushedSinceRecovery.UnionWith(cells.Where(entry => progress.Boxes[entry.Key] != entry.Value)
+                        .Select(entry => entry.Key));
                 foreach (var entry in cells) progress.Boxes[entry.Key] = entry.Value;
                 data.EverSolved.TryGetValue(pair.Key, out bool ever);
                 progress.EverSolved = ever || progress.Solved;
                 progress.ObjectStates.Clear();
                 if (data.ObjectStates.TryGetValue(pair.Key, out var objects))
                     foreach (var state in objects) progress.ObjectStates[state.Key] = state.Value;
+                if (data.ObjectVisibility.TryGetValue(pair.Key, out var visibility))
+                    foreach (var entry in visibility)
+                    {
+                        Check(Models[pair.Key].Room.Ids.Contains(entry.Key), "存档可见性记录含未知对象");
+                        progress.Visibility.Add(entry.Key, entry.Value);
+                    }
             }
             Check(data.Explored.All(states.ContainsKey) && data.Explored.Contains(ActiveId), "探索集合无效");
             exploration = ExplorationSet.Restore(data.Explored);
@@ -163,7 +183,7 @@ namespace Sokoban
             Check(segment.MotionKind == "move" && Math.Abs(d.X) + Math.Abs(d.Y) == 1
                 && current.Validated.Room.TerrainAt(player - delta).CategoryId != TerrainCategories.Void
                 && (pushed == null || current.Boxes.TryGetValue(pushed, out var box) && box == player + delta), "存档移动与箱子位置不符");
-            Motion = new PuzzleMotion { Kind = "move", Fraction = (float)segment.MotionFraction, Delta = new Vector2Int(d.X, d.Y), Pushed = pushed };
+            Motion = new PuzzleMotion { Kind = "move", Fraction = (float)segment.MotionFraction, Delta = new Vector2Int(d.X, d.Y), Pushed = pushed, BehaviorMessage = segment.MotionMessage };
         }
     }
 }

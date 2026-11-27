@@ -7,6 +7,8 @@
  * BeginRecovery()：选中项必须是本房恢复道具且未处于恢复中，时长取该道具的 Duration，由 RecoverySession.Start 计算占用区并移位玩家。
  * AdvanceRecovery(seconds)：由 RecoverySession.Advance 推进，完成时箱子一次性归位，玩家已按完成时刻的禁入集移位，返回本次是否完成。
  * RecoveryMoves、RecoveryGates：给表现层的恢复任务描述，需要归位的箱子与默认外观的可开合地形格。
+ * Fire(roomId, trigger, only)：执行对象状态转换，再将非交互事件交给已接入的行为图执行方。
+ * VisibilityIn、SetVisibility：读取或设置跨帧与读档保留的对象可见性覆盖。
  * ObjectStatesIn、SetObjectState：对象状态以房间隔离保存，由对象状态模块读写。
  */
 using System;
@@ -163,6 +165,7 @@ namespace Sokoban
             session.RetryGateClosures(true);
             local = session.Player;
             Current.RecordSolved();
+            Current.PushedSinceRecovery.Clear();
             Fire(ActiveId, TriggerIds.RecoveryEnd);
             return true;
         }
@@ -178,6 +181,7 @@ namespace Sokoban
                 if (move == null) continue;
                 SetObjectState(roomId, pair.Key, move.To == pair.Value.Initial ? null : move.To);
             }
+            if (trigger != TriggerIds.OnInteract) BehaviorTriggered?.Invoke(roomId, trigger, only);
         }
 
         public bool PlayerOnClosingCell
@@ -211,6 +215,15 @@ namespace Sokoban
                     list.Add(new RecoveryGate(cell, Passage(cell + Cell.Left) && Passage(cell + Cell.Right) ? 90 : 0));
                 }
             return list;
+        }
+
+        internal IReadOnlyDictionary<string, bool> VisibilityIn(string roomId) => states[roomId].Visibility;
+
+        internal void SetVisibility(string roomId, string id, bool? visible)
+        {
+            if (!states.TryGetValue(roomId, out var progress) || !Models[roomId].Room.Ids.Contains(id)) return;
+            if (visible.HasValue) progress.Visibility[id] = visible.Value;
+            else progress.Visibility.Remove(id);
         }
 
         public IReadOnlyDictionary<string, string> ObjectStatesIn(string roomId) => states[roomId].ObjectStates;

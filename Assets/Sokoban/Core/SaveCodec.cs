@@ -3,6 +3,7 @@
  * @brief 正式存档的数据、内容哈希与编解码：房内坐标加对象 ID，规则状态与演出段分开保存，读档分无档、损坏、不兼容三态，保存前先试读。
  * SaveData：格式号、世界 ID、当前房间 ID、玩家的房内格及可选朝向、各房箱位（房内坐标，按箱 ID）、各房内容哈希；
  * 另含探索集合 Explored、道具背包 Items、SelectedItem、PendingItem（与探索集合是两份独立数据）、各房已解开过记录 EverSolved、对象状态 ObjectStates（房间到对象 ID 到状态）与演出段 Presentation。
+ * PushedSinceRecovery、ObjectVisibility：保存各房首次推动记录与行为图可见性覆盖。
  * PresentationSegment：演出段，存恢复进度 RecoveryT 与 RecoveryDuration、可选恢复项 RecoveryItemId、镜头朝向 Heading、进行中的移动种类 MotionKind、进度 MotionFraction、位移 MotionDelta 与是否推箱 MotionPushed，不进入规则层。
  * ContentHash.Of(draft)：只覆盖玩法字段（地形类别网格、对象的 ID 类别与格子含目标、恢复道具的脚本引用时长与参数、行为图含对象模板内的图），不含外观、显示名与装饰，先规范化排序再取 SHA-256。
  * SaveStatus：Ok、NoSave、Corrupt、Incompatible 四种读档结果。
@@ -32,6 +33,7 @@ namespace Sokoban.Core
         public float MotionFraction { get; set; }
         public Cell MotionDelta { get; set; }
         public bool MotionPushed { get; set; }
+        public string MotionMessage { get; set; }
     }
 
     public sealed class SaveData
@@ -52,6 +54,9 @@ namespace Sokoban.Core
         public Dictionary<string, bool> EverSolved { get; set; } = new Dictionary<string, bool>(StringComparer.Ordinal);
         public Dictionary<string, Dictionary<string, string>> TerrainStates { get; } = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
         public Dictionary<string, Dictionary<string, string>> ObjectStates { get; set; } = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+        public Dictionary<string, Dictionary<string, bool>> ObjectVisibility { get; } =
+            new Dictionary<string, Dictionary<string, bool>>(StringComparer.Ordinal);
+        public Dictionary<string, List<string>> PushedSinceRecovery { get; } = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         public PresentationSegment Presentation { get; set; } = new PresentationSegment();
     }
 
@@ -164,6 +169,7 @@ namespace Sokoban.Core
                 ["motionDy"] = (long)p.MotionDelta.Y,
                 ["motionPushed"] = p.MotionPushed,
             };
+            if (p.MotionKind == "move" && p.MotionMessage != null) presentation["motionMessage"] = p.MotionMessage;
             if (p.RecoveryItemId != null) presentation["recoveryItemId"] = p.RecoveryItemId;
             var root = new Dictionary<string, object>
             {
@@ -185,6 +191,13 @@ namespace Sokoban.Core
             if (data.TerrainStates.Count != 0)
                 root["terrainStates"] = data.TerrainStates.ToDictionary(r => r.Key,
                     r => (object)r.Value.ToDictionary(gate => gate.Key, gate => (object)gate.Value));
+            if (data.ObjectVisibility.Count != 0)
+                root["objectVisibility"] = data.ObjectVisibility.OrderBy(room => room.Key, StringComparer.Ordinal)
+                    .ToDictionary(room => room.Key, room => (object)room.Value.OrderBy(entry => entry.Key, StringComparer.Ordinal)
+                        .ToDictionary(entry => entry.Key, entry => (object)entry.Value));
+            if (data.PushedSinceRecovery.Count != 0)
+                root["pushedSinceRecovery"] = data.PushedSinceRecovery.OrderBy(room => room.Key, StringComparer.Ordinal)
+                    .ToDictionary(room => room.Key, room => (object)room.Value.OrderBy(id => id, StringComparer.Ordinal).Cast<object>().ToList());
             if (data.Facing.HasValue) root["facing"] = (long)data.Facing.Value;
             return MiniJson.Write(root);
         }
@@ -289,6 +302,24 @@ namespace Sokoban.Core
                     }
                     data.TerrainStates.Add(room.Key, gates);
                 }
+            if (root.ContainsKey("objectVisibility"))
+                foreach (var room in MapOf(root, "objectVisibility"))
+                {
+                    if (!(room.Value is Dictionary<string, object> values)) throw new FormatException("对象可见性格式无效");
+                    data.ObjectVisibility.Add(room.Key, values.ToDictionary(entry => entry.Key,
+                        entry => entry.Value is bool visible ? visible : throw new FormatException("对象可见性不是布尔值")));
+                }
+            if (root.ContainsKey("pushedSinceRecovery"))
+            {
+                var pushes = MapOf(root, "pushedSinceRecovery");
+                foreach (var room in pushes)
+                {
+                    var ids = Strings(pushes, room.Key);
+                    if (ids.Any(string.IsNullOrWhiteSpace) || ids.Distinct(StringComparer.Ordinal).Count() != ids.Count)
+                        throw new FormatException("首次推动记录无效");
+                    data.PushedSinceRecovery.Add(room.Key, ids);
+                }
+            }
             var p = MapOf(root, "presentation");
             var presentation = new PresentationSegment
             {
@@ -300,6 +331,7 @@ namespace Sokoban.Core
                 MotionFraction = ReadProgress(p, "motionFraction"),
                 MotionDelta = new Cell(Int(p, "motionDx"), Int(p, "motionDy")),
                 MotionPushed = Flag(p, "motionPushed"),
+                MotionMessage = p.ContainsKey("motionMessage") ? Str(p, "motionMessage") ?? throw new FormatException("动作文字无效") : null,
             };
             if (p.ContainsKey("recoveryItemId") && (string.IsNullOrWhiteSpace(presentation.RecoveryItemId) || presentation.RecoveryDuration <= 0))
                 throw new FormatException("恢复项记录无效");

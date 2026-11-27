@@ -19,6 +19,8 @@ namespace Sokoban
         internal readonly Cell Origin;
         internal RecoverySession Session;
         internal bool EverSolved;
+        internal readonly HashSet<string> PushedSinceRecovery = new HashSet<string>(System.StringComparer.Ordinal);
+        internal readonly Dictionary<string, bool> Visibility = new Dictionary<string, bool>(System.StringComparer.Ordinal);
         internal readonly Dictionary<string, string> ObjectStates = new Dictionary<string, string>();
 
         internal RoomProgress(ValidatedRoom room, Cell origin)
