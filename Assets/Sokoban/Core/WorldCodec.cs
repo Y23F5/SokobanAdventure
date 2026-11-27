@@ -6,6 +6,8 @@
  * WorldConnection：一条门连接（唯一 ID、模式 direct 或 teleport、源端点、目标端点、是否允许回退）。
  * WorldDocument：世界文件的内存形态，含边界、房间引用、连接、起点、终点端点与终点所需已解开的房间。
  * 起点按 levelId 加 spawnId 读写，allowReturn 只读写布尔值，不兼容旧写法；WorldCodec.Encode(doc)：写成 JSON 文本，写完先调用 Decode 试读，失败抛 InvalidOperationException，调用方不应写入文件。
+ * EncodeDraft(doc, catalogIds)、DecodeDraft(text, catalogIds)：草稿快照可引用目录中尚未放置的房间；任何不在目录中的房间仍会报错。
+ * EncodeInternal、DecodeInternal、Build：共用 JSON 与结构检查，正式世界只接受已放置的房间。
  * WorldCodec.Decode(text)：校验种类、格式号、边界方向、房间 ID 唯一、连接 ID 唯一、模式合法、连接与起终点引用的房间存在、前置房间存在，任何问题统一抛 FormatException。
  */
 using System;
@@ -92,7 +94,12 @@ namespace Sokoban.Core
         public const string Direct = "direct";
         public const string Teleport = "teleport";
 
-        public static string Encode(WorldDocument doc)
+        public static string Encode(WorldDocument doc) => EncodeInternal(doc, null);
+
+        public static string EncodeDraft(WorldDocument doc, IEnumerable<string> catalogIds) =>
+            EncodeInternal(doc, catalogIds ?? throw new ArgumentNullException(nameof(catalogIds)));
+
+        static string EncodeInternal(WorldDocument doc, IEnumerable<string> catalogIds)
         {
             Func<Cell, object> pair = c => new List<object> { (long)c.X, (long)c.Y };
             Func<WorldEndpoint, object> endpoint = e => e == null ? null : new Dictionary<string, object>
@@ -130,15 +137,20 @@ namespace Sokoban.Core
                 },
             };
             string text = MiniJson.Write(root);
-            try { Decode(text); }
+            try { DecodeInternal(text, catalogIds); }
             catch (FormatException e) { throw new InvalidOperationException("世界文件试读失败：" + e.Message, e); }
             return text;
         }
 
-        public static WorldDocument Decode(string text)
+        public static WorldDocument Decode(string text) => DecodeInternal(text, null);
+
+        public static WorldDocument DecodeDraft(string text, IEnumerable<string> catalogIds) =>
+            DecodeInternal(text, catalogIds ?? throw new ArgumentNullException(nameof(catalogIds)));
+
+        static WorldDocument DecodeInternal(string text, IEnumerable<string> catalogIds)
         {
             if (!(MiniJson.Parse(text) is Dictionary<string, object> root)) throw new FormatException("世界文件根不是对象");
-            return Build(root);
+            return Build(root, catalogIds);
         }
 
         static Dictionary<string, object> Obj(Dictionary<string, object> d, string key) =>
@@ -191,7 +203,7 @@ namespace Sokoban.Core
             return new WorldEndpoint(Str(o, "levelId"), Str(o, "spawnId"));
         }
 
-        static WorldDocument Build(Dictionary<string, object> root)
+        static WorldDocument Build(Dictionary<string, object> root, IEnumerable<string> catalogIds)
         {
             if (Str(root, "kind") != "world") throw new FormatException("文件不是世界");
             if (Int(root, "formatVersion") != FormatVersion) throw new FormatException("世界文件格式号不符");
@@ -208,6 +220,12 @@ namespace Sokoban.Core
                 string id = Str(r, "levelId");
                 if (!known.Add(id)) throw new FormatException("房间 ID 重复：" + id);
                 rooms.Add(new WorldRoomRef(id, Str(r, "file"), PairOf(r, "origin"), Strings(r, "forwardRequiresSolved")));
+            }
+            if (catalogIds != null)
+            {
+                var catalog = new HashSet<string>(catalogIds, StringComparer.Ordinal);
+                if (!known.IsSubsetOf(catalog)) throw new FormatException("世界放置房间不在草稿目录中");
+                known = catalog;
             }
             foreach (var r in rooms)
                 foreach (var need in r.ForwardRequiresSolved)

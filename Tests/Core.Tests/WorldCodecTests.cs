@@ -8,6 +8,32 @@ namespace Sokoban.Core.Tests
 {
     public class WorldCodecTests
     {
+        [Fact]
+        public void DraftRoundTripPreservesConnectionsAndPrerequisitesOfUnplacedFactory()
+        {
+            var sample = Sample();
+            var forest = new WorldRoomRef("forest", "forest.room.json", new Cell(18, 0), new[] { "factory" });
+            var draft = new WorldDocument(sample.WorldId, sample.Min, sample.Max, new[] { sample.Rooms[0], forest },
+                sample.Connections, sample.Start, new WorldEndpoint("forest", "exit"), new[] { "factory" });
+            var catalog = new[] { "warehouse", "factory", "forest" };
+            string text = WorldCodec.EncodeDraft(draft, catalog);
+            var restored = WorldCodec.DecodeDraft(text, catalog);
+            Assert.Equal(new[] { "factory" }, restored.Rooms[1].ForwardRequiresSolved);
+            Assert.Equal(new[] { "factory" }, restored.FinishRequiresSolved);
+            Assert.Equal("factory", Assert.Single(restored.Connections).To.LevelId);
+            Assert.Throws<FormatException>(() => WorldCodec.Decode(text));
+            Assert.Throws<InvalidOperationException>(() => WorldCodec.Encode(draft));
+        }
+
+        [Fact]
+        public void DraftRejectsReferencesOutsideTheCatalog()
+        {
+            var catalog = new[] { "warehouse", "factory" };
+            string text = WorldCodec.EncodeDraft(Sample(), catalog)
+                .Replace("\"levelId\":\"factory\",\"doorId\":\"entry\"", "\"levelId\":\"ghost\",\"doorId\":\"entry\"");
+            Assert.Throws<FormatException>(() => WorldCodec.DecodeDraft(text, catalog));
+        }
+
         static WorldDocument Sample() => new WorldDocument(
             "main", new Cell(0, 0), new Cell(63, 31),
             new List<WorldRoomRef>

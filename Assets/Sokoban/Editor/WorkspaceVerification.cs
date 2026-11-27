@@ -4,6 +4,7 @@
  * Check：把断言结果追加到证据目录并在失败时抛出；Throws：断言动作必须抛出异常；FreeCell：取第一个可放箱子的格。
  * VerifyRecovery：经 LayoutPanel 恢复槽验证快照字符串、脏标记、视角与损坏回退，快照不含选择、工具与撤销历史。
  * VerifyFiles：验证保存、导出、导入与失败写入的工作关联和脏标记，比较 RoomCodec 文本。
+ * VerifyUnplacedRoomSnapshot()：从正式三房移出工厂，经草稿恢复后重新放回，核对连接和前置关系。
  * Run：验证世界原点平移、重叠拒绝、边界、快照恢复、传送导出与整笔画刷语义，最后构建 Windows 包。
  */
 using System;
@@ -69,6 +70,37 @@ namespace Sokoban.Editor
             draft.Save(first, false); Check(!draft.Dirty && File.ReadAllText(first) == File.ReadAllText(second), "保存回 A 并清除脏标记");
             draft.Open(second, true); Check(draft.WorkPath == null, "导入解除关联"); draft.Save(third, false);
             Check(draft.WorkPath == Path.GetFullPath(third) && File.ReadAllText(third) == File.ReadAllText(second), "首次保存建立 C，交换内容只有房间设计");
+        }
+
+        public static void VerifyUnplacedRoomSnapshot()
+        {
+            evidence = "Logs/workspace-prerequisites";
+            Directory.CreateDirectory(evidence);
+            File.WriteAllText(Path.Combine(evidence, "checks.txt"), "");
+            string source = Path.GetFullPath("Assets/StreamingAssets/World/main.world.json");
+            var seed = RoomCodec.Decode(File.ReadAllText(Path.Combine(Path.GetDirectoryName(source), "warehouse.room.json")));
+            var draft = new RoomDraft(seed);
+            draft.Open(source, false);
+            draft.UseRoom("factory");
+            var factory = draft.Placement;
+            string original = WorldCodec.Encode(draft.World);
+
+            draft.RemoveRoom();
+            Check(WorldLayout.Issues(draft.World, draft.Catalog).Any(), "工厂暂未放置时正式校验报告无效引用");
+            string snapshot = draft.Snapshot();
+            var restored = new RoomDraft(seed);
+            restored.Recover(snapshot);
+            Check(restored.ActiveId == "factory" && restored.Placement == null && restored.Snapshot() == snapshot,
+                "草稿重开仍保留未放置的工厂、森林前置条件与连接");
+            restored.PlaceRoom(factory.Origin, false);
+            var ordered = WorldLayout.WithRooms(restored.World, restored.World.Rooms.OrderBy(row =>
+                Array.IndexOf(new[] { "warehouse", "factory", "forest" }, row.LevelId)).ToArray());
+            Check(WorldCodec.Encode(ordered) == original && !WorldLayout.Issues(restored.World, restored.Catalog).Any(),
+                "工厂放回原位后恢复全部原始引用及正式校验");
+            restored.Undo();
+            Check(restored.Snapshot() == snapshot, "撤销重新放置后仍可保存未放置状态");
+            draft.Undo();
+            Check(WorldCodec.Encode(draft.World) == original, "原会话撤销移出恢复完整世界");
         }
 
         public static void Run()

@@ -4,7 +4,8 @@
  * Reset：以草稿模型、世界、房间目录和路径重置会话，并为每个房间建立持有者与新的命令历史。
  * NewBlankRoom/NewDefaultRoom：新建无恢复道具的空白房间与默认房间；DefaultModel 读取 Resources 里的默认房间，Renamed 复制草稿并换房间 ID。
  * Origin/Placement：当前房间在世界中的原点与放置记录，单独编辑时原点由本地原点给出。
- * Snapshot/Recover：用 RoomCodec 与 WorldCodec 序列化全部房间、世界、路径与脏标记，不保存撤销历史。
+ * Snapshot/Recover：用 RoomCodec 与 WorldCodec 序列化全部房间、世界、未放置前的房间配置、路径与脏标记，不保存撤销历史。
+ * ReadRemovedPlacements(root, world, catalog)：验证草稿里暂未放置房间的配置与引用，恢复候选值。
  * BeginWorld/Attach/UseRoom/RoomAt/PlaceRoom/RemoveRoom/SetConnectionMode：管理世界房间清单，修改世界文档的操作都经命令历史提交。
  * EnterStandaloneEdit/ReturnToWorld：以零原点单独编辑世界中的房间，返回时把改动作为一条可撤销命令写回世界并重跑世界校验。
  * Brush：经 BrushPlanner 整笔预检，世界视图越界整笔拒绝；TerrainPlacementError 给出笔刷悬停提示。
@@ -251,7 +252,14 @@ namespace Sokoban
                 ["path"] = WorkPath,
                 ["dirty"] = Dirty,
                 ["rooms"] = rooms,
-                ["world"] = World == null ? null : WorldCodec.Encode(World),
+                ["world"] = World == null ? null : WorldCodec.EncodeDraft(World, Catalog.Keys),
+                ["removedPlacements"] = removedPlacements.Values.OrderBy(row => row.LevelId, StringComparer.Ordinal)
+                    .Select(row => (object)new Dictionary<string, object>
+                    {
+                        ["id"] = row.LevelId,
+                        ["file"] = row.File,
+                        ["requires"] = row.ForwardRequiresSolved.Select(id => (object)id).ToList(),
+                    }).ToList(),
                 ["originX"] = (long)editorOrigin.X,
                 ["originY"] = (long)editorOrigin.Y,
             };
@@ -273,15 +281,39 @@ namespace Sokoban
             WorldDocument world = null;
             if (root.TryGetValue("world", out var w) && w is string worldText)
             {
-                try { world = WorldCodec.Decode(worldText); }
+                try { world = WorldCodec.DecodeDraft(worldText, catalog.Keys); }
                 catch (FormatException error) { throw new InvalidDataException(error.Message, error); }
             }
             string path = root.TryGetValue("path", out var p) ? p as string : null;
             bool dirty = root.TryGetValue("dirty", out var d) && d is bool flag && flag;
+            var removed = ReadRemovedPlacements(root, world, catalog);
             Reset(catalog[active], world, catalog, path);
+            foreach (var pair in removed) removedPlacements.Add(pair.Key, pair.Value);
             if (root.TryGetValue("originX", out var ox) && ox is long x && root.TryGetValue("originY", out var oy) && oy is long y && world == null)
                 editorOrigin = new Cell((int)x, (int)y);
             unsaved = dirty;
+        }
+
+        static Dictionary<string, WorldRoomRef> ReadRemovedPlacements(Dictionary<string, object> root,
+            WorldDocument world, Dictionary<string, RoomDraftModel> catalog)
+        {
+            var removed = new Dictionary<string, WorldRoomRef>(StringComparer.Ordinal);
+            if (!root.TryGetValue("removedPlacements", out var value)) return removed;
+            if (!(value is List<object> rows)) throw new InvalidDataException("草稿未放置房间记录无效");
+            var placed = world == null ? new HashSet<string>(StringComparer.Ordinal) :
+                new HashSet<string>(world.Rooms.Select(row => row.LevelId), StringComparer.Ordinal);
+            foreach (var item in rows)
+            {
+                if (world == null || !(item is Dictionary<string, object> row) ||
+                    !row.TryGetValue("id", out var rawId) || !(rawId is string id) ||
+                    !catalog.ContainsKey(id) || placed.Contains(id) || removed.ContainsKey(id) ||
+                    !row.TryGetValue("file", out var rawFile) || !(rawFile is string file) ||
+                    !row.TryGetValue("requires", out var rawRequires) || !(rawRequires is List<object> requires) ||
+                    requires.Any(required => !(required is string key) || !catalog.ContainsKey(key)))
+                    throw new InvalidDataException("草稿未放置房间配置无效");
+                removed.Add(id, new WorldRoomRef(id, file, default, requires.Cast<string>().ToArray()));
+            }
+            return removed;
         }
 
         public string TerrainPlacementError(Cell cell, RoomTool tool)
