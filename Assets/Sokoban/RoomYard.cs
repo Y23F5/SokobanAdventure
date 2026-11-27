@@ -30,6 +30,18 @@ namespace Sokoban
                 part.transform.localPosition = new Vector3(decoration.Cell.X, 0, decoration.Cell.Y);
                 part.transform.localRotation = RoomPreview.CellRotation(decoration.Rotation);
             }
+            Device(model, group);
+        }
+
+        static void Device(RoomDraftModel model, Transform group)
+        {
+            var device = model.RecoveryDevice;
+            if (device == null) return;
+            string path = device.Kind switch { RecoveryDeviceKind.Forklift => "Diorama/Lift", RecoveryDeviceKind.Arm => "Diorama/Conveyor", _ => "Diorama/Tree" };
+            var part = ObjectStateView.Create(model.Assets, group, path, null);
+            part.name = device.Id;
+            part.transform.localPosition = new Vector3(device.Anchor.X, 0, device.Anchor.Y);
+            part.transform.localRotation = RoomPreview.CellRotation(device.Rotation);
         }
 
         static void Ground(RoomDraftModel model, Vector2Int origin, Transform group, WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog)

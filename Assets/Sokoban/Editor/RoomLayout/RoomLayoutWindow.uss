@@ -27,5 +27,10 @@
 .sl-root .sl-entry { white-space: normal; -unity-text-align: middle-left; min-height: 24px; }
 .sl-root .sl-overlay { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.42); justify-content: center; align-items: center; display: none; }
 .sl-root .sl-dialog { width: 90%; height: 88%; max-width: 780px; padding: 12px; }
+.sl-root .sl-dialog > * { flex-shrink: 0; }
+.sl-root .sl-dialog > #file-fields { flex-shrink: 1; flex-grow: 1; min-height: 80px; }
+.sl-root #file-fields > * { flex-shrink: 0; }
+.sl-root #file-fields > #entries { flex-shrink: 1; flex-grow: 1; min-height: 60px; }
+.sl-root #dialog-actions { min-height: 30px; }
 .sl-root.sl-dark .sl-dialog { background-color: #383838; }
 .sl-root.sl-light .sl-dialog { background-color: #d6d6d6; }

@@ -15,7 +15,7 @@ namespace Sokoban.Editor
 
         const string Diorama = "Assets/Sokoban/Resources/Diorama/";
         const string LitShader = "Universal Render Pipeline/Lit";
-        static readonly string[] Prefabs = { "FactoryWall", "FactoryTarget", "ForestWall", "ForestFence", "ForestTarget", "TreeStump" };
+        static readonly string[] Prefabs = { "FactoryWall", "FactoryTarget", "ForestWall", "ForestFence", "ForestTarget", "TreeStump", "Door" };
 
         public static void VerifyMaterials()
         {
@@ -91,6 +91,16 @@ namespace Sokoban.Editor
             {
                 Part(root,"森林目标底座",PrimitiveType.Cylinder,new Vector3(0,.030f,0),new Vector3(.78f,.02f,.78f),moss);
                 Part(root,"木心标记",PrimitiveType.Cylinder,new Vector3(0,.057f,0),new Vector3(.47f,.009f,.47f),warm);
+            });
+            var kraft = LoadMaterial(Folder + "Kraft.mat");
+            var ink = LoadMaterial(Folder + "Ink.mat");
+            var sage = LoadMaterial(Folder + "Sage.mat");
+            Save("Door", root =>
+            {
+                Part(root, "门槛", PrimitiveType.Cube, new Vector3(0, .02f, 0), new Vector3(.8f, .04f, .16f), sage);
+                Part(root, "左立柱", PrimitiveType.Cube, new Vector3(-.42f, .4f, 0), new Vector3(.12f, .8f, .16f), ink);
+                Part(root, "右立柱", PrimitiveType.Cube, new Vector3(.42f, .4f, 0), new Vector3(.12f, .8f, .16f), ink);
+                Part(root, "横梁", PrimitiveType.Cube, new Vector3(0, .78f, 0), new Vector3(.96f, .12f, .16f), kraft);
             });
             const string growthPath = "Assets/Sokoban/Resources/Diorama/TreeGrowth.anim";
             if (!AssetDatabase.LoadAssetAtPath<AnimationClip>(growthPath))
