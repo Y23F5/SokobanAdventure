@@ -29,7 +29,6 @@ namespace Sokoban.Core.Tests
             history.Execute(new SetSpawnCommand(draft));
             history.Execute(new PlaceObjectCommand(draft, "box-1", ObjectCategories.Box, new Cell(3, 2)));
             history.Execute(new PlaceObjectCommand(draft, "target-1", ObjectCategories.Target, new Cell(5, 2)));
-            history.Execute(new AddRecoveryItemCommand(draft, new RecoveryItem("recovery-1", "warehouse-lift", 3.7f)));
             var device = new RecoveryDevice("device", RecoveryDeviceKind.Forklift, new Cell(-1, 2), 1, "warehouse-lift", 3.7f);
             history.Execute(RecoveryDeviceCommands.Place(new DraftHolder(draft), device));
             return draft;
@@ -59,7 +58,7 @@ namespace Sokoban.Core.Tests
             var doc = draft;
             var back = RoomCodec.Decode(RoomCodec.Encode(doc));
             Assert.Equal(ContentHash.Of(draft), ContentHash.Of(back));
-            Assert.Single(back.RecoveryItems);
+            Assert.NotNull(back.RecoveryDevice);
         }
 
         [Fact]
@@ -68,8 +67,8 @@ namespace Sokoban.Core.Tests
             var draft = Build(new CommandHistory());
             var room = draft.Room;
             var progress = new PlayProgress();
-            Assert.True(progress.Enter(room.Id, draft.RecoveryItems.Single()));
-            Assert.Equal("recovery-1", progress.Bag.Pending);
+            Assert.True(progress.Enter(room.Id, draft.RecoveryDevice));
+            Assert.Equal("mine", progress.Bag.Pending);
             progress.Bag.Accept();
 
             var boxes = room.ObjectsOf(ObjectCategories.Box).ToDictionary(b => b.Id, b => b.Cell);
@@ -78,15 +77,15 @@ namespace Sokoban.Core.Tests
             Assert.True(push.Pushed);
             Assert.Equal(new Cell(4, 2), session.Boxes["box-1"]);
 
-            session.Start(draft.RecoveryItems.Single().Duration);
+            session.Start(draft.RecoveryDevice.Duration);
             Assert.False(session.CanPush());
-            session.Advance(draft.RecoveryItems.Single().Duration);
+            session.Advance(draft.RecoveryDevice.Duration);
             Assert.False(session.Recovering);
             Assert.Equal(new Cell(3, 2), session.Boxes["box-1"]);
 
             var again = PushRules.TryPush(session, session.Player, Cell.Right);
             Assert.True(again.Moved);
-            Assert.False(progress.Enter(room.Id, draft.RecoveryItems.Single()));
+            Assert.False(progress.Enter(room.Id, draft.RecoveryDevice));
         }
 
         [Fact]
@@ -120,7 +119,7 @@ namespace Sokoban.Core.Tests
             var draft = Build(history);
             while (history.Undo()) { }
             Assert.Empty(draft.Room.Objects);
-            Assert.Empty(draft.RecoveryItems);
+            Assert.Null(draft.RecoveryDevice);
             Assert.Contains(RoomValidator.ValidateDraft(draft, ValidationStage.Publish), i => i.RuleId == "recoveryDevice.missing");
         }
     }

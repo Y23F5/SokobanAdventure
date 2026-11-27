@@ -1,6 +1,6 @@
 /**
  * @file DraftResizeTests.cs
- * @brief 验证 RoomResize.Resized 的草稿重载：扩建平移时门格随房间一起平移，门地形与实体 ID 保持一致，主入口、恢复道具与透传字段原样带到新草稿。
+ * @brief 验证 RoomResize.Resized 的草稿重载：扩建平移时门格随房间一起平移，门地形与实体 ID 保持一致，主入口、恢复装置与透传字段带到新草稿。
  * 每个用例用 BrushFixture 的七乘七草稿平移后，断言门格、门地形、ID 空间、独立副本、越界门抛异常与 NeedsFloor 在新坐标下的判定。
  */
 using System;
@@ -47,17 +47,17 @@ namespace Sokoban.Core.Tests
                 Assert.True(next.Room.Ids.Contains(id));
                 Assert.Equal(source.Room.Ids.KindOf(id), next.Room.Ids.KindOf(id));
             }
-            Assert.Equal("recovery", next.Room.Ids.KindOf("recovery-1"));
+            Assert.Equal("recoveryDevice", next.Room.Ids.KindOf("recovery-1"));
         }
 
         [Fact]
-        public void CarriesEntranceRecoveryItemsAndExtras()
+        public void CarriesEntranceRecoveryDeviceAndExtras()
         {
             var source = BrushFixture.Draft();
             var next = RoomResize.Resized(source, 1, 1, 8, 8);
             Assert.Equal("entry", next.PrimaryEntranceId);
-            Assert.Single(next.RecoveryItems);
-            Assert.Same(source.RecoveryItems[0], next.RecoveryItems[0]);
+            Assert.Equal(source.RecoveryDevice.Id, next.RecoveryDevice.Id);
+            Assert.Equal(new Cell(-1, 3), next.RecoveryDevice.Anchor);
             Assert.Equal("x", next.Extras["note"]);
         }
 

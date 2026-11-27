@@ -75,5 +75,11 @@ namespace Sokoban.Core
 
         public StateTransition Find(string from, string trigger) =>
             Transitions.FirstOrDefault(t => t.From == from && t.Trigger == trigger);
+
+        public static ObjectStateTable ForestTree() => new ObjectStateTable("tree", new[] { "tree", "logs" }, new[]
+        {
+            new StateTransition("tree", TriggerIds.FirstPush, "logs", new AppearanceRef("TreeStump")),
+            new StateTransition("logs", TriggerIds.RecoveryEnd, "tree")
+        });
     }
 }

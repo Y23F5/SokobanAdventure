@@ -71,7 +71,7 @@ namespace Sokoban.Editor
             var author = new RoomDraft(RoomCodec.Decode(Resources.Load<TextAsset>("DefaultRoom").text));
             author.Place(true, new Cell(3, 2), "box-qa");
             author.Place(false, new Cell(4, 2), "target-qa");
-            author.Commit(new AddRecoveryItemCommand(author.Model, new RecoveryItem("recovery-qa", "warehouse-lift", RecoveryItem.DefaultDuration)));
+            VerificationFixtures.EnsureRecovery(author);
             author.SetBehavior(cell, ObjectBehavior.Template());
             owner = author.OwnerAt(cell);
             string ownerId = owner;

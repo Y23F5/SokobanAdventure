@@ -11,12 +11,10 @@ namespace Sokoban.Core.Tests
         static RoomDraftModel Sample()
         {
             var r = Blueprint.Parse("warehouse", new[] { "######", "<.PBT>", "######" });
-            var items = new List<RecoveryItem>
-            {
-                new RecoveryItem("recovery-1", "warehouse-lift", 3.7f,
-                    new Dictionary<string, float> { { "gateX", 4.25f }, { "yaw", 90f } })
-            };
-            return new RoomDraftModel(r.Room, r.Doors, "entry", null, items);
+            var draft = new RoomDraftModel(r.Room, r.Doors, "entry");
+            draft.ReplaceRecoveryDevice(new RecoveryDevice("recovery-1", RecoveryDeviceKind.Forklift, new Cell(-1, 1), 1, "warehouse-lift", 3.7f,
+                new Dictionary<string, float> { { "gateX", 4.25f }, { "yaw", 90f } }));
+            return draft;
         }
 
         static RoomDraftModel Rich()
@@ -94,9 +92,9 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void RoundTripKeepsRecoveryItemWithFractionalValues()
+        public void RoundTripKeepsRecoveryDeviceWithFractionalValues()
         {
-            var item = RoomCodec.Decode(RoomCodec.Encode(Sample())).RecoveryItems.Single();
+            var item = RoomCodec.Decode(RoomCodec.Encode(Sample())).RecoveryDevice;
             Assert.Equal("recovery-1", item.Id);
             Assert.Equal("warehouse-lift", item.ScriptRef);
             Assert.Equal(3.7f, item.Duration, 3);
@@ -105,16 +103,16 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void EncodedTextHasNoDecimalPoint()
+        public void DeviceNumbersUseInvariantStrings()
         {
-            Assert.DoesNotContain(".", RoomCodec.Encode(Sample()).Replace("warehouse-lift", ""));
+            Assert.Contains("\"duration\":\"3.7\"", RoomCodec.Encode(Sample()));
         }
 
         [Fact]
         public void OpenableTerrainKeepsEntityAndState()
         {
             var r = Blueprint.Parse("forest", new[] { "#####", "#PVB#", "#####" });
-            var draft = new RoomDraftModel(r.Room, r.Doors, null, null, new List<RecoveryItem>());
+            var draft = new RoomDraftModel(r.Room, r.Doors);
             var back = RoomCodec.Decode(RoomCodec.Encode(draft));
             var cell = back.Room.TerrainAt(new Cell(2, 1));
             Assert.Equal(TerrainCategories.Openable, cell.CategoryId);
@@ -125,7 +123,7 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void RecoveryItemIdSharesTheRoomIdSpace()
+        public void RecoveryDeviceIdSharesTheRoomIdSpace()
         {
             var back = RoomCodec.Decode(RoomCodec.Encode(Sample()));
             Assert.True(back.Room.Ids.Contains("recovery-1"));
@@ -210,7 +208,7 @@ namespace Sokoban.Core.Tests
         [Fact]
         public void NonPositiveDurationIsRejectedOnRead()
         {
-            string text = RoomCodec.Encode(Sample()).Replace("\"duration\":3700", "\"duration\":0");
+            string text = RoomCodec.Encode(Sample()).Replace("\"duration\":\"3.7\"", "\"duration\":\"0\"");
             Assert.Throws<FormatException>(() => RoomCodec.Decode(text));
         }
 

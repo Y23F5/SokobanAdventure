@@ -13,7 +13,7 @@ namespace Sokoban.Editor
         {
             if (draft.Model.RecoveryDevice != null) return;
             draft.PlaceRecoveryDevice(new RecoveryDevice("recovery-qa", RecoveryDeviceKind.Forklift,
-                new Cell(-1, draft.Room.Height / 2), 1, "warehouse-lift", RecoveryItem.DefaultDuration));
+                new Cell(-1, draft.Room.Height / 2), 1, "warehouse-lift", RecoveryDevice.DefaultDuration));
         }
     }
 }

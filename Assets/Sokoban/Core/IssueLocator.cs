@@ -13,7 +13,7 @@ namespace Sokoban.Core
 {
     public enum LocateKind { Room, Cell, Object, Door }
 
-    public enum LocateTool { None, Select, PlaceSpawn, PlaceTarget, PaintWall, SetDoor, AddRecoveryItem }
+    public enum LocateTool { None, Select, PlaceSpawn, PlaceTarget, PaintWall, SetDoor }
 
     public sealed class LocateTarget
     {

@@ -2,9 +2,8 @@
  * @file RoomCodec.cs
  * rotation、heightOffset：v1 可选整数字段，零值省略，缺省为零；高度单位为千分之一格，门只写 outX/outY。
  * @brief 房间文件的编解码：把 RoomDraftModel 的全部可保存字段写成 JSON 并读回，用 MiniJson，不依赖外部库。
- * RecoveryItem：恢复道具（道具 ID、脚本引用、时长秒、数值参数表），ID 与房内对象共用同一份 ID 空间。
- * RoomCodec.Encode(draft)：写出房间名与主题、类型化地形网格（类别、实体 ID、状态、外观引用与变体序号）、对象及其外观、门与主入口、恢复道具、装饰、资源描述符、行为图（节点带格坐标）、对象模板、模板实例、对象状态表、界面图资源 ID 与 Extras；
- * 小数不进 JSON，恢复道具时长与参数按千分之一取整数；写完先调用 Decode 试读，任何问题抛 FormatException，调用方不应写入文件。
+ * RoomCodec.Encode(draft)：写出房间名与主题、类型化地形网格（类别、实体 ID、状态、外观引用与变体序号）、对象及其外观、门与主入口、恢复装置、装饰、资源描述符、行为图（节点带格坐标）、对象模板、模板实例、对象状态表、界面图资源 ID 与 Extras；
+ * 小数不进 JSON，恢复装置时长与参数按千分之一取整数；写完先调用 Decode 试读，任何问题抛 FormatException，调用方不应写入文件。
  * RoomCodec.Decode(text)：返回 RoomDraftModel；校验格式号、尺寸、地形与对象类别（取自注册表）、格子范围、对象不共享初始格、ID 在房间内唯一、恢复时长为正、主入口引用与各字段类型，任何问题统一抛 FormatException。
  * DeviceNumber(record, key)：从不受地区格式影响的字符串读取有限浮点。
  * DeviceOut(device)、DeviceIn(room, raw)：编解码唯一装置、墙外锚点、方向、精确时长、参数及道具文字。
@@ -17,29 +16,10 @@ using System.Linq;
 
 namespace Sokoban.Core
 {
-    public sealed class RecoveryItem
-    {
-        public const float DefaultDuration = 3.7f;
-
-        public string Id { get; }
-        public string ScriptRef { get; }
-        public float Duration { get; }
-        public IReadOnlyDictionary<string, float> Params { get; }
-
-        public RecoveryItem(string id, string scriptRef, float duration, IReadOnlyDictionary<string, float> parameters = null)
-        {
-            Id = id;
-            ScriptRef = scriptRef;
-            Duration = duration;
-            Params = parameters ?? new Dictionary<string, float>();
-        }
-    }
-
     public static class RoomCodec
     {
         public const int FormatVersion = 1;
         public const int MaxSize = 256;
-        const string RecoveryKind = "recovery";
 
         public static string Encode(RoomDraftModel draft)
         {
@@ -126,15 +106,6 @@ namespace Sokoban.Core
                 ["id"] = d.Id, ["x"] = (long)d.Cell.X, ["y"] = (long)d.Cell.Y,
                 ["outX"] = (long)d.Outward.X, ["outY"] = (long)d.Outward.Y, ["role"] = d.Role
             }).ToList();
-            var items = draft.RecoveryItems.Select(i =>
-            {
-                var parameters = new Dictionary<string, object>();
-                foreach (var p in i.Params.OrderBy(p => p.Key, StringComparer.Ordinal)) parameters[p.Key] = Milli(p.Value);
-                return (object)new Dictionary<string, object>
-                {
-                    ["id"] = i.Id, ["script"] = i.ScriptRef, ["duration"] = Milli(i.Duration), ["params"] = parameters
-                };
-            }).ToList();
             var decorations = draft.Decorations.Select(d =>
             {
                 var rec = new Dictionary<string, object> { ["id"] = d.Id, ["x"] = (long)d.Cell.X, ["y"] = (long)d.Cell.Y };
@@ -190,7 +161,6 @@ namespace Sokoban.Core
                 ["objectStates"] = objectStates,
                 ["uiImage"] = draft.UiImageAssetId,
             };
-            if (items.Count > 0) root["recovery"] = items;
             if (draft.RecoveryDevice != null) root["recoveryDevice"] = DeviceOut(draft.RecoveryDevice);
             if (draft.Meta.Description.Length > 0) root["description"] = draft.Meta.Description;
             if (draft.Meta.EntryHint.Length > 0) root["entryHint"] = draft.Meta.EntryHint;
@@ -338,19 +308,6 @@ namespace Sokoban.Core
                 doors.Add(new DoorInfo(Str(rec, "id"), CellOf(room, rec, "门"), new Cell(Int(rec, "outX"), Int(rec, "outY")), Str(rec, "role")));
             }
 
-            var recovery = new List<RecoveryItem>();
-            foreach (var item in root.ContainsKey("recovery") ? Arr(root, "recovery") : new List<object>())
-            {
-                var rec = Obj(item, "恢复道具记录");
-                string id = Str(rec, "id");
-                int duration = Int(rec, "duration");
-                if (duration <= 0) throw new FormatException("恢复道具 " + id + " 的时长必须大于 0");
-                if (!rec.TryGetValue("params", out var raw) || !(raw is Dictionary<string, object> table)) throw new FormatException("缺少 params");
-                var parameters = new Dictionary<string, float>(StringComparer.Ordinal);
-                foreach (var p in table) parameters[p.Key] = Int(table, p.Key) / 1000f;
-                recovery.Add(new RecoveryItem(id, Str(rec, "script"), duration / 1000f, parameters));
-            }
-
             string primary = OptStr(root, "primaryEntranceId");
             if (primary != null && !doors.Any(d => d.Id == primary && d.Role == "entry"))
                 throw new FormatException("主入口 " + primary + " 不是入口门");
@@ -360,7 +317,7 @@ namespace Sokoban.Core
                 foreach (var pair in Obj(rawExtras, "extras"))
                     extras[pair.Key] = pair.Value as string ?? throw new FormatException("extras 字段 " + pair.Key + " 不是字符串");
             }
-            var draft = new RoomDraftModel(room, doors, primary, extras, recovery);
+            var draft = new RoomDraftModel(room, doors, primary, extras);
             if (root.TryGetValue("recoveryDevice", out var device)) draft.ReplaceRecoveryDevice(DeviceIn(room, device));
             draft.Meta = new RoomMeta(OptStr(root, "name") ?? "", OptStr(root, "themeId"),
                 OptStr(root, "description"), OptStr(root, "entryHint"), OptStr(root, "playHint"));

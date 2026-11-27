@@ -9,7 +9,7 @@
  * RoomValidator.Validate(room, stage, entry)：运行全部 Rule 并按档位映射严重级别，返回结果列表；object.notOnFloor 与 object.sharedCell 同样覆盖自定义物件；entry 为主入口内侧的入口缓冲格，缺主入口时传 null。
  * RoomValidator.HasErrors(issues)：判断结果中是否存在错误，发布级存在错误时阻止试玩、保存与导出。
  * RoomValidator.ValidateDraft(draft, stage)：在 Validate 之上校验恢复装置，并运行 DraftRules：door.geometry、boundary.open，
- * 以及 recovery.duration（时长不大于 0）、id.duplicate（各类 ID 重复）、ref.dangling（模板、行为图所有者与连线节点、对象状态键、界面图资源、主入口的悬空引用）、
+ * 以及 id.duplicate（各类 ID 重复）、ref.dangling（模板、行为图所有者与连线节点、对象状态键、界面图资源、主入口的悬空引用）、
  * recovery.scriptUnknown（脚本引用既不是随项目发布的默认脚本也不是房间内 script 类资源）、behavior.nodeUnknown（行为节点类型不在注册表，含模板内的图）、
  * openable.disconnected（存在可开合地形时，以封闭状态从出生点出发走不到某扇门，两档均为警告）。
  * RoomValidator.ModelFootprintRuleId 与 ModelFootprintIssue(assetId, sizeX, sizeZ)：单格模型水平包围盒必须为 1×1 格、容差 0.001，两档均为错误；包围盒由表现层测得后传入，Core 只判定。
@@ -119,9 +119,6 @@ namespace Sokoban.Core
         public static readonly IReadOnlyList<DraftRule> DraftRules = new List<DraftRule>
         {
 
-            new DraftRule("recovery.duration", Severity.Error, Severity.Error, d =>
-                d.RecoveryItems.Where(i => !(i.Duration > 0)).Select(i => (i.Id, "恢复道具时长必须大于 0"))),
-
             new DraftRule("recovery.scriptUnknown", Severity.Error, Severity.Error, UnknownScripts),
 
             new DraftRule("behavior.nodeUnknown", Severity.Error, Severity.Error, UnknownNodes),
@@ -178,9 +175,6 @@ namespace Sokoban.Core
             var known = new HashSet<string>(Registries.BuiltinRecoveryScripts, StringComparer.Ordinal);
             foreach (var a in d.Assets)
                 if (a.Kind == AssetKinds.Script) known.Add(a.Id);
-            foreach (var item in d.RecoveryItems)
-                if (item.ScriptRef == null || !known.Contains(item.ScriptRef))
-                    yield return (item.Id, "恢复脚本未知：" + item.ScriptRef);
             if (d.RecoveryDevice != null && !known.Contains(d.RecoveryDevice.ScriptRef))
                 yield return (d.RecoveryDevice.Id, "恢复脚本未知：" + d.RecoveryDevice.ScriptRef);
         }
@@ -205,7 +199,6 @@ namespace Sokoban.Core
                     string entity = room.TerrainAt(new Cell(x, y)).EntityId;
                     if (entity != null) all.Add(entity);
                 }
-            all.AddRange(d.RecoveryItems.Select(i => i.Id));
             if (d.RecoveryDevice != null) all.Add(d.RecoveryDevice.Id);
             all.AddRange(d.Graphs.Select(g => g.Id));
             all.AddRange(d.Instances.Select(i => i.Id));
@@ -226,7 +219,6 @@ namespace Sokoban.Core
                     if (entity != null) ids.Add(entity);
                 }
             foreach (var i in d.Instances) ids.Add(i.Id);
-            foreach (var i in d.RecoveryItems) ids.Add(i.Id);
             if (d.RecoveryDevice != null) ids.Add(d.RecoveryDevice.Id);
             foreach (var g in d.Graphs) ids.Add(g.Id);
             foreach (var i in d.Instances)

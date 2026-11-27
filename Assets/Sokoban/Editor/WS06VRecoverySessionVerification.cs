@@ -56,7 +56,7 @@ namespace Sokoban.Editor
             var home = new Cell(2, 2);
             var route = RecoveryRules.Route(from, home);
             var zone = RecoveryRules.OccupiedZone(new[] { new BoxMove(from, home) });
-            var ctx = new RecoveryContext("qa", "box-1", route, RecoveryItem.DefaultDuration);
+            var ctx = new RecoveryContext("qa", "box-1", route, RecoveryDevice.DefaultDuration);
             foreach (string script in new[] { "warehouse-lift", "factory-belt", "forest-decay" })
             {
                 var method = Method(script);
@@ -74,8 +74,8 @@ namespace Sokoban.Editor
             }
 
             var lift = Method("warehouse-lift");
-            var device = new RecoveryDevice("forklift", RecoveryDeviceKind.Forklift, new Cell(-1, 1), 1, "warehouse-lift", RecoveryItem.DefaultDuration);
-            var liftContext = new RecoveryContext("qa", "box-1", route, RecoveryItem.DefaultDuration, device: device);
+            var device = new RecoveryDevice("forklift", RecoveryDeviceKind.Forklift, new Cell(-1, 1), 1, "warehouse-lift", RecoveryDevice.DefaultDuration);
+            var liftContext = new RecoveryContext("qa", "box-1", route, RecoveryDevice.DefaultDuration, device: device);
             ctx = liftContext;
             Require(lift.Pose(0, ctx).Select(p => p.PartId).OrderBy(s => s, StringComparer.Ordinal).SequenceEqual(new[] { "boom", "box-1", "crossbar", "fork", "mast", "tower", "truck" }), "叉车脚本含车身、塔柱、吊臂、滑架、横梁、双叉与箱子");
             var liftStart = Part(lift.Pose(0, ctx), "box-1");
@@ -100,8 +100,8 @@ namespace Sokoban.Editor
             Require(Part(lift.Pose(.1f, ctx), "fork").ScaleX < .2f && Part(lift.Pose(.55f, ctx), "fork").ScaleX > .7f && Part(lift.Pose(.96f, ctx), "fork").ScaleX < .2f, "叉车脚本货叉在中段伸出、结束收回");
 
             var belt = Method("factory-belt");
-            var arm = new RecoveryDevice("arm", RecoveryDeviceKind.Arm, new Cell(-1, 2), 1, "factory-belt", RecoveryItem.DefaultDuration);
-            var factoryContext = new RecoveryContext("qa", "box-1", route, RecoveryItem.DefaultDuration, device: arm);
+            var arm = new RecoveryDevice("arm", RecoveryDeviceKind.Arm, new Cell(-1, 2), 1, "factory-belt", RecoveryDevice.DefaultDuration);
+            var factoryContext = new RecoveryContext("qa", "box-1", route, RecoveryDevice.DefaultDuration, device: arm);
             var retracted = belt.Pose(0, factoryContext);
             var deployed = belt.Pose(.34f, factoryContext);
             var rails = Part(deployed, "belt");
@@ -135,7 +135,7 @@ namespace Sokoban.Editor
             Require(!Part(d5, "box-1-tree").Visible && Part(d9, "box-1-tree").Visible && Part(d9, "box-1-tree").ClipTime > 0, "森林脚本后段在初始格生长出树");
             Require(Part(d1, "box-1-tree").X == home.X && Part(d1, "box-1-tree").Z == home.Y && Part(d1, "box-1-tree").ClipTime == 1, "森林脚本结束时完整树木在初始格");
 
-            var gateCtx = new RecoveryContext("qa", "gate-4-5", new List<Cell> { new Cell(4, 5) }, RecoveryItem.DefaultDuration,
+            var gateCtx = new RecoveryContext("qa", "gate-4-5", new List<Cell> { new Cell(4, 5) }, RecoveryDevice.DefaultDuration,
                 new Dictionary<string, float> { ["gateX"] = 4f, ["gateZ"] = 5f, ["yaw"] = -90f });
             var gate = Method("forest-vine").Pose(.5f, gateCtx).Single();
             Require(gate.PartId == "forest-vine" && gate.X == 4f && gate.Z == 5f && gate.Yaw == -90f && Math.Abs((gate.ClipTime ?? -1f) - .5f) < .0001f, "藤门脚本取格位与朝向参数，剪辑时刻等于进度");
@@ -171,7 +171,7 @@ namespace Sokoban.Editor
                 for (int y = 0; y < 5; y++) room.SetTerrain(new Cell(x, y), TerrainCategories.Floor);
             room.AddObject("box-1", ObjectCategories.Box, new Cell(2, 2));
             var session = new RecoverySession(room, new Dictionary<string, Cell> { ["box-1"] = new Cell(4, 2) }, new Cell(0, 0), null);
-            session.Start(RecoveryItem.DefaultDuration);
+            session.Start(RecoveryDevice.DefaultDuration);
             Require(session.Recovering && !session.CanPush() && session.Zone.Contains(new Cell(3, 2)), "恢复开始：禁推且占用区覆盖两格之间");
             Require(!session.Advance(1f) && session.Boxes["box-1"] == new Cell(4, 2) && session.CompletedCount == 0, "恢复期间箱子保持原位且未提交");
             Require(session.Advance(10f) && session.Boxes["box-1"] == new Cell(2, 2) && session.CompletedCount == 1, "时间用尽时箱子一次性回到初始格并提交一次");
@@ -362,15 +362,15 @@ namespace Sokoban.Editor
             editor.Panel.Draft.Open(Path.Combine(Application.streamingAssetsPath, "World", RoomId + ".room.json"), true);
             if (RoomId == "warehouse")
                 editor.Panel.Draft.PlaceRecoveryDevice(new RecoveryDevice("qa-west-lift", RecoveryDeviceKind.Forklift,
-                    new Cell(-1, 1), 1, "warehouse-lift", RecoveryItem.DefaultDuration),
+                    new Cell(-1, 1), 1, "warehouse-lift", RecoveryDevice.DefaultDuration),
                     replaceExisting: editor.Panel.Draft.Model.RecoveryDevice != null);
             if (RoomId == "factory")
                 editor.Panel.Draft.PlaceRecoveryDevice(new RecoveryDevice("qa-north-arm", RecoveryDeviceKind.Arm,
-                    new Cell(4, editor.Panel.Draft.Room.Height), 2, "factory-belt", RecoveryItem.DefaultDuration),
+                    new Cell(4, editor.Panel.Draft.Room.Height), 2, "factory-belt", RecoveryDevice.DefaultDuration),
                     replaceExisting: editor.Panel.Draft.Model.RecoveryDevice != null);
             if (RoomId == "forest")
                 editor.Panel.Draft.PlaceRecoveryDevice(new RecoveryDevice("qa-fixed-tree", RecoveryDeviceKind.Tree,
-                    new Cell(3, -1), 0, "forest-decay", RecoveryItem.DefaultDuration),
+                    new Cell(3, -1), 0, "forest-decay", RecoveryDevice.DefaultDuration),
                     replaceExisting: editor.Panel.Draft.Model.RecoveryDevice != null);
             editor.StartTrial();
             yield return null; yield return null;

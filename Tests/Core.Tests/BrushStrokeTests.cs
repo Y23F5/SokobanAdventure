@@ -94,7 +94,7 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void ExpandKeepsIdsRecoveryItemsAndExtras()
+        public void ExpandKeepsIdsRecoveryDeviceAndExtras()
         {
             var holder = new DraftHolder(BrushFixture.Draft());
             new CommandHistory().Execute(BrushPlanner.Preflight(holder.Draft, new[] { new Cell(-1, 0) }, BrushTool.Floor).CreateCommand(holder));
@@ -102,7 +102,7 @@ namespace Sokoban.Core.Tests
             Assert.True(draft.Room.Ids.Contains("box-1"));
             Assert.True(draft.Room.Ids.Contains("entry"));
             Assert.True(draft.Room.Ids.Contains("recovery-1"));
-            Assert.Single(draft.RecoveryItems);
+            Assert.NotNull(draft.RecoveryDevice);
             Assert.Equal("x", draft.Extras["note"]);
             Assert.Equal("entry", draft.PrimaryEntranceId);
         }

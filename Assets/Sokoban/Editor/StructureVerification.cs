@@ -56,7 +56,7 @@ namespace Sokoban.Editor
                 }
             foreach (var placed in source.Objects)
                 if (placed.Appearance != null) room.SetObjectAppearance(placed.Id, placed.Appearance);
-            var next = new RoomDraftModel(room, doors, src.PrimaryEntranceId, src.Extras, src.RecoveryItems);
+            var next = new RoomDraftModel(room, doors, src.PrimaryEntranceId, src.Extras);
             if (src.RecoveryDevice != null)
                 RecoveryDeviceCommands.Place(new DraftHolder(next), src.RecoveryDevice).Apply();
             next.Meta = src.Meta;

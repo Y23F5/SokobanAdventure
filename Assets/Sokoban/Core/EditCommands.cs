@@ -5,8 +5,6 @@
  * MoveObjectCommand(draft, id, cell)：按 ID 移动对象并保留其外观引用和旋转，经 PlacementRules.Error 预检（对象可留在原格）；找不到对象或预检失败抛 InvalidOperationException；Revert 还原原格、外观与旋转。
  * SetSpawnCommand(draft, rotation)：出生点固定在主入口内侧格（门格减外侧偏移），没有主入口、该格不是地板或被其他对象占用时抛 InvalidOperationException；省略旋转时保留已有朝向，新出生点默认 0；Revert 还原旧出生点或移除。
  * PlaceObjectCommand、SetSpawnCommand 的 DraftHolder 重载在每次执行与撤销时解析当前草稿，支持与替换草稿的笔划命令混用。
- * AddRecoveryItemCommand(draft, item)：添加恢复道具，时长必须大于 0、ID 不得重复；Revert 移除并释放 ID。
- * SetRecoveryDurationCommand(draft, itemId, duration)：修改恢复道具时长，必须大于 0；Revert 还原旧时长。
  */
 using System;
 using System.Collections.Generic;
@@ -120,65 +118,6 @@ namespace Sokoban.Core
             var room = holder.Draft.Room;
             room.RemoveObject(SpawnId);
             if (previous != null) room.AddObject(previous.Id, previous.CategoryId, previous.Cell, previous.Appearance, previous.Rotation);
-        }
-    }
-
-    public sealed class AddRecoveryItemCommand : ICommand
-    {
-        readonly RoomDraftModel draft;
-        readonly RecoveryItem item;
-
-        public AddRecoveryItemCommand(RoomDraftModel draft, RecoveryItem item)
-        {
-            this.draft = draft;
-            this.item = item;
-        }
-
-        public void Apply()
-        {
-            if (item.Duration <= 0) throw new InvalidOperationException("恢复时长必须大于 0");
-            if (string.IsNullOrEmpty(item.Id) || draft.Room.Ids.Contains(item.Id))
-                throw new InvalidOperationException("ID 为空或已存在：" + item.Id);
-            draft.Room.Ids.Add(item.Id, "recovery");
-            draft.ItemList.Add(item);
-        }
-
-        public void Revert()
-        {
-            draft.ItemList.Remove(item);
-            draft.Room.Ids.Remove(item.Id);
-        }
-    }
-
-    public sealed class SetRecoveryDurationCommand : ICommand
-    {
-        readonly RoomDraftModel draft;
-        readonly string itemId;
-        readonly float duration;
-        RecoveryItem before;
-        RecoveryItem after;
-
-        public SetRecoveryDurationCommand(RoomDraftModel draft, string itemId, float duration)
-        {
-            this.draft = draft;
-            this.itemId = itemId;
-            this.duration = duration;
-        }
-
-        public void Apply()
-        {
-            if (duration <= 0) throw new InvalidOperationException("恢复时长必须大于 0");
-            int index = draft.ItemList.FindIndex(i => i.Id == itemId);
-            if (index < 0) throw new InvalidOperationException("没有恢复道具 " + itemId);
-            before = draft.ItemList[index];
-            after = new RecoveryItem(before.Id, before.ScriptRef, duration, before.Params);
-            draft.ItemList[index] = after;
-        }
-
-        public void Revert()
-        {
-            int index = draft.ItemList.IndexOf(after);
-            if (index >= 0) draft.ItemList[index] = before;
         }
     }
 }

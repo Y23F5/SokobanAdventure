@@ -119,8 +119,11 @@ namespace Sokoban.Core.Tests
                 _ => throw new ArgumentOutOfRangeException(nameof(id)),
             };
             draft.ReplaceRecoveryDevice(new RecoveryDevice("recovery-device", kind, anchor, rotation,
-                script, RecoveryItem.DefaultDuration, itemName: name + "恢复道具", itemDescription: description, itemAcquiredHint: "按 R 启动本房恢复装置。"));
+                script, RecoveryDevice.DefaultDuration, itemName: name + "恢复道具", itemDescription: description, itemAcquiredHint: "按 R 启动本房恢复装置。"));
             draft.Meta = new RoomMeta(name, id);
+            if (id == "forest")
+                foreach (var box in room.ObjectsOf(ObjectCategories.Box))
+                    draft.ObjectStates[box.Id] = ObjectStateTable.ForestTree();
             return draft;
         }
 
@@ -132,8 +135,7 @@ namespace Sokoban.Core.Tests
             parsed.Room.RemoveObject("target-1");
             parsed.Room.AddObject("box-a", ObjectCategories.Box, new Cell(3, 2));
             parsed.Room.AddObject("target-a", ObjectCategories.Target, new Cell(4, 2));
-            var items = new List<RecoveryItem> { new RecoveryItem("recovery-1", "warehouse-lift", RecoveryItem.DefaultDuration) };
-            var draft = new RoomDraftModel(parsed.Room, parsed.Doors, "entry", null, items);
+            var draft = new RoomDraftModel(parsed.Room, parsed.Doors, "entry");
             PlaceDefaultForklift(draft);
             draft.Meta = new RoomMeta("双端交换测试房", "warehouse");
             return draft;
@@ -152,7 +154,7 @@ namespace Sokoban.Core.Tests
         static void PlaceDefaultForklift(RoomDraftModel draft)
         {
             draft.ReplaceRecoveryDevice(new RecoveryDevice("recovery-device", RecoveryDeviceKind.Forklift,
-                new Cell(-1, draft.Room.Height / 2), 1, "warehouse-lift", RecoveryItem.DefaultDuration,
+                new Cell(-1, draft.Room.Height / 2), 1, "warehouse-lift", RecoveryDevice.DefaultDuration,
                 itemName: "仓库恢复道具", itemDescription: "启动本房叉车，让箱子回到预设位置。",
                 itemAcquiredHint: "按 R 启动本房恢复装置。"));
         }

@@ -32,8 +32,9 @@ namespace Sokoban.Core.Tests
         static RoomDraftModel Source(string id, string[] rows)
         {
             var r = Blueprint.Parse(id, rows);
-            var items = new List<RecoveryItem> { new RecoveryItem("recovery-1", id + "-recovery", 3.7f) };
-            return new RoomDraftModel(r.Room, r.Doors, r.Doors.First(d => d.Role == "entry").Id, null, items);
+            var draft = new RoomDraftModel(r.Room, r.Doors, r.Doors.First(d => d.Role == "entry").Id);
+            draft.ReplaceRecoveryDevice(new RecoveryDevice("recovery-1", RecoveryDeviceKind.Forklift, new Cell(-1, 1), 1, "warehouse-lift", 3.7f));
+            return draft;
         }
 
         static RoomDraftModel RoundTrip(string id, string[] rows) => RoomCodec.Decode(RoomCodec.Encode(Source(id, rows)));

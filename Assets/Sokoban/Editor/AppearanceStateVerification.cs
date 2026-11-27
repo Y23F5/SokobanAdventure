@@ -73,6 +73,8 @@ namespace Sokoban.Editor
             Check(boxes.Length == 2, "正式森林房有两个箱子");
             foreach (var box in boxes)
             {
+                Check(IsForestTable(draft.Model.ObjectStates.TryGetValue(box.Id, out var table) ? table : null),
+                    "正式森林房开局即配置树木状态：" + box.Id);
                 draft.Select(box.Cell);
                 var editor = new ObjectStateEditor(draft);
                 editor.UseForestPreset();
@@ -210,7 +212,7 @@ namespace Sokoban.Editor
             draft.Place(true, boxCell, "box-tree");
             draft.Place(false, new Cell(4, 2), "target-qa");
             draft.PlaceRecoveryDevice(new RecoveryDevice("recovery-qa", RecoveryDeviceKind.Tree,
-                new Cell(-1, draft.Room.Height / 2), 1, "forest-decay", RecoveryItem.DefaultDuration), replaceExisting: true);
+                new Cell(-1, draft.Room.Height / 2), 1, "forest-decay", RecoveryDevice.DefaultDuration), replaceExisting: true);
             draft.Select(boxCell);
             draft.SetStateTable(ObjectStateProfile.ForestTable());
             var run = PuzzleRun.FromDraft(draft);

@@ -242,7 +242,6 @@ namespace Sokoban.Editor
         {
             if (!CanEdit()) return;
             var item = ObjectBehavior.WithCanvas(ObjectBehavior.Node(kind), position.x, position.y);
-            if (kind == BehaviorNodeKinds.StartRecovery) item = ObjectBehavior.WithParameter(item, "recovery", model.RecoveryItems.FirstOrDefault()?.Id);
             if (kind == BehaviorNodeKinds.SetTerrainState) item = ObjectBehavior.WithParameter(item, "state", "on");
             if (Commit(graph.Nodes.Concat(new[] { item }).ToList(), graph.Edges)) DrawNode(item, graph.Nodes.Count - 1);
         }
@@ -307,7 +306,9 @@ namespace Sokoban.Editor
                     var states = graph.OwnerId == null ? null : ObjectStateProfile.StatesOf(model, graph.OwnerId)?.States;
                     Choice(node, item, "对象状态", "state", states ?? Array.Empty<string>());
                     break;
-                case BehaviorNodeKinds.StartRecovery: Choice(node, item, "恢复项", "recovery", model.RecoveryItems.Select(r => r.Id)); break;
+                case BehaviorNodeKinds.StartRecovery:
+                    node.extensionContainer.Add(new Label("启动本房恢复装置"));
+                    break;
                 case BehaviorNodeKinds.SetTerrainState:
                     Field(node, item, "地形实体 ID", "targetTerrain");
                     Choice(node, item, "地形开关", "state", new[] { "on", "off" });

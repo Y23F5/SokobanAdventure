@@ -7,7 +7,7 @@ namespace Sokoban.Core.Tests
 {
     public class ProgressTests
     {
-        static RecoveryItem Item(string id) => new RecoveryItem(id, "script", 3.7f);
+        static RecoveryDevice Item(string id) => new RecoveryDevice(id, RecoveryDeviceKind.Forklift, new Cell(-1, 1), 1, "script", 3.7f);
 
         static ItemBag Bag(params string[] ids)
         {
@@ -88,8 +88,8 @@ namespace Sokoban.Core.Tests
         {
             var p = new PlayProgress();
             Assert.True(p.Enter("warehouse", Item("recovery-1")));
-            Assert.Equal(new[] { "recovery-1" }, p.Bag.Items);
-            Assert.Equal("recovery-1", p.Bag.Pending);
+            Assert.Equal(new[] { "warehouse" }, p.Bag.Items);
+            Assert.Equal("warehouse", p.Bag.Pending);
             p.Bag.Accept();
             Assert.False(p.Enter("warehouse", Item("recovery-1")));
             Assert.Null(p.Bag.Pending);

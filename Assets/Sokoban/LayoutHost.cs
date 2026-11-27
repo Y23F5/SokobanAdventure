@@ -104,7 +104,6 @@ namespace Sokoban
                 case Core.LocateTool.PlaceTarget: return "放置目标";
                 case Core.LocateTool.PaintWall: return "用墙壁工具补全边界";
                 case Core.LocateTool.SetDoor: return "设置门";
-                case Core.LocateTool.AddRecoveryItem: return "添加恢复道具";
                 case Core.LocateTool.Select: return "选择该对象检查";
                 default: return "打开检查页按规则逐项处理";
             }

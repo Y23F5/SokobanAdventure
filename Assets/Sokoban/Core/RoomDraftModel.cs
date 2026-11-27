@@ -1,8 +1,8 @@
 /**
  * @file RoomDraftModel.cs
- * @brief 编辑中的房间草稿模型：允许缺出生点、缺主入口、没有恢复道具等中间态，持有房间、门、恢复道具以及外观之外的全部可保存数据。
- * RoomDraftModel(room, doors, primaryEntranceId, extras, recoveryItems)：用房间建立草稿，门、透传字段与恢复道具可省略，恢复道具 ID 登记到房间 ID 空间，重复抛 ArgumentException。
- * Room、PrimaryEntranceId、Doors、RecoveryItems：房间本体、主入口门 ID（可为空）、门列表与恢复道具列表，恢复道具 ID 与房内对象共用 Room 的 ID 空间。
+ * @brief 编辑中的房间草稿模型：允许缺出生点、缺主入口、没有恢复装置等中间态，持有房间、门、恢复装置以及外观之外的全部可保存数据。
+ * RoomDraftModel(room, doors, primaryEntranceId, extras)：用房间建立草稿，门、主入口与透传字段可省略。
+ * Room、PrimaryEntranceId、Doors：房间本体、主入口门 ID 与门列表。
  * Meta：房间显示名与主题，赋空时回到空名称，显示名与 ID 分开保存。
  * Decorations、Assets、Graphs、Templates、Instances、ObjectStates、UiImageAssetId：墙外装饰、资源描述符、行为图、对象模板（键为模板 ID）、模板实例、对象状态表（键为对象 ID）与界面图资源 ID。
  * Extras：string 到 string 的透传字段包，Core 不解释，默认为空。
@@ -18,7 +18,6 @@ namespace Sokoban.Core
 {
     public sealed class RoomDraftModel
     {
-        readonly List<RecoveryItem> items = new List<RecoveryItem>();
         readonly List<DoorInfo> doors = new List<DoorInfo>();
         RoomMeta meta = new RoomMeta("", null);
 
@@ -26,7 +25,6 @@ namespace Sokoban.Core
         public string PrimaryEntranceId { get; set; }
         public RoomMeta Meta { get => meta; set => meta = value ?? new RoomMeta("", null); }
         public RecoveryDevice RecoveryDevice { get; private set; }
-        public IReadOnlyList<RecoveryItem> RecoveryItems => items;
         public IReadOnlyList<DoorInfo> Doors => doors;
         public Dictionary<string, string> Extras { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
         public List<Decoration> Decorations { get; } = new List<Decoration>();
@@ -38,19 +36,13 @@ namespace Sokoban.Core
         public string UiImageAssetId { get; set; }
 
         public RoomDraftModel(Room room, IEnumerable<DoorInfo> doors = null, string primaryEntranceId = null,
-            IEnumerable<KeyValuePair<string, string>> extras = null, IEnumerable<RecoveryItem> recoveryItems = null)
+            IEnumerable<KeyValuePair<string, string>> extras = null)
         {
             Room = room;
             if (doors != null) this.doors.AddRange(doors);
             PrimaryEntranceId = primaryEntranceId;
             if (extras != null)
                 foreach (var pair in extras) Extras[pair.Key] = pair.Value;
-            if (recoveryItems != null)
-                foreach (var item in recoveryItems)
-                {
-                    room.Ids.Add(item.Id, "recovery");
-                    items.Add(item);
-                }
         }
 
         internal void ReplaceRecoveryDevice(RecoveryDevice device)
@@ -63,7 +55,6 @@ namespace Sokoban.Core
             RecoveryDevice = device;
         }
 
-        internal List<RecoveryItem> ItemList => items;
 
         internal void ReplaceDoor(int index, DoorInfo door) => doors[index] = door;
 

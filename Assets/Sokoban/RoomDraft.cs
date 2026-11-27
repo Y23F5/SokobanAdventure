@@ -318,7 +318,7 @@ namespace Sokoban
                 if (terrain.CategoryId != TerrainCategories.Door || terrain.EntityId != door.Id)
                     room.SetTerrain(door.Cell, TerrainCategories.Door, door.Id, terrain.State);
             }
-            var next = new RoomDraftModel(room, list, primary, src.Extras, src.RecoveryItems);
+            var next = new RoomDraftModel(room, list, primary, src.Extras);
             next.Meta = src.Meta;
             next.ReplaceRecoveryDevice(src.RecoveryDevice);
             next.Decorations.AddRange(src.Decorations);

@@ -90,10 +90,10 @@ namespace Sokoban.Core
         public ExplorationSet Exploration { get; } = new ExplorationSet();
         public ItemBag Bag { get; } = new ItemBag();
 
-        public bool Enter(string roomId, RecoveryItem item)
+        public bool Enter(string roomId, RecoveryDevice device)
         {
             bool first = Exploration.Visit(roomId);
-            if (first && item != null) Bag.Grant(item.Id);
+            if (first && device != null) Bag.Grant(roomId);
             return first;
         }
     }

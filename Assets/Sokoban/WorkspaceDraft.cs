@@ -110,7 +110,7 @@ namespace Sokoban
                     if (look != null) room.SetAppearance(cell, look);
                 }
             foreach (var o in s.Objects) room.AddObject(o.Id, o.CategoryId, o.Cell, o.Appearance, o.Rotation);
-            var next = new RoomDraftModel(room, src.Doors, src.PrimaryEntranceId, src.Extras, src.RecoveryItems);
+            var next = new RoomDraftModel(room, src.Doors, src.PrimaryEntranceId, src.Extras);
             next.ReplaceRecoveryDevice(src.RecoveryDevice);
             CopyRest(src, next);
             return next;
@@ -124,7 +124,7 @@ namespace Sokoban
             var model = new RoomDraftModel(new Room(id, size.X, size.Y));
             model.Meta = new RoomMeta(name, theme ?? "warehouse");
             model.ReplaceRecoveryDevice(new RecoveryDevice("recovery-device", RecoveryDeviceKind.Forklift,
-                new Cell(-1, size.Y / 2), 1, "warehouse-lift", RecoveryItem.DefaultDuration,
+                new Cell(-1, size.Y / 2), 1, "warehouse-lift", RecoveryDevice.DefaultDuration,
                 itemName: "仓库恢复道具", itemDescription: "启动本房叉车，让箱子回到预设位置。",
                 itemAcquiredHint: "按 R 启动本房恢复装置。"));
             Reset(model, null, null, null);

@@ -3,7 +3,7 @@
  * @brief 房间扩建的纯函数与命令，只在单独编辑房间时使用，世界不自动补偿。
  * Room.Resized(shiftX, shiftY, newWidth, newHeight)：返回平移后的新房间，地形、地形实体、每格外观、对象格坐标与对象外观整体平移，越界内容丢弃前须由调用方预检。
  * RoomResize.Resized(draft, shiftX, shiftY, newWidth, newHeight)：草稿重载，在房间平移之外让每扇门、装饰与行为图节点的格坐标同步平移，门地形与门 ID 对应的地形实体保持一致，
- * 恢复道具参数中的格引用 gateX、gateZ 按偏移平移（无需平移时沿用原对象），资源、模板、实例、对象状态、界面图、显示名与透传字段原样带到新草稿，各 ID 重新登记进新房间的 ID 空间；
+ * 资源、模板、实例、对象状态、界面图、显示名与透传字段原样带到新草稿，各 ID 重新登记进新房间的 ID 空间；
  * ResizeDevice(device, source, destination, shiftX, shiftY)：保留装置所在侧，沿边平移锚点并对齐新边界。
  * 返回全新的草稿，不改动原草稿；任一扇门平移后落到新房间之外时抛 InvalidOperationException。
  * ExpandCommand(holder, left, bottom, right, top)：只改房间的复合命令，Apply 按四向扩建量生成新房间，Revert 换回旧房间。
@@ -64,15 +64,6 @@ namespace Sokoban.Core
             return next == anchor ? device : device.WithPlacement(next, device.Rotation);
         }
 
-        static RecoveryItem Shifted(RecoveryItem item, int shiftX, int shiftY)
-        {
-            if ((shiftX == 0 && shiftY == 0) || !(item.Params.ContainsKey("gateX") || item.Params.ContainsKey("gateZ"))) return item;
-            var parameters = new Dictionary<string, float>(StringComparer.Ordinal);
-            foreach (var p in item.Params)
-                parameters[p.Key] = p.Key == "gateX" ? p.Value + shiftX : p.Key == "gateZ" ? p.Value + shiftY : p.Value;
-            return new RecoveryItem(item.Id, item.ScriptRef, item.Duration, parameters);
-        }
-
         static BehaviorGraph Shifted(BehaviorGraph graph, int shiftX, int shiftY)
         {
             var nodes = graph.Nodes.Select(n => n.Cell.HasValue
@@ -98,11 +89,6 @@ namespace Sokoban.Core
             next.Meta = source.Meta;
             next.ReplaceRecoveryDevice(ResizeDevice(source.RecoveryDevice, source.Room, room, shiftX, shiftY));
             next.UiImageAssetId = source.UiImageAssetId;
-            foreach (var item in source.RecoveryItems)
-            {
-                room.Ids.Add(item.Id, "recovery");
-                next.ItemList.Add(Shifted(item, shiftX, shiftY));
-            }
             foreach (var d in source.Decorations)
             {
                 next.Register(d.Id, "decoration");

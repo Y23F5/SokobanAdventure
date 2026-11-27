@@ -17,6 +17,8 @@ namespace Sokoban.Core
 
     public sealed class RecoveryDevice
     {
+        public const float DefaultDuration = 3.7f;
+
         public string Id { get; }
         public RecoveryDeviceKind Kind { get; }
         public Cell Anchor { get; }

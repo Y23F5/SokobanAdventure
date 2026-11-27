@@ -137,7 +137,6 @@ namespace Sokoban.Core.Tests
             draft.Decorations.Add(new Decoration("deco", new Cell(-1, 2), new AppearanceRef("tree", 0)));
             draft.Room.Ids.Add("g1", "graph");
             draft.Graphs.Add(new BehaviorGraph("g1", "box-1", new[] { new BehaviorNode("n1", BehaviorNodeKinds.RoomSolved, new Cell(3, 3)) }, null));
-            new AddRecoveryItemCommand(draft, new RecoveryItem("recovery-2", "forest-vine", 3.7f, new Dictionary<string, float> { ["gateX"] = 4f, ["gateZ"] = 5f })).Apply();
             var holder = new DraftHolder(draft);
             var cmd = new ExpandDraftCommand(holder, 2, 1, 0, 0);
             cmd.Apply();
@@ -146,16 +145,14 @@ namespace Sokoban.Core.Tests
             Assert.Equal(new AppearanceRef("floor-x", 4), next.Room.AppearanceAt(new Cell(4, 3)));
             Assert.Equal(new Cell(1, 3), next.Decorations.Single().Cell);
             Assert.Equal(new Cell(5, 4), next.Graphs.Single().Nodes[0].Cell);
-            var vine = next.RecoveryItems.Single(i => i.Id == "recovery-2");
-            Assert.Equal(6f, vine.Params["gateX"]);
-            Assert.Equal(6f, vine.Params["gateZ"]);
+            Assert.Equal(new Cell(-1, 3), next.RecoveryDevice.Anchor);
             cmd.Revert();
             var back = holder.Draft;
             Assert.Equal(7, back.Room.Width);
             Assert.Equal(new Cell(3, 3), back.Room.Objects.Single(o => o.Id == "box-1").Cell);
             Assert.Equal(new Cell(-1, 2), back.Decorations.Single().Cell);
             Assert.Equal(new Cell(3, 3), back.Graphs.Single().Nodes[0].Cell);
-            Assert.Equal(4f, back.RecoveryItems.Single(i => i.Id == "recovery-2").Params["gateX"]);
+            Assert.Equal(draft.RecoveryDevice.Anchor, back.RecoveryDevice.Anchor);
             Assert.Equal(ContentHash.Of(draft), ContentHash.Of(back));
         }
 
@@ -173,7 +170,7 @@ namespace Sokoban.Core.Tests
         {
             var draft = Good();
             draft.ReplaceRecoveryDevice(new RecoveryDevice("device", RecoveryDeviceKind.Forklift,
-                new Cell(-1, 2), 1, "warehouse-lift", RecoveryItem.DefaultDuration));
+                new Cell(-1, 2), 1, "warehouse-lift", RecoveryDevice.DefaultDuration));
             var v = ValidatedRoom.From(draft, new RoomMeta("名", "t"));
             Assert.Equal("名", v.Meta.Name);
             Assert.Equal(ObjectCategories.Spawn, v.Spawn.CategoryId);
@@ -188,15 +185,6 @@ namespace Sokoban.Core.Tests
             var draft = BrushFixture.Draft();
             var e = Assert.Throws<InvalidOperationException>(() => ValidatedRoom.From(draft, null));
             Assert.Contains("spawn.missing", e.Message);
-        }
-
-        [Fact]
-        public void NonPositiveDurationIsAnErrorInBothStages()
-        {
-            var draft = Good();
-            draft.ItemList[0] = new RecoveryItem("recovery-1", "warehouse-lift", 0f);
-            foreach (var stage in new[] { ValidationStage.Draft, ValidationStage.Publish })
-                Assert.Contains(RoomValidator.ValidateDraft(draft, stage), i => i.RuleId == "recovery.duration" && i.Severity == Severity.Error && i.Location == "recovery-1");
         }
 
         [Fact]
@@ -217,7 +205,7 @@ namespace Sokoban.Core.Tests
         public void UnknownScriptAndNodeKindAreErrors()
         {
             var draft = Good();
-            draft.ItemList[0] = new RecoveryItem("recovery-1", "mystery", 3.7f);
+            draft.ReplaceRecoveryDevice(new RecoveryDevice("recovery-1", RecoveryDeviceKind.Forklift, new Cell(-1, 2), 1, "mystery", 3.7f));
             draft.Graphs.Add(new BehaviorGraph("g", null, new[] { new BehaviorNode("n", "openPassage") }, null));
             var issues = RoomValidator.ValidateDraft(draft, ValidationStage.Publish);
             Assert.Contains(issues, i => i.RuleId == "recovery.scriptUnknown" && i.Severity == Severity.Error);
@@ -229,7 +217,7 @@ namespace Sokoban.Core.Tests
         {
             var draft = Good();
             draft.Assets.Add(new AssetDescriptor("script-1", AssetKinds.Script, "s", "h", ".lua"));
-            draft.ItemList[0] = new RecoveryItem("recovery-1", "script-1", 3.7f);
+            draft.ReplaceRecoveryDevice(new RecoveryDevice("recovery-1", RecoveryDeviceKind.Forklift, new Cell(-1, 2), 1, "script-1", 3.7f));
             Assert.DoesNotContain(RoomValidator.ValidateDraft(draft, ValidationStage.Publish), i => i.RuleId == "recovery.scriptUnknown");
         }
 
@@ -265,8 +253,7 @@ namespace Sokoban.Core.Tests
         [Fact]
         public void DefaultRecoveryDurationIsThreePointSeven()
         {
-            Assert.Equal(3.7f, RecoveryItem.DefaultDuration);
-            Assert.All(RecoveryMapping.FromPresentation("forest", Good()), i => Assert.Equal(3.7f, i.Duration));
+            Assert.Equal(3.7f, RecoveryDevice.DefaultDuration);
         }
 
         [Fact]

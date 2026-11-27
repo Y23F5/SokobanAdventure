@@ -74,7 +74,7 @@ namespace Sokoban.Editor
             Check(draft.World==null && draft.ActiveId=="blank" && draft.Model.Meta.ThemeId=="warehouse","fresh warehouse template");
             draft.Place(true,new Cell(3,2),"box-qa");
             draft.Place(false,new Cell(4,2),"target-qa");
-            draft.Commit(new AddRecoveryItemCommand(draft.Model,new RecoveryItem("recovery-qa","warehouse-lift",RecoveryItem.DefaultDuration)));
+            VerificationFixtures.EnsureRecovery(draft);
             var span = new Vector2Int(draft.Room.Width,draft.Room.Height);
             Sample("editor",span,true);
             var position=Camera.main.transform.position;

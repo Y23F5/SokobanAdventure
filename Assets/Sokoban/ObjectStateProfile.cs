@@ -32,11 +32,7 @@ namespace Sokoban
 
         public static string StateLook(string state) => state == "tree" ? "ForestTree" : state == "logs" ? "Logs" : state;
 
-        public static ObjectStateTable ForestTable() => new ObjectStateTable("tree", new[] { "tree", "logs" }, new[]
-        {
-            new StateTransition("tree", TriggerIds.FirstPush, "logs", new AppearanceRef("TreeStump")),
-            new StateTransition("logs", TriggerIds.RecoveryEnd, "tree")
-        });
+        public static ObjectStateTable ForestTable() => ObjectStateTable.ForestTree();
 
         public static IEnumerable<string> Issues(ObjectStateTable table, string categoryId, Func<string, bool> known)
         {
