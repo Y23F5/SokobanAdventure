@@ -1,11 +1,13 @@
 /**
  * @file RoomPreview.cs
  * CellRotation 将房间的四档顺时针旋转映射到 Unity 的世界 Y 轴。
+ * PlayerRotation 将朝向档位映射到 Porter 模型，补偿该模型朝本地 −Z 的正面。
  * @brief Sync 按草稿版本与查看范围同步房间，修复外部 Transform 变更；BuildRoom 按房间数据的地形网格、对象表与外观引用生成实例，不追加任何主题藤蔓或主题模型。
  * CreateRoot 和 Model 建立临时层级，Track 缓存模型的设计姿态，Marker 生成选择轮廓；AppearanceIssue 向两个编辑界面提供当前场景的资源诊断。
  * BoxModel、BrushModel：按外观引用与主题给出内置预制件路径。
  * ShowPlacement 使用同一房间模型生成候选虚影；CreateOutline 沿房间外缘标记候选和原有占地。
  * HidePlacement、Clear 和 DestroyTemporary 清理会话私有实例和材质。CellFromRay 拾取地平面格。
+ * ClipWalls 对各房间应用同一视角掩码，预览的格坐标拾取保留。
  */
 using System.Collections.Generic;
 using System.Linq;
@@ -88,13 +90,14 @@ namespace Sokoban
             }
         }
 
-        internal void ClipWalls(RoomDraft draft, int side)
+        public void ClipWalls(RoomDraft draft, Quaternion rotation)
         {
             if (!root) return;
+            int viewMask = CameraRig.ViewMask(rotation);
             foreach (Transform group in root.transform)
             {
                 var room = draft.Catalog.TryGetValue(group.name, out var model) ? model.Room : draft.Room;
-                CameraRig.ClipWalls(group, room.Width, room.Height, side);
+                CameraRig.ClipWalls(group, room, viewMask);
             }
         }
 
@@ -137,6 +140,7 @@ namespace Sokoban
         }
 
         internal static Quaternion CellRotation(int quarterTurns) => Quaternion.Euler(0, quarterTurns * 90f, 0);
+        internal static Quaternion PlayerRotation(int facing) => CellRotation(facing + 2);
 
         public static string BoxModel(string theme, AppearanceRef look = null) =>
             AppearanceLibrary.Prefab(AppearanceLibrary.Resolve(ObjectCategories.Box, theme, look));
@@ -214,21 +218,22 @@ namespace Sokoban
                 AppearanceRef look = item.Appearance;
                 if (category == ObjectCategories.Spawn) look = new AppearanceRef("Spawn");
                 else if (category == ObjectCategories.Box || category == ObjectCategories.Target) look = AppearanceLibrary.Resolve(category, theme, look);
+                var rotation = category == ObjectCategories.Spawn ? PlayerRotation(item.Rotation) : CellRotation(item.Rotation);
                 if (model.ObjectStates.TryGetValue(item.Id, out var table))
                 {
                     var anchor = CreateRoot(item.Id, group, new Vector3(cell.X, 0, cell.Y));
-                    anchor.transform.localRotation = CellRotation(item.Rotation);
+                    anchor.transform.localRotation = rotation;
                     Retrack(anchor.transform);
                     string fallback = AppearanceLibrary.Prefab(look) ?? AppearanceLibrary.Prefab(AppearanceLibrary.Default(ObjectCategories.Box, theme));
                     anchor.AddComponent<ObjectStateView>().Configure(table, new Vector3(origin.X + cell.X, 0, origin.Y + cell.Y), look, fallback, model.Assets);
                 }
                 else if (category == ObjectCategories.Hint)
                 {
-                    var marker = Model("Target", item.Id, cell, group, CellRotation(item.Rotation));
+                    var marker = Model("Target", item.Id, cell, group, rotation);
                     marker.localScale = new Vector3(.5f, 1f, .5f);
                     Retrack(marker);
                 }
-                else Place(look, item.Id, cell, CellRotation(item.Rotation));
+                else Place(look, item.Id, cell, rotation);
                 if (selected == item.Id) Marker(group, cell);
             }
             foreach (var decoration in model.Decorations)

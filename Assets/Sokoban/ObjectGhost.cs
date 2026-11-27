@@ -2,6 +2,7 @@
  * @file ObjectGhost.cs
  * @brief Show 为当前画刷或所选对象建一个半透明预览，把锚点放到指定格并给全部子网格上色；外观取自 Core.AppearanceRef，状态表取初始状态。OverFreshPlacement 在指针换格前保持刚放置的模型可见。Hide 在工具离开地图时丢弃实例，Dispose 释放持有的材质。
  * 外观解析顺序：状态表初始状态的外观、对象或画刷的外观引用、所属类别按主题的默认外观；内置外观走 Prefab，本房模型资源走 ImportedAppearance。
+ * 出生点虚影采用角色模型正面的旋转补偿，门仍按框外方向取朝向。
  */
 using System.Linq;
 using Sokoban.Core;
@@ -85,6 +86,7 @@ namespace Sokoban
             var direction = !moving && marker && markerRole != "spawn" ? draft.MarkerOutward(world - draft.Origin, turns) : null;
             if (direction.HasValue)
                 model.transform.rotation = Quaternion.LookRotation(new Vector3(-direction.Value.X, 0, -direction.Value.Y));
+            else if (prefab == "LayoutModels/Spawn") model.transform.rotation = RoomPreview.PlayerRotation(turns);
             else model.transform.rotation = RoomPreview.CellRotation(turns);
         }
 

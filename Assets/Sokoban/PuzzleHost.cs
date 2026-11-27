@@ -1,7 +1,7 @@
 /**
  * @file PuzzleHost.cs
  * @brief Start 接收菜单或编辑器传入的运行状态。Begin 和 BuildModels 按世界原点生成各房间实例，用活动房间的稳定 ID 绑定角色、箱子和门。
- * BindRoom 绑定活动房间并设置镜头目标，ShowArtwork 读取房间界面图资源并显示。
+ * BindRoom 绑定活动房间并设置镜头目标，按规则朝向和角色网格的正面设置模型。ShowArtwork 读取房间界面图资源并显示。
  * Move 和 Turn 接受互斥动作，Update 与 Animate 推进独立时钟，恢复期间由 TickRecovery 推进规则会话并驱动恢复演出。
  * SetCamera 更新正交构图，RefreshFeedback 更新目标、门与遮挡。Leave 和 Persist 只为正式局写单槽。
  * RestoreMotion 从演出段重建一次未完成的移动或转向。
@@ -128,7 +128,7 @@ namespace Sokoban
             }
             actor = objects[run.Room.Spawn.Id];
             actor.gameObject.SetActive(true);
-            actor.rotation = RoomPreview.CellRotation(run.Facing);
+            actor.rotation = RoomPreview.PlayerRotation(run.Facing);
             actor.localScale = Vector3.one;
             actor.position = Position(run.Player);
             var room = run.Room.Room;
@@ -245,7 +245,7 @@ namespace Sokoban
             else
             {
                 actor.position = Vector3.Lerp(playerStart, Position(Run.Player), t);
-                actor.rotation = Quaternion.Slerp(playerStartRotation, RoomPreview.CellRotation(Run.Facing), t);
+                actor.rotation = Quaternion.Slerp(playerStartRotation, RoomPreview.PlayerRotation(Run.Facing), t);
                 if (movingBox) movingBox.position = Vector3.Lerp(boxStart, boxStart + Position(Run.Player) - playerStart, t);
             }
             UpdateOcclusion();

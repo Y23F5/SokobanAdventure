@@ -4,7 +4,7 @@
  * @brief 编辑态 Game 场景持有一份草稿、视角和模型投影。Tick 随活动场景建立或释放预览并刷新草稿；
  * OpenSession 优先还原磁盘现场，首次打开装配默认世界。Frame 按房间外接框定位，Solo 与 ReturnToWorld 切换可见范围。
  * ResetView 在换文件后恢复取景；Release 在关闭场景、进入运行态或域重载时保存并清理；
- * SceneGUI 把 Scene View 的格点击和手柄交给共享命令，保持 Unity 的原生导航。Refresh 刷新工具和视图。
+ * SceneGUI 按原生 Scene View 朝向裁切墙体，把格点击和手柄交给共享命令。Refresh 刷新工具和视图。
  * PlayState 在域重载前传递草稿并保存单房取景，RestoreTrialView 在返回时还原视角。
  * 本文件读取 RoomDraft 的 Core 类型化模型：C/V 在 Unity 的 Vector2Int 与 Core.Cell 之间转换，BoundaryGaps 取自 RoomValidator 的 boundary.open 规则，
  * 选中对象与装饰分别经 RoomDraft.Find 和 FindDecoration 读取，不再有 JObject 访问。
@@ -345,9 +345,11 @@ namespace Sokoban.Editor
         static void SceneGUI(SceneView view)
         {
             if (!Active || Panel == null) { ghost.Hide(); HoverCell = null; return; }
+            var ev = Event.current;
+            var draft = Panel.Draft;
+            if (ev.type == EventType.Repaint) preview.ClipWalls(draft, view.rotation);
             if (Panel.Modal || RoomLayoutWindow.Current && RoomLayoutWindow.Current.BlocksSceneInput) { ghost.Hide(); HoverCell = null; return; }
-            
-            var ev=Event.current; var draft=Panel.Draft;
+
             if (EditShortcut(ev, draft)) { ev.Use(); Refresh(); return; }
             if(ev.rawType==EventType.MouseDown && ev.button==1) {rightDown=true;rightDragged=false;rightStart=ev.mousePosition;}
             if(rightDown && ev.rawType==EventType.MouseDrag && (ev.delta.sqrMagnitude>=16 || Vector2.Distance(rightStart,ev.mousePosition)>=4)) rightDragged=true;

@@ -1,7 +1,7 @@
 /**
  * @file PuzzleAtmosphere.cs
  * @brief InitAtmosphere 创建每房云层并缓存原材质。EnterAtmosphere 按已访问集合显示模型并从入口揭雾。
- * TickAtmosphere 插值镜头、背景与光色。UpdateOcclusion 从关键格沿观察方向检测墙段。
+ * TickAtmosphere 插值镜头、背景与光色。UpdateOcclusion 按镜头水平朝向同步各房的墙格分组。
  * ShowInventory、AcceptDiscovery 显示和确认道具，道具名取自道具所属房间的显示名。
  * TickRecovery 推进规则会话的恢复时钟；演出完全由 RecoveryPresenter 按恢复道具的脚本取姿态，宿主不按主题名分支；完成时清理零件池并把箱子与玩家同步到规则结果。
  */
@@ -103,8 +103,9 @@ namespace Sokoban
         }
         void UpdateOcclusion()
         {
-            var room = Run.Room.Room;
-            CameraRig.ClipWalls(groups[Run.ActiveId], room.Width, room.Height, CameraRig.Side(angle));
+            int viewMask = CameraRig.ViewMask(lens.transform.rotation);
+            foreach (var group in groups)
+                CameraRig.ClipWalls(group.Value, Run.Rooms[group.Key].Room, viewMask);
         }
         string ItemName => Run.SelectedItem == null ? "" : Run.ItemRoomName(Run.SelectedItem) + "恢复装置";
         void ShowInventory()

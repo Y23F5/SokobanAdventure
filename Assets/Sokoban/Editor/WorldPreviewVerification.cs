@@ -3,7 +3,7 @@
  * @brief Run 在隔离的 Unity 编辑态打开实际场景，比对模型层级、房间平移、独立查看和重开，数据全部取自 Core 类型。
  * Require(condition, detail)：把断言结果写入证据文件，失败抛 InvalidDataException。
  * Root()：找到唯一的活动预览根。
- * TileName(room, cell)：按地形分类给出预览节点前缀，空格与门格没有格子节点，返回空。
+ * TileName(room, cell)：按地形分类给出预览节点前缀，门下仍有地板，空格返回空。
  * Links(world)：把世界的全部连接（ID、方式、两端、allowReturn）拼成可比较的字符串。
  * CheckRoom(model, origin)：核对房间原点、每个地形格与对象的模型位置，以及子节点总数。
  * CheckModel(instance, kind, rotation, expectedSurface)：核对模型构件、材质及朝向。
@@ -38,11 +38,14 @@ namespace Sokoban.Editor
                 .Single(go => go.activeSelf && go.name.StartsWith("Room • ",StringComparison.Ordinal)).transform;
         }
 
-        static string TileName(Room room, Cell cell)
+        static string TileName(Room room, Cell cell) => room.TerrainAt(cell).CategoryId switch
         {
-            string category = room.TerrainAt(cell).CategoryId;
-            return category == TerrainCategories.Floor ? "Floor" : category == TerrainCategories.Wall ? "Wall" : category == TerrainCategories.Openable ? "Vine" : null;
-        }
+            TerrainCategories.Floor => "Floor",
+            TerrainCategories.Door => "Floor",
+            TerrainCategories.Wall => "Wall",
+            TerrainCategories.Openable => "Vine",
+            _ => null
+        };
 
         static string Links(WorldDocument world) =>
             string.Join(";", world.Connections.Select(c => c.Id + "|" + c.Mode + "|" + c.From.LevelId + "." + c.From.DoorId + ">" + c.To.LevelId + "." + c.To.DoorId + "|" + c.AllowReturn));
@@ -59,7 +62,7 @@ namespace Sokoban.Editor
                 string name=TileName(room,cell);
                 if (name==null) continue;
                 var tile=group.Find(name+" "+cell);
-                if (!tile || tile.localPosition!=new Vector3(x,0,y) || !tile.GetComponentInChildren<Renderer>())
+                if (!tile || tile.localPosition!=new Vector3(x,0,y) || !tile.GetComponentInChildren<Renderer>(true))
                     throw new InvalidDataException("格子模型错误 "+cell);
                 tiles++;
             }
@@ -69,7 +72,12 @@ namespace Sokoban.Editor
                 if (!part || part.localPosition!=new Vector3(obj.Cell.X,0,obj.Cell.Y) || !part.GetComponentInChildren<Renderer>())
                     throw new InvalidDataException("对象模型错误 "+obj.Id);
             }
-            Require(group.Find("地基") && group.Find("主题模型") && group.childCount == 2+tiles+model.Doors.Count+room.Objects.Count+(group.Find("Selection")?1:0),
+            Require(model.Doors.All(door =>
+            {
+                var frame = group.Find(door.Id);
+                return frame && frame.localPosition == new Vector3(door.Cell.X, 0, door.Cell.Y);
+            }), room.Id + " 门框与门下地板分别存在");
+            Require(group.Find("地基") && group.Find("外围地绘") && group.childCount == 2+tiles+model.Doors.Count+room.Objects.Count+(group.Find("Selection")?1:0),
                 room.Id + " 各格和对象均唯一，模型数量 " + group.childCount);
         }
 
@@ -101,13 +109,15 @@ namespace Sokoban.Editor
                     var cell = new Cell(x, y);
                     string kind = TileName(room, cell);
                     if (kind != "Floor" && kind != "Wall") continue;
-                    CheckModel(group.Find(kind + " " + cell), kind, Quaternion.identity,kind=="Floor"?Resources.Load<Material>("LayoutModels/Stone"):null);
+                    string prefab = kind == "Floor" ? "Diorama/factoryTile0" : "FactoryWall";
+                    CheckModel(group.Find(kind + " " + cell), prefab, Quaternion.identity);
                 }
             foreach (var door in draft.Model.Doors)
                 CheckModel(group.Find(door.Id), "Door", Quaternion.LookRotation(new Vector3(-door.Outward.X, 0, -door.Outward.Y)));
             foreach (var box in room.ObjectsOf(ObjectCategories.Box)) CheckModel(group.Find(box.Id), RoomPreview.BoxModel("factory"), Quaternion.identity);
-            foreach (var target in room.ObjectsOf(ObjectCategories.Target)) CheckModel(group.Find(target.Id), "Target", Quaternion.identity);
-            CheckModel(group.Find(room.ObjectsOf(ObjectCategories.Spawn).Single().Id), "Spawn", Quaternion.identity);
+            foreach (var target in room.ObjectsOf(ObjectCategories.Target)) CheckModel(group.Find(target.Id), "FactoryTarget", Quaternion.identity);
+            var spawn = room.ObjectsOf(ObjectCategories.Spawn).Single();
+            CheckModel(group.Find(spawn.Id), "Spawn", Quaternion.Euler(0, 180 + spawn.Rotation * 90, 0));
             CheckRoom(draft.Model, draft.Origin);
             Require(!GameObject.Find("房间放置预览"), "工厂 " + draft.Origin + " 的格子及物件与 Prefab 的网格、材质、部件和朝向一致，无残留虚影");
         }

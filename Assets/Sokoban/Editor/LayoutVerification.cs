@@ -101,6 +101,29 @@ namespace Sokoban.Editor
                 projection.Sync(d);
                 Expect(box.localPosition == position && box.localRotation == rotation && box.localScale == scale,
                     "Preview restores external position/rotation/scale from data");
+
+                var room = projectionRoot.transform.Find(d.ActiveId);
+                var negativeZ = room.Find("Wall " + new Cell(3, 0)).gameObject;
+                var positiveZ = room.Find("Wall " + new Cell(3, 6)).gameObject;
+                var negativeX = room.Find("Wall " + new Cell(0, 1)).gameObject;
+                projection.ClipWalls(d, Quaternion.Euler(48, 0, 0));
+                Expect(!negativeZ.activeSelf && positiveZ.activeSelf && negativeX.activeSelf,
+                    "Cardinal camera clips the near wall group and keeps the opposite wall");
+                Expect(RoomPreview.CellFromRay(new Ray(new Vector3(3, 5, 0), Vector3.down), out var picked)
+                    && picked == new Vector2Int(3, 0), "A clipped wall remains selectable by the grid ray");
+                projection.ClipWalls(d, Quaternion.Euler(48, 45, 0));
+                Expect(!negativeZ.activeSelf && !negativeX.activeSelf, "Diagonal camera clips both near wall groups");
+                projection.ClipWalls(d, Quaternion.Euler(90, 0, 0));
+                Expect(negativeZ.activeSelf && positiveZ.activeSelf && negativeX.activeSelf, "Top view restores all walls");
+
+                var innerCell = new Cell(3, 3);
+                Expect(d.Brush(new[] { innerCell }, RoomTool.Wall) == null, "Place an interior wall with playable neighbors");
+                projection.Sync(d);
+                room = SceneManager.GetActiveScene().GetRootGameObjects().Except(currentRoots).Single().transform.Find(d.ActiveId);
+                projection.ClipWalls(d, Quaternion.Euler(48, 180, 0));
+                Expect(!room.Find("Wall " + innerCell).gameObject.activeSelf && !room.Find("Wall " + new Cell(3, 6)).gameObject.activeSelf
+                    && room.Find("Wall " + new Cell(3, 0)).gameObject.activeSelf, "Interior wall shares the direction mask with the near boundary");
+                d.Undo();
             }
             finally { projection.Clear(); }
             d.Save(Output+"A.json",false); window.Close(); window=RoomLayoutWindow.Open(); d=window.Panel.Draft; d.Open(Output+"A.json",false);

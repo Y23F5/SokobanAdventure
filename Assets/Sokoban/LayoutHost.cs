@@ -123,7 +123,7 @@ namespace Sokoban
             if (overlay == null) overlay = new LayoutOverlay();
             UpdateCamera();
             preview.Sync(Panel.Draft, solo);
-            preview.ClipWalls(Panel.Draft, CameraRig.Side(yaw));
+            preview.ClipWalls(Panel.Draft, lens.transform.rotation);
         }
 
         void Awake()
@@ -301,7 +301,7 @@ namespace Sokoban
             if (theme != litTheme) { lighting.Apply(DioramaLighting.Theme(theme),1); litTheme = theme; }
             UpdateCamera();
             preview.Sync(Panel.Draft, solo);
-            preview.ClipWalls(Panel.Draft, CameraRig.Side(yaw));
+            preview.ClipWalls(Panel.Draft, lens.transform.rotation);
             HoverFeedback = null;
             if (hovering && Panel.PlacingRoom && Panel.Draft.World != null)
             {
