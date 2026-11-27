@@ -203,7 +203,7 @@ namespace Sokoban
                     }
                     else if (category == TerrainCategories.Openable)
                         Place(look ?? AppearanceLibrary.Default(TerrainCategories.Openable, theme), "Vine " + cell, cell, rotation);
-                    else Place(look ?? AppearanceLibrary.Default(TerrainCategories.Floor, theme), "Floor " + cell, cell, rotation);
+                    else Place(category == TerrainCategories.Door ? AppearanceLibrary.Default(TerrainCategories.Floor, theme) : look ?? AppearanceLibrary.Default(TerrainCategories.Floor, theme), "Floor " + cell, cell, rotation);
                 }
             foreach (var door in model.Doors)
             {
