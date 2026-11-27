@@ -6,10 +6,13 @@
  * RoomCodec.Encode(draft)：写出房间名与主题、类型化地形网格（类别、实体 ID、状态、外观引用与变体序号）、对象及其外观、门与主入口、恢复道具、装饰、资源描述符、行为图（节点带格坐标）、对象模板、模板实例、对象状态表、界面图资源 ID 与 Extras；
  * 小数不进 JSON，恢复道具时长与参数按千分之一取整数；写完先调用 Decode 试读，任何问题抛 FormatException，调用方不应写入文件。
  * RoomCodec.Decode(text)：返回 RoomDraftModel；校验格式号、尺寸、地形与对象类别（取自注册表）、格子范围、对象不共享初始格、ID 在房间内唯一、恢复时长为正、主入口引用与各字段类型，任何问题统一抛 FormatException。
+ * DeviceNumber(record, key)：从不受地区格式影响的字符串读取有限浮点。
+ * DeviceOut(device)、DeviceIn(room, raw)：编解码唯一装置、墙外锚点、方向、精确时长、参数及道具文字。
  * GraphOut、StatesOut、GraphIn、StatesIn：房间文件与对象模板共用同一份行为图与对象状态表写法。
  */
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace Sokoban.Core
@@ -188,6 +191,7 @@ namespace Sokoban.Core
                 ["objectStates"] = objectStates,
                 ["uiImage"] = draft.UiImageAssetId,
             };
+            if (draft.RecoveryDevice != null) root["recoveryDevice"] = DeviceOut(draft.RecoveryDevice);
             if (draft.Meta.Description.Length > 0) root["description"] = draft.Meta.Description;
             if (draft.Meta.EntryHint.Length > 0) root["entryHint"] = draft.Meta.EntryHint;
             if (draft.Meta.PlayHint.Length > 0) root["playHint"] = draft.Meta.PlayHint;
@@ -199,6 +203,48 @@ namespace Sokoban.Core
             }
             return root;
         }
+
+        static object DeviceOut(RecoveryDevice device) => new Dictionary<string, object>
+        {
+            ["id"] = device.Id,
+            ["kind"] = device.Kind.ToString().ToLowerInvariant(),
+            ["x"] = (long)device.Anchor.X,
+            ["y"] = (long)device.Anchor.Y,
+            ["rotation"] = (long)device.Rotation,
+            ["script"] = device.ScriptRef,
+            ["duration"] = device.Duration.ToString("R", CultureInfo.InvariantCulture),
+            ["params"] = device.Params.OrderBy(parameter => parameter.Key, StringComparer.Ordinal)
+                .ToDictionary(parameter => parameter.Key, parameter => (object)parameter.Value.ToString("R", CultureInfo.InvariantCulture), StringComparer.Ordinal),
+            ["itemName"] = device.ItemName,
+            ["itemDescription"] = device.ItemDescription,
+            ["itemAcquiredHint"] = device.ItemAcquiredHint,
+        };
+
+        static RecoveryDevice DeviceIn(Room room, object raw)
+        {
+            var record = Obj(raw, "恢复装置");
+            string type = Str(record, "kind");
+            var kind = type switch
+            {
+                "forklift" => RecoveryDeviceKind.Forklift,
+                "arm" => RecoveryDeviceKind.Arm,
+                "tree" => RecoveryDeviceKind.Tree,
+                _ => throw new FormatException("未知恢复装置类型 " + type)
+            };
+            var anchor = new Cell(Int(record, "x"), Int(record, "y"));
+            if (!RecoveryDeviceRules.IsValidAnchor(room, anchor))
+                throw new FormatException("恢复装置必须紧邻房间边缘的墙外格");
+            if (!record.TryGetValue("params", out var rawParams)) throw new FormatException("缺少恢复装置参数表");
+            var table = Obj(rawParams, "恢复装置参数");
+            var parameters = table.Keys.ToDictionary(key => key, key => DeviceNumber(table, key), StringComparer.Ordinal);
+            return new RecoveryDevice(Str(record, "id"), kind, anchor, Int(record, "rotation"),
+                Str(record, "script"), DeviceNumber(record, "duration"), parameters,
+                OptStr(record, "itemName"), OptStr(record, "itemDescription"), OptStr(record, "itemAcquiredHint"));
+        }
+
+        static float DeviceNumber(Dictionary<string, object> record, string key) =>
+            float.TryParse(Str(record, key), NumberStyles.Float, CultureInfo.InvariantCulture, out float value) &&
+            !float.IsInfinity(value) && !float.IsNaN(value) ? value : throw new FormatException("恢复装置数值无效：" + key);
 
         static Dictionary<string, object> Obj(object v, string what) =>
             v as Dictionary<string, object> ?? throw new FormatException(what + "不是对象");
@@ -315,6 +361,7 @@ namespace Sokoban.Core
                     extras[pair.Key] = pair.Value as string ?? throw new FormatException("extras 字段 " + pair.Key + " 不是字符串");
             }
             var draft = new RoomDraftModel(room, doors, primary, extras, recovery);
+            if (root.TryGetValue("recoveryDevice", out var device)) draft.ReplaceRecoveryDevice(DeviceIn(room, device));
             draft.Meta = new RoomMeta(OptStr(root, "name") ?? "", OptStr(root, "themeId"),
                 OptStr(root, "description"), OptStr(root, "entryHint"), OptStr(root, "playHint"));
             ReadRest(root, draft);

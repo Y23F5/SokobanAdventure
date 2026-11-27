@@ -4,6 +4,7 @@
  * Check：把断言结果追加到证据目录并在失败时抛出；Throws：断言动作必须抛出异常；FreeCell：取第一个可放箱子的格。
  * VerifyRecovery：经 LayoutPanel 恢复槽验证快照字符串、脏标记、视角与损坏回退，快照不含选择、工具与撤销历史。
  * VerifyFiles：验证保存、导出、导入与失败写入的工作关联和脏标记，比较 RoomCodec 文本。
+ * VerifyRecoveryDeviceDraft()：通过新建空白房间、详情命令和草稿重开验证默认装置及持久化。
  * VerifyUnplacedRoomSnapshot()：从正式三房移出工厂，经草稿恢复后重新放回，核对连接和前置关系。
  * Run：验证世界原点平移、重叠拒绝、边界、快照恢复、传送导出与整笔画刷语义，最后构建 Windows 包。
  */
@@ -70,6 +71,34 @@ namespace Sokoban.Editor
             draft.Save(first, false); Check(!draft.Dirty && File.ReadAllText(first) == File.ReadAllText(second), "保存回 A 并清除脏标记");
             draft.Open(second, true); Check(draft.WorkPath == null, "导入解除关联"); draft.Save(third, false);
             Check(draft.WorkPath == Path.GetFullPath(third) && File.ReadAllText(third) == File.ReadAllText(second), "首次保存建立 C，交换内容只有房间设计");
+        }
+
+        public static void VerifyRecoveryDeviceDraft()
+        {
+            evidence = "Logs/recovery-device-draft";
+            Directory.CreateDirectory(evidence);
+            File.WriteAllText(Path.Combine(evidence, "checks.txt"), "");
+            var draft = new LayoutPanel().Draft;
+            draft.NewBlankRoom();
+            var original = draft.Model.RecoveryDevice;
+            Check(original != null && original.Kind == RecoveryDeviceKind.Forklift &&
+                original.Anchor == new Cell(-1, draft.Room.Height / 2) && original.EntryDirection == Cell.Right &&
+                draft.Model.Meta.ThemeId == "warehouse", "new empty room starts with an east-facing forklift on its west side");
+            draft.SetRecoveryDeviceDetails(1.25f, "key", "description", "hint");
+            draft.SetRecoveryDeviceParam("travel", 2.5f);
+            draft.Undo();
+            Check(!draft.Model.RecoveryDevice.Params.ContainsKey("travel"), "parameter edit can be undone");
+            draft.Redo();
+            var restored = new LayoutPanel().Draft;
+            restored.Recover(draft.Snapshot());
+            var device = restored.Model.RecoveryDevice;
+            Check(device.Id == original.Id && device.Anchor == original.Anchor && device.Duration == 1.25f &&
+                device.ItemName == "key" && device.ItemDescription == "description" &&
+                device.ItemAcquiredHint == "hint" && device.Params["travel"] == 2.5f, "draft save and reopen preserve edited device details");
+            restored.DeleteRecoveryDevice();
+            var empty = new LayoutPanel().Draft;
+            empty.Recover(restored.Snapshot());
+            Check(empty.Model.RecoveryDevice == null, "draft save and reopen preserve device deletion");
         }
 
         public static void VerifyUnplacedRoomSnapshot()

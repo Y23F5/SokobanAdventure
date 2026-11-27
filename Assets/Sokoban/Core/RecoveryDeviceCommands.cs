@@ -1,6 +1,8 @@
 /**
  * @file RecoveryDeviceCommands.cs
- * @brief 创建可提交给 RoomDraft 的四种恢复装置编辑命令。
+ * @brief 创建可提交给 RoomDraft 的恢复装置编辑命令。
+ * SetDetails(draft, duration, itemName, itemDescription, itemAcquiredHint)：更新时长和道具文字，保留装置身份、位置、脚本与参数。
+ * SetParam(draft, key, value)：复制参数表，更新一个有限数值，撤销时恢复旧参数表。
  * Place(draft, device, replaceExisting)：检查墙外锚点和唯一 ID，经明确授权才替换房间现有装置。
  * Move(draft, anchor)：更新现有装置的锚点，保留其余配置。
  * Rotate(draft, quarterTurns)：按四分之一圈增量旋转现有装置。
@@ -10,6 +12,7 @@
  * Apply()、Revert()：从当前草稿原子替换装置，撤销恢复整份旧装置。
  */
 using System;
+using System.Collections.Generic;
 
 namespace Sokoban.Core
 {
@@ -38,6 +41,29 @@ namespace Sokoban.Core
                 RequireDevice(current);
                 return null;
             });
+
+        public static ICommand SetDetails(DraftHolder draft, float duration, string itemName,
+            string itemDescription, string itemAcquiredHint) =>
+            new Edit(draft, current =>
+            {
+                var device = RequireDevice(current);
+                return new RecoveryDevice(device.Id, device.Kind, device.Anchor, device.Rotation, device.ScriptRef,
+                    duration, device.Params, itemName, itemDescription, itemAcquiredHint);
+            });
+
+        public static ICommand SetParam(DraftHolder draft, string key, float value)
+        {
+            if (string.IsNullOrWhiteSpace(key)) throw new ArgumentException("参数名不能为空", nameof(key));
+            return new Edit(draft, current =>
+            {
+                var device = RequireDevice(current);
+                var parameters = new Dictionary<string, float>(StringComparer.Ordinal);
+                foreach (var pair in device.Params) parameters.Add(pair.Key, pair.Value);
+                parameters[key] = value;
+                return new RecoveryDevice(device.Id, device.Kind, device.Anchor, device.Rotation, device.ScriptRef,
+                    device.Duration, parameters, device.ItemName, device.ItemDescription, device.ItemAcquiredHint);
+            });
+        }
 
         static RecoveryDevice RequireDevice(RecoveryDevice device) =>
             device ?? throw new InvalidOperationException("缺少恢复装置");

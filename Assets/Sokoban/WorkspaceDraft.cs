@@ -2,7 +2,7 @@
  * @file WorkspaceDraft.cs
  * @brief RoomDraft 的工作区部分：初始化、世界房间清单、笔划、快照与单独编辑，全部数据用 Core 类型。
  * Reset：以草稿模型、世界、房间目录和路径重置会话，并为每个房间建立持有者与新的命令历史。
- * NewBlankRoom/NewDefaultRoom：新建无恢复道具的空白房间与默认房间；DefaultModel 读取 Resources 里的默认房间，Renamed 复制草稿并换房间 ID。
+ * NewBlankRoom/NewDefaultRoom：新建带西侧叉车的空白房间或默认布局房间；DefaultModel 读取 Resources 里的默认房间，Renamed 复制草稿并换房间 ID。
  * Origin/Placement：当前房间在世界中的原点与放置记录，单独编辑时原点由本地原点给出。
  * Snapshot/Recover：用 RoomCodec 与 WorldCodec 序列化全部房间、世界、未放置前的房间配置、路径与脏标记，不保存撤销历史。
  * ReadRemovedPlacements(root, world, catalog)：验证草稿里暂未放置房间的配置与引用，恢复候选值。
@@ -111,17 +111,22 @@ namespace Sokoban
                 }
             foreach (var o in s.Objects) room.AddObject(o.Id, o.CategoryId, o.Cell, o.Appearance, o.Rotation);
             var next = new RoomDraftModel(room, src.Doors, src.PrimaryEntranceId, src.Extras, src.RecoveryItems);
+            next.ReplaceRecoveryDevice(src.RecoveryDevice);
             CopyRest(src, next);
             return next;
         }
 
-        public void NewBlankRoom() => NewBlankRoom("room-" + Guid.NewGuid().ToString("N"), "空白房间", DefaultModel().Meta.ThemeId, new Cell(15, 15));
+        public void NewBlankRoom() => NewBlankRoom("room-" + Guid.NewGuid().ToString("N"), "空白房间", "warehouse", new Cell(15, 15));
 
         public void NewBlankRoom(string id, string name, string theme, Cell size)
         {
             RoomFile.Check(size.X > 0 && size.Y > 0, "房间尺寸必须为正");
             var model = new RoomDraftModel(new Room(id, size.X, size.Y));
-            model.Meta = new RoomMeta(name, theme);
+            model.Meta = new RoomMeta(name, theme ?? "warehouse");
+            model.ReplaceRecoveryDevice(new RecoveryDevice("recovery-device", RecoveryDeviceKind.Forklift,
+                new Cell(-1, size.Y / 2), 1, "warehouse-lift", RecoveryItem.DefaultDuration,
+                itemName: "仓库恢复道具", itemDescription: "启动本房叉车，让箱子回到预设位置。",
+                itemAcquiredHint: "按 R 启动本房恢复装置。"));
             Reset(model, null, null, null);
             unsaved = true;
         }

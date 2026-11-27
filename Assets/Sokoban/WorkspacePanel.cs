@@ -245,22 +245,7 @@ namespace Sokoban
                     string model = RoomDraft.BuiltinBoxes[i];
                     if (GUILayout.Button("绑定内置模型 · " + RoomDraft.BuiltinBoxNames[i])) Run(() => Draft.BindBuiltinBox(model),"已绑定箱体模型");
                 }
-            if (GUILayout.Button(RecoveryLabel)) CycleRecovery();
-            if (GUILayout.Button(ThemeLabel)) CycleTheme();
             roomName=GUILayout.TextField(roomName); if(GUILayout.Button("应用房间名称")) Run(()=>Draft.Rename(roomName),"已更新名称");
-        }
-        public string RecoveryLabel => "恢复道具 · " + (Draft.Model.RecoveryItems.Count == 0 ? "无" : string.Join("、", Draft.Model.RecoveryItems.Select(i => i.ScriptRef)));
-        public void CycleRecovery()
-        {
-            if (Draft.Model.RecoveryItems.Count > 0) { Status = "本房已有恢复道具，脚本与时长请在属性中修改"; return; }
-            Run(() => Draft.Commit(new Sokoban.Core.AddRecoveryItemCommand(Draft.Model, new Sokoban.Core.RecoveryItem("recovery-" + Guid.NewGuid().ToString("N"), Sokoban.Core.Registries.BuiltinRecoveryScripts[0], 3f))), "已添加恢复道具");
-        }
-        public string ThemeLabel => "房间主题 · " + AppearanceLibrary.ThemeName(Draft.Theme);
-        public void CycleTheme()
-        {
-            var themes = AppearanceLibrary.Themes;
-            string next = themes[(Array.IndexOf(themes, Draft.Theme) + 1) % themes.Length];
-            Run(() => Draft.SetTheme(next), "已切换房间主题，已放置素材保留原样");
         }
         public void CancelTool() {PlacingRoom=false;placementId=null;Painting=false;stroke.Clear();Draft.Tool=RoomTool.Select;Status=DefaultStatus;}
         public void StartStroke(Vector2Int point) {Painting=true;stroke.Clear();lastCell=point;stroke.Add(point);}

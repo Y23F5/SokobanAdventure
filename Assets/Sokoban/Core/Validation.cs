@@ -181,6 +181,8 @@ namespace Sokoban.Core
             foreach (var item in d.RecoveryItems)
                 if (item.ScriptRef == null || !known.Contains(item.ScriptRef))
                     yield return (item.Id, "恢复脚本未知：" + item.ScriptRef);
+            if (d.RecoveryDevice != null && !known.Contains(d.RecoveryDevice.ScriptRef))
+                yield return (d.RecoveryDevice.Id, "恢复脚本未知：" + d.RecoveryDevice.ScriptRef);
         }
 
         static IEnumerable<(string, string)> UnknownNodes(RoomDraftModel d)
@@ -204,6 +206,7 @@ namespace Sokoban.Core
                     if (entity != null) all.Add(entity);
                 }
             all.AddRange(d.RecoveryItems.Select(i => i.Id));
+            if (d.RecoveryDevice != null) all.Add(d.RecoveryDevice.Id);
             all.AddRange(d.Graphs.Select(g => g.Id));
             all.AddRange(d.Instances.Select(i => i.Id));
             all.AddRange(d.Decorations.Select(x => x.Id));
@@ -224,6 +227,7 @@ namespace Sokoban.Core
                 }
             foreach (var i in d.Instances) ids.Add(i.Id);
             foreach (var i in d.RecoveryItems) ids.Add(i.Id);
+            if (d.RecoveryDevice != null) ids.Add(d.RecoveryDevice.Id);
             foreach (var g in d.Graphs) ids.Add(g.Id);
             foreach (var i in d.Instances)
                 if (!d.Templates.ContainsKey(i.TemplateId ?? "")) yield return (i.Id, "模板不存在：" + i.TemplateId);
