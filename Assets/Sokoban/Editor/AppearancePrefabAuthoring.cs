@@ -1,6 +1,7 @@
 /**
  * @file AppearancePrefabAuthoring.cs
  * @brief Install bakes factory and forest alternatives using the existing diorama palette. Forest stones follow the prototype's stacked faceted rocks.
+ * VerifyMaterials checks all generated renderers and material slots. LoadMaterial requires an existing URP Lit material by asset path.
  * Save creates editable prefabs for the common appearance library; Part adds local geometry with shared materials.
  */
 using UnityEditor;
@@ -12,13 +13,49 @@ namespace Sokoban.Editor
     {
         const string Folder = "Assets/Sokoban/Resources/LayoutModels/";
 
+        const string Diorama = "Assets/Sokoban/Resources/Diorama/";
+        const string LitShader = "Universal Render Pipeline/Lit";
+        static readonly string[] Prefabs = { "FactoryWall", "FactoryTarget", "ForestWall", "ForestFence", "ForestTarget", "TreeStump" };
+
+        public static void VerifyMaterials()
+        {
+            foreach (string name in Prefabs)
+            {
+                string path = Folder + name + ".prefab";
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                var renderers = prefab ? prefab.GetComponentsInChildren<Renderer>(true) : System.Array.Empty<Renderer>();
+                if (renderers.Length == 0) throw new System.InvalidOperationException(path + " 缺少渲染器");
+                foreach (var renderer in renderers)
+                {
+                    var materials = renderer.sharedMaterials;
+                    if (materials.Length == 0) throw new System.InvalidOperationException(path + " / " + renderer.name + " 缺少材质槽");
+                    for (int slot = 0; slot < materials.Length; slot++)
+                        RequireLit(materials[slot], $"{path} / {renderer.name} / {slot}");
+                }
+                Debug.Log($"{name}: {renderers.Length} 个渲染器的材质槽已核对");
+            }
+        }
+
+        static Material LoadMaterial(string path)
+        {
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            RequireLit(material, path);
+            return material;
+        }
+
+        static void RequireLit(Material material, string location)
+        {
+            if (!material || !material.shader || material.shader.name != LitShader)
+                throw new System.InvalidOperationException(location + " 缺少有效的 URP Lit 材质");
+        }
+
         public static void Install()
         {
-            var factoryMetal = Resources.Load<Material>("LayoutModels/FactoryMetal");
-            var stone = Resources.Load<Material>("LayoutModels/Stone");
-            var moss = Resources.Load<Material>("LayoutModels/Moss");
-            var wood = Resources.Load<Material>("Diorama/Paint-71452F");
-            var warm = Resources.Load<Material>("Diorama/Paint-C58A54");
+            var factoryMetal = LoadMaterial(Folder + "FactoryMetal.mat");
+            var stone = LoadMaterial(Folder + "Stone.mat");
+            var moss = LoadMaterial(Folder + "Moss.mat");
+            var wood = LoadMaterial(Diorama + "Paint-71452F.mat");
+            var warm = LoadMaterial(Diorama + "Paint-B87954.mat");
             Save("FactoryWall", root =>
             {
                 Part(root, "金属底座", PrimitiveType.Cube, new Vector3(0,.29f,0), new Vector3(1,.58f,1), factoryMetal);
@@ -65,6 +102,7 @@ namespace Sokoban.Editor
                 AssetDatabase.CreateAsset(clip, growthPath);
             }
             AssetDatabase.SaveAssets();
+            VerifyMaterials();
         }
 
         static Mesh Rock()
