@@ -67,8 +67,11 @@ namespace Sokoban.Core
             if (cache.TryGetValue(key, out var hit)) return hit;
             var script = new Script(CoreModules.None);
             var env = entry.BuildEnvironment(script);
-            script.LoadString(source, env, entryName);
-            script.DoString(source, env);
+            try { Run(script, script.LoadString(source, env, entryName), Array.Empty<DynValue>()); }
+            catch (InterpreterException e)
+            {
+                throw new InvalidOperationException("Lua 脚本出错：" + e.DecoratedMessage, e);
+            }
             cache[key] = (script, env);
             return (script, env);
         }
@@ -76,25 +79,40 @@ namespace Sokoban.Core
         public DynValue Call(string entryName, string source, string function, Func<Script, DynValue[]> buildArgs)
         {
             var (script, env) = Load(entryName, source);
-            var fn = env.Get(function);
-            if (fn.Type != DataType.Function) throw new InvalidOperationException("脚本没有函数 " + function);
+            var fn = GetFunction(env, function);
             try
             {
-                var coroutine = script.CreateCoroutine(fn).Coroutine;
-                coroutine.AutoYieldCounter = 1000;
-                int budget = InstructionBudget / 1000;
-                var result = coroutine.Resume(buildArgs(script));
-                while (coroutine.State != CoroutineState.Dead)
-                {
-                    if (--budget <= 0) throw new InvalidOperationException("Lua 脚本超出指令预算");
-                    result = coroutine.Resume();
-                }
-                return result;
+                return Run(script, fn, buildArgs(script));
             }
             catch (InterpreterException e)
             {
                 throw new InvalidOperationException("Lua 脚本出错：" + e.DecoratedMessage, e);
             }
+        }
+
+        internal void ValidateFunction(string entryName, string source, string function) =>
+            GetFunction(Load(entryName, source).env, function);
+
+        static DynValue GetFunction(Table environment, string function)
+        {
+            var fn = environment.Get(function);
+            if (fn.Type != DataType.Function) throw new InvalidOperationException("脚本没有函数 " + function);
+            return fn;
+        }
+
+        static DynValue Run(Script script, DynValue function, DynValue[] arguments)
+        {
+            const int instructionsPerSlice = 1000;
+            var coroutine = script.CreateCoroutine(function).Coroutine;
+            coroutine.AutoYieldCounter = instructionsPerSlice;
+            int slices = InstructionBudget / instructionsPerSlice;
+            var result = coroutine.Resume(arguments);
+            while (coroutine.State != CoroutineState.Dead)
+            {
+                if (--slices <= 0) throw new InvalidOperationException("Lua 脚本超出指令预算");
+                result = coroutine.Resume();
+            }
+            return result;
         }
     }
 
@@ -116,6 +134,13 @@ namespace Sokoban.Core
             env.Set("math", DynValue.NewTable(LuaHost.StandardMath(script)));
             return env;
         });
+
+        public static void ValidateSource(string source)
+        {
+            var host = new LuaHost();
+            host.Register(CreateEntry());
+            host.ValidateFunction(EntryName, source, "pose");
+        }
 
         static Table DeviceTable(Script script, RecoveryDevice device, Cell wallInward)
         {

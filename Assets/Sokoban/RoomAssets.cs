@@ -38,8 +38,30 @@ namespace Sokoban
             byte[] bytes = File.ReadAllBytes(path);
             string extension = Path.GetExtension(path).ToLowerInvariant();
             if (extension == ".jpeg") extension = ".jpg";
+            return StoreAsset(bytes, kind, Path.GetFileNameWithoutExtension(path), extension);
+        }
+
+        internal static AssetDescriptor StoreRecoveryScript(string source) =>
+            StoreAsset(Encoding.UTF8.GetBytes(source), AssetKinds.Script, "recovery-pose", ".lua");
+
+        internal static string RecoveryScriptSource(string scriptRef, IEnumerable<AssetDescriptor> assets)
+        {
+            var custom = assets.FirstOrDefault(a => a.Id == scriptRef && a.Kind == AssetKinds.Script);
+            if (custom != null)
+            {
+                using var reader = new StreamReader(new MemoryStream(Bytes(custom)), new UTF8Encoding(false, true));
+                return reader.ReadToEnd();
+            }
+            if (!Registries.BuiltinRecoveryScripts.Contains(scriptRef))
+                throw new InvalidOperationException("未知恢复脚本 " + scriptRef);
+            var builtin = Resources.Load<TextAsset>("RecoveryScripts/" + scriptRef + ".lua");
+            return builtin ? builtin.text : throw new InvalidOperationException("缺少内置恢复脚本 " + scriptRef);
+        }
+
+        static AssetDescriptor StoreAsset(byte[] bytes, string kind, string name, string extension)
+        {
             string hash = Digest(bytes);
-            var asset = new AssetDescriptor(kind + "-" + hash, kind, Path.GetFileNameWithoutExtension(path), hash, extension);
+            var asset = new AssetDescriptor(kind + "-" + hash, kind, name, hash, extension);
             CheckDescriptor(asset);
             CheckPayload(asset, bytes);
             Store(Cache, asset, bytes);

@@ -117,7 +117,8 @@ namespace Sokoban
             var models = new Dictionary<string, RoomDraftModel>();
             foreach (var entry in world.Rooms)
             {
-                var model = RoomCodec.Decode(File.ReadAllText(Path.Combine(folder, entry.File)));
+                string roomPath = Path.Combine(folder, entry.File);
+                var model = RoomFile.Load(roomPath);
                 model.Extras.TryGetValue("name", out var name);
                 model.Extras.TryGetValue("themeId", out var theme);
                 if (string.IsNullOrEmpty(model.Meta.Name) || model.Meta.ThemeId == null)

@@ -12,7 +12,10 @@
  */
 using System;
 using System.Collections.Generic;
+using System;
+using System.IO;
 using System.Linq;
+using System.Text;
 using UnityEngine;
 using Sokoban.Core;
 using Object = UnityEngine.Object;
@@ -36,12 +39,16 @@ namespace Sokoban
 
         internal RecoveryPresenter() { host.Register(LuaRecoveryMethod.CreateEntry()); }
 
-        IRecoveryMethod Method(string scriptRef)
+        IRecoveryMethod Method(string scriptRef, IEnumerable<AssetDescriptor> assets)
         {
             if (methods.TryGetValue(scriptRef, out var cached)) return cached;
-            var asset = Resources.Load<TextAsset>("RecoveryScripts/" + scriptRef + ".lua");
-            if (!asset) Warn("script/" + scriptRef, "缺少恢复脚本 " + scriptRef + "，改用默认滑行");
-            IRecoveryMethod method = asset ? new LuaRecoveryMethod(host, asset.text) : new SlideMethod();
+            IRecoveryMethod method;
+            try { method = new LuaRecoveryMethod(host, RoomAssets.RecoveryScriptSource(scriptRef, assets)); }
+            catch (Exception error) when (error is IOException || error is InvalidOperationException || error is DecoderFallbackException)
+            {
+                Warn("script/" + scriptRef, "读取恢复脚本失败，改用默认滑行：" + error.Message);
+                method = new SlideMethod();
+            }
             methods[scriptRef] = method;
             return method;
         }
@@ -52,11 +59,13 @@ namespace Sokoban
         {
             var device = run.RunningRecoveryDevice;
             if (device == null) return;
-            var method = Method(device.ScriptRef);
+            var assets = run.Models[run.ActiveId].Assets;
+            var method = Method(device.ScriptRef, assets);
+            bool custom = assets.Any(asset => asset.Id == device.ScriptRef && asset.Kind == AssetKinds.Script);
             var moves = run.RecoveryMoves();
             bool warehouse = device.ScriptRef == WarehouseScript;
             bool factory = device.ScriptRef == FactoryScript;
-            if ((warehouse || factory) && moves.Count > 0)
+            if ((warehouse || factory || (custom && device.Kind != RecoveryDeviceKind.Tree)) && moves.Count > 0)
             {
                 HideParked(group.Find(device.Id));
                 SampleDevice(run, group, boxOf, method, device, moves, t);
@@ -70,16 +79,18 @@ namespace Sokoban
                     Play(method, ctx, move.BoxId, boxOf(move.BoxId), group, t);
                 }
             }
-            if (device.ScriptRef == ForestScript && device.Kind == RecoveryDeviceKind.Tree)
+            if ((device.ScriptRef == ForestScript || custom) && device.Kind == RecoveryDeviceKind.Tree)
             {
                 HideParked(group.Find(device.Id));
+                var parameters = device.Params.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+                parameters["devicePose"] = 1;
                 var context = new RecoveryContext(run.ActiveId, device.Id, new[] { device.Anchor }, run.RecoveryDuration,
-                    new Dictionary<string, float> { ["devicePose"] = 1 }, device);
+                    parameters, device);
                 Play(method, context, device.Id, null, group, t);
             }
             var gates = run.RecoveryGates();
             if (gates.Count == 0) return;
-            var gateMethod = Method(PuzzleRun.DefaultGateScript);
+            var gateMethod = Method(PuzzleRun.DefaultGateScript, assets);
             foreach (var gate in gates)
             {
                 HideParked(group.Find("Vine " + gate.Cell));

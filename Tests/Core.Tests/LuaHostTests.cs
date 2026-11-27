@@ -87,6 +87,14 @@ end";
         }
 
         [Fact]
+        public void RecoverySourceValidationBoundsInitializationAndRequiresPose()
+        {
+            LuaRecoveryMethod.ValidateSource(Slide);
+            Assert.Throws<InvalidOperationException>(() => LuaRecoveryMethod.ValidateSource("while true do end"));
+            Assert.Throws<InvalidOperationException>(() => LuaRecoveryMethod.ValidateSource("function other() end"));
+        }
+
+        [Fact]
         public void OversizedSourceIsRejected()
         {
             var method = new LuaRecoveryMethod(MakeHost(), new string(' ', LuaHost.MaxSourceLength + 1));

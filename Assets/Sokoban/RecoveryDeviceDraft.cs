@@ -2,6 +2,9 @@
  * @file RecoveryDeviceDraft.cs
  * @brief 两端共用的恢复装置命令入口。
  * FindRecoveryDevice(id)：按 ID 查询当前房间的装置。
+ * RecoveryDeviceGraphs()：读取当前装置拥有的图，缺少装置时返回空列表。
+ * RecoveryDeviceGraphTemplate()：按当前装置类型创建尚未提交的默认图。
+ * SetRecoveryDeviceGraph(graph)：按图 ID 新增或更新装置图，经共享历史提交。
  * PlaceRecoveryDevice(device, replaceExisting)：提交放置或显式替换，并选中装置。
  * MoveRecoveryDevice(anchor)：提交移动，并保持选中。
  * RotateRecoveryDevice(quarterTurns)：提交旋转，并保持选中。
@@ -11,6 +14,7 @@
  */
 using Sokoban.Core;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Sokoban
@@ -19,6 +23,22 @@ namespace Sokoban
     {
         public RecoveryDevice FindRecoveryDevice(string id) =>
             Model.RecoveryDevice?.Id == id ? Model.RecoveryDevice : null;
+
+        public IReadOnlyList<BehaviorGraph> RecoveryDeviceGraphs() => Model.RecoveryDevice == null
+            ? Array.Empty<BehaviorGraph>()
+            : Model.Graphs.Where(graph => graph.OwnerId == Model.RecoveryDevice.Id).ToArray();
+
+        public BehaviorGraph RecoveryDeviceGraphTemplate()
+        {
+            var device = Model.RecoveryDevice ?? throw new InvalidOperationException("缺少恢复装置");
+            return RecoveryDeviceCommands.DefaultGraph(device.Kind, device.Id);
+        }
+
+        public void SetRecoveryDeviceGraph(BehaviorGraph graph)
+        {
+            var device = Model.RecoveryDevice ?? throw new InvalidOperationException("缺少恢复装置");
+            Commit(RecoveryDeviceCommands.SetGraph(holders[ActiveId], graph), device.Id);
+        }
 
         public void PlaceRecoveryDevice(RecoveryDevice device, bool replaceExisting = false)
         {

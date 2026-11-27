@@ -3,6 +3,7 @@
  * @brief 房间恢复装置及其墙外放置规则。
  * RecoveryDevice(id, kind, anchor, rotation, scriptRef, duration, parameters, itemName, itemDescription, itemAcquiredHint)：构造不可变装置并快照参数。
  * WithPlacement(anchor, rotation)：保留 ID 和配置，返回更新位置和朝向后的装置。
+ * DefaultScriptRef(kind)：提供该类型装置的内置演出脚本引用。
  * HasAnchorCollision(draft, anchor)：检查锚点是否已被地形、门、物件或装饰占用。
  * WallInward(room, anchor)：由相邻的房间边界返回墙面向内法线。
  * IsValidAnchor(room, anchor)：仅允许矩形四边外紧邻的一格，不含角格。
@@ -38,6 +39,14 @@ namespace Sokoban.Core
             1 => Cell.Right,
             2 => Cell.Down,
             _ => Cell.Left
+        };
+
+        public static string DefaultScriptRef(RecoveryDeviceKind kind) => kind switch
+        {
+            RecoveryDeviceKind.Forklift => "warehouse-lift",
+            RecoveryDeviceKind.Arm => "factory-belt",
+            RecoveryDeviceKind.Tree => "forest-decay",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind))
         };
 
         public RecoveryDevice(string id, RecoveryDeviceKind kind, Cell anchor, int rotation,

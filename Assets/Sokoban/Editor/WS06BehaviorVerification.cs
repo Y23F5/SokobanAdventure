@@ -99,6 +99,19 @@ namespace Sokoban.Editor
 
         public static void Run()
         {
+            var worldDraft = new LayoutPanel().Draft;
+            worldDraft.Open(Path.Combine(Application.streamingAssetsPath, "World", "main.world.json"), true);
+            Check(worldDraft.World.Rooms.All(room =>
+                worldDraft.Catalog[room.LevelId].Room.RecoveryDeviceFloor is Cell floor &&
+                worldDraft.RoomAt(room.Origin + floor) == room.LevelId), "world hit testing resolves all three external recovery floors");
+            worldDraft.UseRoom("warehouse");
+            var warehouseAnchor = worldDraft.Room.RecoveryDeviceFloor;
+            string conflict = null;
+            try { worldDraft.MoveRecoveryDevice(new Cell(worldDraft.Room.Width, 3)); }
+            catch (InvalidOperationException error) { conflict = error.Message; }
+            Check(conflict != null && conflict.Contains("占地重叠") && worldDraft.Room.RecoveryDeviceFloor == warehouseAnchor,
+                "moving a recovery floor onto the neighboring room is rejected atomically");
+
             var draft = new LayoutPanel().Draft;
             var a = new Cell(3, 3);
             var b = new Cell(4, 3);
@@ -251,15 +264,32 @@ namespace Sokoban.Editor
             yield return null;
             game.Leave();
             yield return null;
-            editor.Panel.Draft.Open(path, false);
+            var edited = editor.Panel.Draft;
+            edited.Open(path, false);
+            string builtinPose = edited.GetRecoveryPoseSource();
+            const string customPose = "function pose(t, ctx) return {{id=ctx.boxId, x=4, y=1.25, z=2}} end";
+            edited.SetRecoveryPoseSource(customPose);
+            string customScript = edited.Model.RecoveryDevice.ScriptRef;
+            edited.Undo();
+            Check(edited.GetRecoveryPoseSource() == builtinPose && edited.AssetDefinition(customScript) == null,
+                "undo restores the built-in recovery pose and removes the newly registered script");
+            edited.Redo();
             var trigger = ObjectBehavior.Node(TriggerIds.RoomSolved, null, "solved");
             var recoveryStart = ObjectBehavior.Node(TriggerIds.RecoveryStart, null, "started");
             var recovery = ObjectBehavior.Node(ObjectBehavior.Lua,
                 new Dictionary<string, string> { ["script"] = "self.startRecovery()" }, "recover");
             var repeat = ObjectBehavior.Node(BehaviorNodeKinds.StartRecovery, id: "repeat");
-            editor.Panel.Draft.SetBehavior(new Cell(4, 3), new BehaviorGraph("solve-recovery", null,
-                new[] { trigger, recoveryStart, recovery, repeat }, new[] { new BehaviorEdge("solved", "out", "recover", "in"),
-                    new BehaviorEdge("started", "out", "repeat", "in") }));
+            edited.SetBehavior(new Cell(4, 3), new BehaviorGraph("solve-recovery", null,
+                new[] { trigger, recovery }, new[] { new BehaviorEdge("solved", "out", "recover", "in") }));
+            edited.SetRecoveryDeviceGraph(new BehaviorGraph("device-start", null,
+                new[] { recoveryStart, repeat }, new[] { new BehaviorEdge("started", "out", "repeat", "in") }));
+            string customPath = Path.Combine(Path.GetDirectoryName(path), "custom-recovery.room.json");
+            edited.Save(customPath, false);
+            edited.Open(customPath, false);
+            Check(edited.GetRecoveryPoseSource() == customPose &&
+                edited.RecoveryDeviceGraphs().Single().OwnerId == edited.Model.RecoveryDevice.Id &&
+                edited.Room.IsRecoveryDeviceFloor(edited.Model.RecoveryDevice.Anchor),
+                "save and reopen preserve the custom pose, device-owned graph and recovery floor");
             editor.StartTrial();
             yield return null; yield return null;
             var chained = Object.FindObjectOfType<PuzzleHost>();
@@ -269,6 +299,14 @@ namespace Sokoban.Editor
             Check(chained.Move(Vector2Int.right) && chained.Run.Recovering && !chained.Busy &&
                 chained.panels.Modal && chained.panels.discoveryText.text == "recovery start",
                 "solved graph calls self.startRecovery() and dispatches immediately; start node cannot re-enter recovery");
+            chained.panels.Back();
+            yield return null;
+            var cargo = chained.transform.Find(chained.Run.ActiveId).Find("box-a");
+            float poseDeadline = Time.realtimeSinceStartup + 5;
+            while (chained.Run.Recovering && Mathf.Abs(cargo.localPosition.y - 1.25f) > .01f &&
+                Time.realtimeSinceStartup < poseDeadline) yield return null;
+            Check(chained.Run.Recovering && Mathf.Abs(cargo.localPosition.y - 1.25f) <= .01f,
+                "the production presenter applies the reloaded room script to the real box");
         }
     }
 }
