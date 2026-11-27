@@ -35,6 +35,15 @@ namespace Sokoban.Editor
         internal static LayoutPanel Panel { get; private set; }
         static readonly RoomPreview preview = new RoomPreview();
         internal static string AppearanceIssue => preview.AppearanceIssue;
+        internal static string PreviewDoorId => preview.PreviewDoor;
+        internal static float PreviewDoorOpen => preview.PreviewOpen;
+
+        internal static void SetDoorPreview(string doorId, float open)
+        {
+            preview.PreviewDoor = doorId;
+            preview.PreviewOpen = open;
+            SceneView.RepaintAll();
+        }
         static readonly SceneGhost ghost = new SceneGhost();
         static bool dragging, rightDown, rightDragged, viewPending;
         static Vector2 rightStart;

@@ -58,6 +58,21 @@ namespace Sokoban
             if (playback && playback.clip) playback.clip.SampleAnimation(playback.gameObject, Mathf.Clamp01(fraction) * playback.clip.length);
         }
 
+        internal bool SampleClip(string clipName, float fraction)
+        {
+            var clip = playback ? playback.GetClip(clipName) : null;
+            if (!clip) return false;
+            clip.SampleAnimation(playback.gameObject, Mathf.Clamp01(fraction) * clip.length);
+            return true;
+        }
+
+        internal string[] ClipNames()
+        {
+            var names = new List<string>();
+            if (playback) foreach (AnimationState state in playback) names.Add(state.name);
+            return names.ToArray();
+        }
+
         public static async Task InspectModel(AssetDescriptor asset, string category = null, string filename = null)
         {
             var stage = new GameObject("模型尺寸检查") { hideFlags = HideFlags.HideAndDontSave };

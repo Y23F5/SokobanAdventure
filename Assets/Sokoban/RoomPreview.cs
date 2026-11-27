@@ -76,6 +76,7 @@ namespace Sokoban
                 p.part.localScale = p.scale;
                 p.part.hasChanged = false;
             }
+            ApplyDoorPreview(draft);
             if (settling)
             {
                 if (settlingAppearance && settlingAppearance.Ready != null && !settlingAppearance.Ready.IsCompleted)
@@ -88,6 +89,24 @@ namespace Sokoban
                 settling.localPosition = rest + Vector3.up * (.22f * (1 - t) * (1 - t));
                 if (t >= 1) settling = null;
             }
+        }
+
+        public string PreviewDoor;
+        public float PreviewOpen;
+
+        void ApplyDoorPreview(RoomDraft draft)
+        {
+            if (PreviewDoor == null || !root) return;
+            var door = draft.Model.Doors.FirstOrDefault(entry => entry.Id == PreviewDoor);
+            var node = door == null ? null : root.transform.Find(draft.ActiveId)?.Find(PreviewDoor);
+            if (!node) return;
+            var look = draft.DoorLookOf(PreviewDoor);
+            if (look.Mode == DoorMode.Clips)
+            {
+                var appearance = node.GetComponent<ImportedAppearance>();
+                if (appearance) appearance.SampleClip(look.OpenClip, PreviewOpen);
+            }
+            else if (look.Mode == DoorMode.Visibility) node.gameObject.SetActive(PreviewOpen < .5f);
         }
 
         public void ClipWalls(RoomDraft draft, Quaternion rotation)

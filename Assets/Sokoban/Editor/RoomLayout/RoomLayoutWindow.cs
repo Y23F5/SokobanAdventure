@@ -700,6 +700,17 @@ namespace Sokoban.Editor
             Heading(area, "门外观");
             var look = draft.DoorLookOf(door.Id);
             Line(area, "当前：" + look.Describe());
+            var previewToggle = new Toggle("预览开合") { value = WorldSceneSession.PreviewDoorId == door.Id };
+            var previewSlider = new Slider("开合进度（0 关 · 1 开）", 0f, 1f) { value = WorldSceneSession.PreviewDoorId == door.Id ? WorldSceneSession.PreviewDoorOpen : 0f };
+            previewSlider.SetEnabled(previewToggle.value);
+            previewToggle.RegisterValueChangedCallback(evt =>
+            {
+                WorldSceneSession.SetDoorPreview(evt.newValue ? door.Id : null, previewSlider.value);
+                previewSlider.SetEnabled(evt.newValue);
+            });
+            previewSlider.RegisterValueChangedCallback(evt => WorldSceneSession.SetDoorPreview(door.Id, evt.newValue));
+            area.Add(previewToggle);
+            area.Add(previewSlider);
             var modes = Row(area);
             foreach (var entry in new[] { (mode: DoorMode.Clips, name: "动画"), (mode: DoorMode.TwoModels, name: "开关两个模型"), (mode: DoorMode.Visibility, name: "整门显隐") })
             {
