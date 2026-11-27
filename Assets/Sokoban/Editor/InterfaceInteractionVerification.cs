@@ -312,6 +312,12 @@ namespace Sokoban.Editor
             float due = Time.realtimeSinceStartup + 2;
             while (!toolbar.tooltip.gameObject.activeSelf && Time.realtimeSinceStartup < due) yield return null;
             Require(toolbar.tooltip.gameObject.activeSelf && toolbar.label.text == toolbar.description, "编辑工具提示出现");
+            var tipCanvas = toolbar.tooltip.GetComponent<Canvas>();
+            Require(tipCanvas && tipCanvas.overrideSorting && tipCanvas.sortingOrder == 30, "提示框使用独立的最高层级（Tooltip=30）");
+            var mustPanel = GameObject.Find("房间必填项");
+            var mustCanvas = mustPanel ? mustPanel.GetComponent<Canvas>() : null;
+            Require(mustCanvas && mustCanvas.sortingOrder == 5 && tipCanvas.sortingOrder > mustCanvas.sortingOrder, "提示框层级高于必填项面板");
+            Require(toolbar.tooltip.GetComponentsInChildren<UnityEngine.UI.Graphic>(true).All(graphic => !graphic.raycastTarget), "提示框不拦截射线");
             toolbar.OnPointerExit(new PointerEventData(EventSystem.current));
             Require(!toolbar.tooltip.gameObject.activeSelf, "离开编辑工具时关闭提示");
             var editor = Object.FindObjectOfType<LayoutHost>();
