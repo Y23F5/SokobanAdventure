@@ -128,3 +128,14 @@ InitTestScene*.unity*
 /.claude/
 /.vscode/
 /Ref.pur
+
+# Crash dumps
+*.stackdump
+
+# Unity template scaffolding and review copies (untracked)
+/Assets/TutorialInfo*
+/Assets/Readme.asset*
+/Assets/WS02-Inspector-Review*
+
+# Publish the README
+!/README.md
