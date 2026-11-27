@@ -601,12 +601,18 @@ namespace Sokoban
                         bind.GetComponentInChildren<Text>().text = "绑定内置模型 · " + RoomDraft.BuiltinBoxNames[i];
                         bind.onClick.AddListener(() => Panel.Run(() => Panel.Draft.BindBuiltinBox(model),"已绑定箱体模型"));
                     }
-                var preset = Instantiate(entryPrefab,container,false);
-                preset.GetComponentInChildren<Text>().text = Panel.RecoveryLabel;
-                preset.onClick.AddListener(Panel.CycleRecovery);
-                var theme = Instantiate(entryPrefab, container, false);
-                theme.GetComponentInChildren<Text>().text = Panel.ThemeLabel;
-                theme.onClick.AddListener(Panel.CycleTheme);
+                var device = Panel.Draft.Model.RecoveryDevice;
+                var deviceLine = Instantiate(entryPrefab, container, false);
+                deviceLine.GetComponentInChildren<Text>().text = device == null ? "恢复装置：缺少" : "恢复装置：" + device.Kind + " · " + device.Duration.ToString("0.0") + " 秒";
+                deviceLine.interactable = false;
+                foreach (string themeId in AppearanceLibrary.Themes)
+                {
+                    string chosen = themeId;
+                    var theme = Instantiate(entryPrefab, container, false);
+                    bool current = Panel.Draft.Theme == chosen;
+                    theme.GetComponentInChildren<Text>().text = (current ? "● " : "○ ") + "背景 · " + AppearanceLibrary.ThemeName(chosen);
+                    theme.onClick.AddListener(() => Panel.Run(() => Panel.Draft.SetTheme(chosen), "已切换主题"));
+                }
             }
             if (!directory && Panel.Draft.SelectedCell.HasValue)
                 for (int i = 0; i < LayoutPanel.MarkerLabels.Length; i++)
