@@ -39,15 +39,18 @@ namespace Sokoban
             var floor = model.Room.RecoveryDeviceFloor;
             if (device == null || !floor.HasValue) return;
             var cell = floor.Value;
+            var position = new Vector3(cell.X, RecoveryContext.DeviceGroundY, cell.Y);
             string path = device.Kind switch { RecoveryDeviceKind.Forklift => "Diorama/Lift", RecoveryDeviceKind.Arm => "Diorama/Conveyor", _ => "Diorama/Tree" };
             var part = ObjectStateView.Create(model.Assets, group, path, null);
             part.name = device.Id;
-            part.transform.localPosition = new Vector3(cell.X, 0, cell.Y);
+            part.transform.localPosition = position;
             part.transform.localRotation = RoomPreview.CellRotation(device.Rotation);
             var look = AppearanceLibrary.Default(TerrainCategories.Floor, model.Meta.ThemeId);
             var ground = ObjectStateView.Create(model.Assets, group, AppearanceLibrary.Prefab(look) ?? "LayoutModels/Floor", null);
             ground.name = device.Id + "-ground";
-            ground.transform.localPosition = new Vector3(cell.X, 0, cell.Y);
+            ground.transform.localPosition = position;
+            float top = ground.GetComponentsInChildren<Renderer>(true).Max(renderer => renderer.bounds.max.y);
+            ground.transform.position += Vector3.up * (group.TransformPoint(position).y - top);
         }
 
         static void Ground(RoomDraftModel model, Vector2Int origin, Transform group, WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog)
@@ -68,7 +71,7 @@ namespace Sokoban
                     if (offset.x >= size.x || offset.x + otherSize.x <= 0) Clip(ref low.x, ref high.x, size.x, offset.x, otherSize.x);
                     else Clip(ref low.y, ref high.y, size.y, offset.y, otherSize.y);
                 }
-            var yard = Surface(group, "外围地绘", texture, new Vector3((high.x + low.x) * .5f, -.741f, (high.y + low.y) * .5f), Quaternion.Euler(90, 0, 0), high - low);
+            var yard = Surface(group, "外围地绘", texture, new Vector3((high.x + low.x) * .5f, RecoveryContext.DeviceGroundY - .001f, (high.y + low.y) * .5f), Quaternion.Euler(90, 0, 0), high - low);
             var uv = (low - center) / dimensions + Vector2.one * .5f;
             var scale = (high - low) / dimensions;
             var block = new MaterialPropertyBlock();

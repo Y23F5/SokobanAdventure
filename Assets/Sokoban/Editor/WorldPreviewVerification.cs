@@ -81,9 +81,14 @@ namespace Sokoban.Editor
             {
                 var device = group.Find(model.RecoveryDevice.Id);
                 var floor = group.Find(model.RecoveryDevice.Id + "-ground");
-                var position = new Vector3(floorCell.X, 0, floorCell.Y);
-                Require(device && floor && device.localPosition == position && floor.localPosition == position,
-                    room.Id + " 装置和实体地板使用同一个 Core 格 " + floorCell);
+                var position = new Vector3(floorCell.X, RecoveryContext.DeviceGroundY, floorCell.Y);
+                Require(device && floor && device.localPosition == position &&
+                    floor.localPosition.x == position.x && floor.localPosition.z == position.z &&
+                    Mathf.Approximately(floor.GetComponentsInChildren<Renderer>(true).Max(renderer => renderer.bounds.max.y), group.TransformPoint(position).y),
+                    room.Id + " 装置和实体地板对齐外围地面及 Core 格 " + floorCell);
+                float deviceBottom = device.GetComponentsInChildren<Renderer>(true).Min(renderer => renderer.bounds.min.y);
+                Require(Mathf.Abs(deviceBottom - group.TransformPoint(position).y) < .035f,
+                    room.Id + " 停放装置底部贴地，模型底部 Y=" + deviceBottom);
                 var look = AppearanceLibrary.Default(TerrainCategories.Floor, model.Meta.ThemeId);
                 CheckModel(floor, AppearanceLibrary.Prefab(look) ?? "LayoutModels/Floor", Quaternion.identity);
             }

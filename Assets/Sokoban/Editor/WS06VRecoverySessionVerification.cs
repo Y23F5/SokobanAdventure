@@ -389,6 +389,9 @@ namespace Sokoban.Editor
                 Check(truck && fork && parked && !parked.gameObject.activeSelf &&
                     truck.localPosition.x < -1f && fork.localPosition.x >= 0f,
                     "authored west-side fixture keeps the truck out and sends the forks in");
+                float wheelBottom = truck.GetComponentsInChildren<Renderer>(true).Min(renderer => renderer.bounds.min.y);
+                Check(Mathf.Abs(wheelBottom - parked.position.y) < .035f,
+                    "animated forklift wheels and parked forklift share ground height; wheel bottom " + wheelBottom);
                 while (host.Run.Recovering) yield return null;
                 yield return null;
                 Check(parked.gameObject.activeSelf && !trialRoom.Find("truck") && !trialRoom.Find("fork"),
@@ -406,6 +409,9 @@ namespace Sokoban.Editor
                     belt.gameObject.activeSelf && mount.localPosition.z > host.Run.Room.Room.Height &&
                     grabber.localPosition.z < host.Run.Room.Room.Height - 1,
                     "authored north-side arm stays mounted outside and deploys its belt and grabber into the room");
+                float mountBottom = mount.GetComponentsInChildren<Renderer>(true).Min(renderer => renderer.bounds.min.y);
+                Check(Mathf.Abs(mountBottom - parked.position.y) < .035f,
+                    "animated mount and parked arm share ground height; mount bottom " + mountBottom);
                 while (host.Run.Recovering) yield return null;
                 yield return null;
                 Check(parked.gameObject.activeSelf && !trialRoom.Find("belt") && !trialRoom.Find("grabber"),

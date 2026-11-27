@@ -10,9 +10,9 @@ function pose(t, ctx)
     local tree = math.max(living, growth)
     return {
       { id = 'stationary-tree', resource = 'Diorama/ForestRecoveryTree',
-        x = device.start.x, z = device.start.z, yaw = device.yaw, scale = math.max(0.001, tree), visible = tree > 0 },
+        x = device.start.x, y = device.start.y, z = device.start.z, yaw = device.yaw, scale = math.max(0.001, tree), visible = tree > 0 },
       { id = 'stationary-decay', resource = 'Diorama/ForestDecay', clipName = 'ForestDecay',
-        clip = 0.4 + t * 4, x = device.start.x, z = device.start.z, yaw = device.yaw,
+        clip = 0.4 + t * 4, x = device.start.x, y = device.start.y, z = device.start.z, yaw = device.yaw,
         visible = cracked and t < 0.70 }
     }
   end

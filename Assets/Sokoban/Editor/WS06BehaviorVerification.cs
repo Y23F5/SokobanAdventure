@@ -235,8 +235,10 @@ namespace Sokoban.Editor
             var loadedDevice = game.Run.Room.RecoveryDevice;
             var floorCell = game.Run.Room.Room.RecoveryDeviceFloor.Value;
             var support = room.Find(loadedDevice.Id + "-ground");
-            Check(support && support.localPosition == new Vector3(floorCell.X, 0, floorCell.Y),
-                "runtime renders the device support on its Core floor cell");
+            var expectedSupport = new Vector3(floorCell.X, RecoveryContext.DeviceGroundY, floorCell.Y);
+            Check(support && support.localPosition.x == expectedSupport.x && support.localPosition.z == expectedSupport.z &&
+                Mathf.Approximately(support.GetComponentsInChildren<Renderer>(true).Max(renderer => renderer.bounds.max.y), room.TransformPoint(expectedSupport).y),
+                "runtime renders the support surface at the yard height on its Core floor cell");
             var subject = room.Find("Wall (3,3)");
             var control = room.Find("Wall (4,3)");
             var affected = subject.GetComponentsInChildren<Renderer>(true);

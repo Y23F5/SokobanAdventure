@@ -59,6 +59,7 @@ namespace Sokoban.Core
 
     public sealed class RecoveryContext
     {
+        public const float DeviceGroundY = -.74f;
         public string RoomId { get; }
         public string BoxId { get; }
         public IReadOnlyList<Cell> Route { get; }
