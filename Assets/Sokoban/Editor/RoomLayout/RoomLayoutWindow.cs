@@ -517,9 +517,14 @@ namespace Sokoban.Editor
                 DrawRecoveryDevice(area, draft);
             }
 
+            string groupKey = null;
             foreach (var item in draft.PaletteItems(tab))
             {
                 if (item.AssetId != null && item.TemplateId == null && tab == PaletteTabs.Custom) continue;
+                string nextGroup = item.Theme == null || item.TemplateId != null ? null : item.Theme + "/" + item.CategoryId;
+                if (nextGroup != null && nextGroup != groupKey)
+                    Heading(area, AppearanceLibrary.ThemeName(item.Theme) + " · " + AppearanceLibrary.TypeName(item.CategoryId) + (item.Theme == draft.Theme ? "（当前主题）" : ""));
+                groupKey = nextGroup;
                 RoomTool? tool = ToolForCategory(item.CategoryId);
                 Action choose = null;
                 if (item.TemplateId != null)

@@ -125,11 +125,11 @@ namespace Sokoban
 
     public sealed class PaletteItem
     {
-        public readonly string Tab, CategoryId, Id, Name, Prefab, AssetId, TemplateId;
+        public readonly string Tab, CategoryId, Id, Name, Prefab, AssetId, TemplateId, Theme;
 
-        public PaletteItem(string tab, string categoryId, string id, string name, string prefab = null, string assetId = null, string templateId = null)
+        public PaletteItem(string tab, string categoryId, string id, string name, string prefab = null, string assetId = null, string templateId = null, string theme = null)
         {
-            Tab = tab; CategoryId = categoryId; Id = id; Name = name; Prefab = prefab; AssetId = assetId; TemplateId = templateId;
+            Tab = tab; CategoryId = categoryId; Id = id; Name = name; Prefab = prefab; AssetId = assetId; TemplateId = templateId; Theme = theme;
         }
     }
 
@@ -292,9 +292,9 @@ namespace Sokoban
             {
                 foreach (var item in pack.Where(item => item.category == category).OrderByDescending(item => item.theme == theme)
                     .ThenBy(item => item.asset.Name, StringComparer.Ordinal))
-                    items.Add(new PaletteItem(tab, category, item.asset.Id, packNames[item.asset.Id], null, item.asset.Id));
+                    items.Add(new PaletteItem(tab, category, item.asset.Id, packNames[item.asset.Id], null, item.asset.Id, null, item.theme));
                 foreach (var entry in AppearanceLibrary.Entries(category, theme))
-                    items.Add(new PaletteItem(tab, category, entry.Id, entry.Name, entry.Prefab()));
+                    items.Add(new PaletteItem(tab, category, entry.Id, entry.Name, entry.Prefab(), null, null, entry.Theme));
                 if (tab == PaletteTabs.Decoration)
                     foreach (var asset in ModelAssets().Where(asset => !pack.Any(item => item.asset.Id == asset.Id)))
                         items.Add(new PaletteItem(tab, category, asset.Id, asset.Name, null, asset.Id));
