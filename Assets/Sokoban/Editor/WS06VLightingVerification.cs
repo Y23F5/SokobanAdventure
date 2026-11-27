@@ -58,8 +58,11 @@ namespace Sokoban.Editor
             var sun = Object.FindObjectsOfType<Light>().Single(l => l.type == LightType.Directional && l.enabled);
             Color tint = sky.GetColor("_Tint"), warehouse = new Color32(218,197,156,255);
             Debug.Log($"LIGHTQA SAMPLE {stage} span={span} aspect={c.aspect:F5} ortho={c.orthographic} size={c.orthographicSize:F5} pos={c.transform.position.ToString("F4")} angles={c.transform.eulerAngles.ToString("F3")} clear={c.clearFlags} background={c.backgroundColor:F5} sky={sky.shader.name} tint={tint:F5} sun={sun.name} rgb={sun.color:F5} intensity={sun.intensity:F3} direction={sun.transform.forward.ToString("F4")} shadows={sun.shadows} strength={sun.shadowStrength:F3}");
-            float size = editor ? Mathf.Max(span.y*.63f,span.x*.6f/Mathf.Max(.1f,c.aspect*.74f)) : Mathf.Max(3,Mathf.Max(span.x,span.y)*.69f/Mathf.Min(1,c.aspect));
-            Check(c.orthographic && Mathf.Abs(c.orthographicSize-size)<.001f && Quaternion.Angle(c.transform.rotation,Quaternion.Euler(55,32,0))<.05f,stage+" default camera");
+            float diagonal = span.magnitude;
+            float size = editor
+                ? Mathf.Max(diagonal * .5f * Mathf.Sin(48 * Mathf.Deg2Rad) + 1.1f, (diagonal * .5f + 1.3f) / Mathf.Max(.1f, c.aspect * .74f))
+                : Mathf.Max(3, Mathf.Max(span.x, span.y) * .69f / Mathf.Min(1, c.aspect));
+            Check(c.orthographic && Mathf.Abs(c.orthographicSize-size)<.001f && Quaternion.Angle(c.transform.rotation,Quaternion.Euler(48,0,0))<.05f,stage+" default camera");
             Check(c.clearFlags==CameraClearFlags.Skybox && sky.shader.name=="Sokoban/DioramaSky" && Near(c.backgroundColor,warehouse) && Near(tint,warehouse),stage+" warehouse sky");
             Check(Near(sun.color,Color.Lerp(Color.white,warehouse,.28f)) && sun.shadows==LightShadows.Soft && Mathf.Abs(sun.shadowStrength-.55f)<.001f,stage+" warehouse sun and shadows");
         }
