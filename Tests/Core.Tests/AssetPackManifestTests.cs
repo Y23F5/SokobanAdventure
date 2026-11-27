@@ -28,10 +28,10 @@ public sealed class AssetPackManifestTests
         {
             Assert.Equal(AssetPackManifest.Other, backdrop.Category);
             Assert.Equal("factory", backdrop.Theme);
-        }, box =>
+        }, unclassified =>
         {
-            Assert.Equal(ObjectCategories.Box, box.Category);
-            Assert.Equal("forest", box.Theme);
+            Assert.Equal(AssetPackManifest.Decoration, unclassified.Category);
+            Assert.Null(unclassified.Theme);
         });
     }
 

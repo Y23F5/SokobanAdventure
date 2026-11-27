@@ -20,8 +20,11 @@ namespace Sokoban.Editor
         {
             try
             {
-                const string source = "PlayTest3/assets/glb/ground-centered/manifest.json";
-                string output = Path.GetFullPath("Docs/验收证据/重建/阶段5");
+                string source = Environment.GetEnvironmentVariable("SOKOBAN_ASSET_PACK_MANIFEST")
+                    ?? throw new InvalidOperationException("SOKOBAN_ASSET_PACK_MANIFEST 需要指向含显式分类的素材包清单");
+                string output = Environment.GetEnvironmentVariable("SOKOBAN_ASSET_PACK_EVIDENCE")
+                    ?? Path.GetFullPath("Docs/验收证据/重建/阶段5");
+                Directory.CreateDirectory(output);
                 var parts = AssetPackManifest.Parse(File.ReadAllText(source));
                 var result = await AssetPackImporter.Import(source);
                 File.WriteAllLines(Path.Combine(output, "pack-results.txt"), new[] { result.Summary }
@@ -33,7 +36,8 @@ namespace Sokoban.Editor
                     && result.Accepted.Any(item => item.part.Category == ObjectCategories.Box)
                     && result.Accepted.Any(item => item.part.Category == AssetPackManifest.Other), "分类通过，整房零件仅归其他");
                 var draft = new LayoutPanel().Draft;
-                draft.Open("Docs/关卡样例/WS-01.json", true);
+                draft.Place(true, new Cell(3, 2), "box-pack-qa");
+                draft.Place(false, new Cell(4, 2), "target-pack-qa");
                 draft.RegisterPack(result);
                 int registered = draft.PackParts().Count();
                 Check(registered > 0, "分类已经登记");

@@ -55,12 +55,6 @@ namespace Sokoban.Core
 
         static readonly HashSet<string> ThemeIds = new HashSet<string>(Themes.Values, StringComparer.Ordinal);
 
-        static readonly Dictionary<string, string> BoxThemes = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            { "wooden-crate-and-pallet", "warehouse" }, { "mechanical-crate", "factory" },
-            { "log-bundle", "forest" }, { "regrown-tree", "forest" }
-        };
-
         public static IReadOnlyList<AssetPackPart> Parse(string text)
         {
             if (!(MiniJson.Parse(text, true) is Dictionary<string, object> root)
@@ -84,12 +78,7 @@ namespace Sokoban.Core
                 if (room == null && roomPart) room = components[1];
                 string theme = ReadLabel(record, "theme", ThemeIds, file);
                 if (theme == null && room != null && Themes.TryGetValue(room, out var mapped)) theme = mapped;
-                string category = ReadLabel(record, "category", Categories, file);
-                if (category == null)
-                {
-                    category = Category(stem, roomPart);
-                    if (category == ObjectCategories.Box && theme == null) theme = BoxThemes[stem];
-                }
+                string category = ReadLabel(record, "category", Categories, file) ?? Category(stem, roomPart);
                 double[] bounds = Vector(record, "bounds_size_xyz", 3, file);
                 if (bounds.Any(axis => axis < 0)) throw new FormatException(file + " 包围盒尺寸不能为负数");
                 Cell grid = CellField(record, "grid_footprint_xz", file, false, true).Value;
@@ -109,7 +98,6 @@ namespace Sokoban.Core
 
         static string Category(string stem, bool roomPart)
         {
-            if (BoxThemes.ContainsKey(stem)) return ObjectCategories.Box;
             if (!roomPart) return Decoration;
             if (stem == "walls" || stem == "floor" || stem == "backdrop") return Other;
             if (stem.StartsWith("wall-cell", StringComparison.Ordinal)) return TerrainCategories.Wall;
