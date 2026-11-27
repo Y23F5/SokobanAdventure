@@ -98,7 +98,7 @@ namespace Sokoban
             CancelTool();
             Status = reason ?? "房间已放置到 " + origin;
         }
-        public bool IsBrush => Draft.Tool==RoomTool.Floor || Draft.Tool==RoomTool.Wall || Draft.Tool==RoomTool.Erase;
+        public bool IsBrush => Draft.Tool==RoomTool.Floor || Draft.Tool==RoomTool.Wall || Draft.Tool==RoomTool.Vine || Draft.Tool==RoomTool.Erase;
         public bool HasView {get;private set;}
         public Vector3 Pivot {get;private set;}
         public Quaternion Rotation {get;private set;}=Quaternion.identity;

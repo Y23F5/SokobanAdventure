@@ -330,15 +330,15 @@ namespace Sokoban
 
         public string Brush(IEnumerable<Cell> cells, RoomTool tool)
         {
-            if (tool != RoomTool.Wall && tool != RoomTool.Floor && tool != RoomTool.Erase) return "当前工具不是地形画刷";
+            if (tool != RoomTool.Wall && tool != RoomTool.Floor && tool != RoomTool.Erase && tool != RoomTool.Vine) return "当前工具不是地形画刷";
             if (World != null && Placement == null) return "房间尚未放置";
             if (tool == RoomTool.Erase)
             {
                 var inside = cells.Where(cell => Room.Inside(cell)).ToArray();
                 if (inside.Length == cells.Count() && EraseContent(inside)) return null;
             }
-            var plan = BrushPlanner.Preflight(Model, cells, tool == RoomTool.Wall ? BrushTool.Wall : tool == RoomTool.Floor ? BrushTool.Floor : BrushTool.Erase, rotation: BrushRotation,
-                appearance: tool == RoomTool.Erase ? null : TerrainBrush(tool == RoomTool.Wall ? TerrainCategories.Wall : TerrainCategories.Floor));
+            var plan = BrushPlanner.Preflight(Model, cells, tool == RoomTool.Wall ? BrushTool.Wall : tool == RoomTool.Floor ? BrushTool.Floor : tool == RoomTool.Vine ? BrushTool.Openable : BrushTool.Erase, rotation: BrushRotation,
+                appearance: tool == RoomTool.Erase ? null : TerrainBrush(tool == RoomTool.Wall ? TerrainCategories.Wall : tool == RoomTool.Vine ? TerrainCategories.Openable : TerrainCategories.Floor));
             if (plan.Error != null) return plan.Error;
             if (World != null && plan.Expands) return "请进入单独编辑后再扩建";
             if (plan.NoChange) return null;

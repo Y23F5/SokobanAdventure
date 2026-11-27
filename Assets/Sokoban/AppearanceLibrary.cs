@@ -114,8 +114,8 @@ namespace Sokoban
 
         public static IReadOnlyList<string> CategoriesOf(string tab) => tab switch
         {
-            Terrain => new[] { TerrainCategories.Floor, TerrainCategories.Wall, TerrainCategories.Door, TerrainCategories.Openable },
-            Object => new[] { ObjectCategories.Box, ObjectCategories.Target, ObjectCategories.Spawn },
+            Terrain => new[] { TerrainCategories.Floor, TerrainCategories.Wall, TerrainCategories.Openable },
+            Object => new[] { ObjectCategories.Box, ObjectCategories.Target },
             Decoration => new[] { AppearanceLibrary.Decoration },
             Custom => new[] { ObjectCategories.Custom },
             Other => new[] { AssetPackManifest.Entrance, AssetPackManifest.Exit, AssetPackManifest.Other },

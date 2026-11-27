@@ -20,7 +20,7 @@ using Sokoban.Core;
 
 namespace Sokoban
 {
-    public enum RoomTool { Select, Box, Target, Move, Floor, Wall, Erase, Decoration, Spawn, Entry, Exit, Hint }
+    public enum RoomTool { Select, Box, Target, Move, Floor, Wall, Erase, Decoration, Spawn, Entry, Exit, Hint, Vine }
 
     public sealed partial class RoomDraft
     {

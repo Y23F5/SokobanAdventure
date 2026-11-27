@@ -212,7 +212,6 @@ namespace Sokoban.Editor
             view.Q<Button>("solo").SetEnabled(draft.Placement != null);
             view.Q<Button>("publish").SetEnabled(draft.World != null);
             view.Q<Button>("export-room").SetEnabled(draft.World != null);
-            view.Q<Button>("tool-Spawn").SetEnabled(PrimaryEntrance(draft) != null);
             foreach (var button in view.Q("tools").Children().OfType<Button>())
                 button.EnableInClassList("sl-active", button.name == "tool-" + draft.Tool);
             view.Q<Label>("status").text = ToolLabel(draft.Tool) + " · 悬停 " +
@@ -270,13 +269,10 @@ namespace Sokoban.Editor
             })).AddToClassList("sl-exit");
 
             var tools = view.Q("tools");
-            foreach (RoomTool tool in new[] { RoomTool.Select, RoomTool.Floor, RoomTool.Wall, RoomTool.Erase,
-                RoomTool.Box, RoomTool.Target, RoomTool.Move, RoomTool.Entry, RoomTool.Exit, RoomTool.Spawn })
+            foreach (RoomTool tool in new[] { RoomTool.Select, RoomTool.Move, RoomTool.Erase })
             {
                 var button = AddButton(tools, ToolLabel(tool), () => UseTool(tool));
                 button.name = "tool-" + tool;
-                if (tool == RoomTool.Spawn)
-                    button.tooltip = "须先设置主入口。出生点固定在主入口内侧地板格。";
             }
             foreach (string page in PaletteTabs.All)
                 AddButton(view.Q("tabs"), PaletteTabs.Name(page), () => { tab = page; DrawPalette(Panel.Draft); }).name = "tab-" + page;
@@ -509,11 +505,7 @@ namespace Sokoban.Editor
 
             if (tab == PaletteTabs.Other)
             {
-                AddButton(area, "放置提示物件", () => UseTool(RoomTool.Hint));
-                AddButton(area, "放置入口", () => UseTool(RoomTool.Entry));
-                AddButton(area, "放置出口", () => UseTool(RoomTool.Exit));
-                var spawn = AddButton(area, ToolLabel(RoomTool.Spawn), () => UseTool(RoomTool.Spawn));
-                spawn.SetEnabled(PrimaryEntrance(draft) != null);
+                AddCard(area, draft, "提示物件", null, false, () => UseTool(RoomTool.Hint), draft.Tool == RoomTool.Hint);
                 DrawRecoveryDevice(area, draft);
             }
 
@@ -934,6 +926,7 @@ namespace Sokoban.Editor
         {
             TerrainCategories.Floor => RoomTool.Floor,
             TerrainCategories.Wall => RoomTool.Wall,
+            TerrainCategories.Openable => RoomTool.Vine,
             ObjectCategories.Box => RoomTool.Box,
             ObjectCategories.Target => RoomTool.Target,
             AppearanceLibrary.Decoration => RoomTool.Decoration,

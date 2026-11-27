@@ -17,7 +17,7 @@ using System.Linq;
 
 namespace Sokoban.Core
 {
-    public enum BrushTool { Wall, Floor, Erase }
+    public enum BrushTool { Wall, Floor, Erase, Openable }
 
     public sealed class DraftHolder
     {
@@ -90,7 +90,7 @@ namespace Sokoban.Core
                 return Rejected(points, tool, maxSide, "房间尺寸 " + width + "×" + height + " 超过上限 " + maxSide, left, bottom, right, top);
 
             var scratch = RoomResize.Resized(draft, left, bottom, width, height);
-            string target = tool == BrushTool.Wall ? TerrainCategories.Wall : tool == BrushTool.Floor ? TerrainCategories.Floor : TerrainCategories.Void;
+            string target = tool == BrushTool.Wall ? TerrainCategories.Wall : tool == BrushTool.Floor ? TerrainCategories.Floor : tool == BrushTool.Openable ? TerrainCategories.Openable : TerrainCategories.Void;
             int writes = 0;
             foreach (var point in points)
             {
@@ -106,6 +106,7 @@ namespace Sokoban.Core
                     if (current.Rotation == rotation && (look == null || look.Equals(scratch.Room.AppearanceAt(cell)))) continue;
                     scratch.Room.SetTerrain(cell, target, current.EntityId, current.State, rotation);
                 }
+                else if (tool == BrushTool.Openable) scratch.Room.SetTerrain(cell, target, "vine-" + Guid.NewGuid().ToString("N"), TerrainCategories.Closed, rotation);
                 else scratch.Room.SetTerrain(cell, target, rotation: rotation);
                 if (look != null) scratch.Room.SetAppearance(cell, look);
                 writes++;

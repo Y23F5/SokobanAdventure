@@ -63,7 +63,7 @@ namespace Sokoban.Editor
         static void VerifyFiles(string source)
         {
             var draft = new RoomDraft(RoomCodec.Decode(source)); string first = Path.Combine(evidence, "A.room.json"), second = Path.Combine(evidence, "B.room.json"), third = Path.Combine(evidence, "C.room.json");
-            draft.Save(first, false); draft.Open(first, false); draft.Place(true, FreeCell(draft, null)); draft.Save(second, true);
+            draft.Place(true, FreeCell(draft, null)); for (int ty = 0, placed = 0; ty < draft.Room.Height && placed == 0; ty++) for (int tx = 0; tx < draft.Room.Width && placed == 0; tx++) if (draft.PlacementError(false, new Cell(tx, ty)) == null) { draft.Place(false, new Cell(tx, ty)); placed = 1; } draft.Commit(new AddRecoveryItemCommand(draft.Model, new RecoveryItem("recovery-qa", Registries.BuiltinRecoveryScripts[0], 3f))); draft.Save(first, false); draft.Open(first, false); draft.Place(true, FreeCell(draft, null)); draft.Save(second, true);
             Check(draft.Dirty && draft.WorkPath == Path.GetFullPath(first) && File.ReadAllText(first) != RoomCodec.Encode(draft.Model), "导出 B 不改 A 和脏标记");
             var before = draft.Snapshot(); bool unwritable = Throws(() => draft.Save(evidence, false));
             bool unreadable = Throws(() => draft.Open(Path.Combine(evidence, "damaged-ws02.json"), false));
@@ -165,7 +165,7 @@ namespace Sokoban.Editor
             Check(restored.Dirty && restored.WorkPath == draft.WorkPath, "远端房间显式改传送后导出，保留原关联与脏标记");
             var reader = new RoomDraft(RoomCodec.Decode(source)); reader.Open(worldFile, true); reader.UseRoom("factory");
             Check(reader.Origin == edge && reader.Find(id).Cell == free && reader.WorkPath == null && reader.World.Connections.All(c => c.Mode == WorldCodec.Teleport), "另端解码相对引用、局部坐标与传送连接");
-            reader.NewDefaultRoom(); reader.Place(true, FreeCell(reader, null));
+            reader.NewDefaultRoom(); reader.Place(true, FreeCell(reader, null)); reader.Place(false, FreeCell(reader, null));
             var protectedDoor = reader.Model.Doors.First();
             Cell? a = null;
             for (int y = 0; y < reader.Room.Height && !a.HasValue; y++)
