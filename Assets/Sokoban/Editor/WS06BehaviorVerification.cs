@@ -16,6 +16,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.UI;
 using Sokoban.Core;
 using Object = UnityEngine.Object;
 
@@ -195,6 +196,35 @@ namespace Sokoban.Editor
             yield return null; yield return null;
             var editor = Object.FindObjectOfType<LayoutHost>();
             editor.Panel.Draft.Open(path, false);
+            var runtimeUi = Object.FindObjectOfType<RuntimeLayoutUI>();
+            var inspectorDraft = editor.Panel.Draft;
+            var inspectedDevice = inspectorDraft.Model.RecoveryDevice;
+            inspectorDraft.Select(inspectedDevice.Anchor);
+            runtimeUi.Act("工作区");
+            yield return null; yield return null;
+            var durationField = runtimeUi.rooms.GetComponentsInChildren<InputField>()
+                .Single(field => field.name == "恢复时长（秒）");
+            durationField.onEndEdit.Invoke("2.5");
+            Check(inspectorDraft.Model.RecoveryDevice.Duration == 2.5f, "runtime inspector writes device duration through its input field");
+            inspectorDraft.Undo();
+            Check(inspectorDraft.Model.RecoveryDevice.Duration == inspectedDevice.Duration, "runtime inspector edit participates in shared undo");
+            inspectorDraft.Select(inspectedDevice.Anchor);
+            yield return null; yield return null;
+            var fields = runtimeUi.rooms.GetComponentsInChildren<InputField>();
+            fields.Single(field => field.name == "新参数名").SetTextWithoutNotify("qa-height");
+            fields.Single(field => field.name == "参数值").SetTextWithoutNotify("1.75");
+            runtimeUi.rooms.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<Text>()?.text == "设置参数")
+                .onClick.Invoke();
+            Check(inspectorDraft.Model.RecoveryDevice.Params.TryGetValue("qa-height", out float height) && height == 1.75f,
+                "runtime inspector adds a named parameter to an empty device");
+            inspectorDraft.Undo();
+            inspectorDraft.Select(inspectedDevice.Anchor);
+            yield return null; yield return null;
+            inspectorDraft.Select(new Cell(3, 3));
+            yield return null; yield return null;
+            Check(runtimeUi.rooms.GetComponentsInChildren<InputField>().All(field => field.name != "恢复时长（秒）"),
+                "runtime inspector refreshes when the selected device changes");
+            runtimeUi.Act("返回");
             editor.StartTrial();
             yield return null; yield return null;
             var game = Object.FindObjectOfType<PuzzleHost>();
@@ -202,6 +232,11 @@ namespace Sokoban.Editor
             if (game.Run.PendingItem != null) game.panels.Back();
             yield return null; yield return null;
             var room = game.transform.Find(game.Run.ActiveId);
+            var loadedDevice = game.Run.Room.RecoveryDevice;
+            var floorCell = game.Run.Room.Room.RecoveryDeviceFloor.Value;
+            var support = room.Find(loadedDevice.Id + "-ground");
+            Check(support && support.localPosition == new Vector3(floorCell.X, 0, floorCell.Y),
+                "runtime renders the device support on its Core floor cell");
             var subject = room.Find("Wall (3,3)");
             var control = room.Find("Wall (4,3)");
             var affected = subject.GetComponentsInChildren<Renderer>(true);

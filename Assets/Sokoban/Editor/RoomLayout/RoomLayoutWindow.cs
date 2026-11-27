@@ -375,6 +375,33 @@ namespace Sokoban.Editor
             }
             Line(area, draft.Model.RecoveryDevice == null ? "恢复装置：缺少，请在素材库「其他」页放置" : "恢复装置：" + DeviceKinds.First(kindEntry => kindEntry.kind == draft.Model.RecoveryDevice.Kind).name + " · " + draft.Model.RecoveryDevice.Duration.ToString("0.0") + " 秒");
 
+            var device = draft.Model.RecoveryDevice;
+            if (device != null && draft.Selected == device.Id)
+            {
+                Heading(area, "恢复装置");
+                var duration = new FloatField("恢复时长（秒）") { value = device.Duration, isDelayed = true };
+                var itemName = new TextField("道具名称") { value = device.ItemName, isDelayed = true };
+                var itemDescription = new TextField("道具描述") { value = device.ItemDescription, isDelayed = true, multiline = true };
+                var itemHint = new TextField("获取提示") { value = device.ItemAcquiredHint, isDelayed = true, multiline = true };
+                void SaveDetails() => Panel.Run(() => draft.SetRecoveryDeviceDetails(duration.value, itemName.value, itemDescription.value, itemHint.value), "已更新恢复装置");
+                duration.RegisterValueChangedCallback(_ => SaveDetails());
+                foreach (var field in new[] { itemName, itemDescription, itemHint }) field.RegisterValueChangedCallback(_ => SaveDetails());
+                area.Add(duration); area.Add(itemName); area.Add(itemDescription); area.Add(itemHint);
+                foreach (var parameter in device.Params.OrderBy(pair => pair.Key))
+                {
+                    string key = parameter.Key;
+                    var field = new FloatField("参数 · " + key) { value = parameter.Value, isDelayed = true };
+                    field.RegisterValueChangedCallback(evt => Panel.Run(() => draft.SetRecoveryDeviceParam(key, evt.newValue), "已更新恢复参数"));
+                    area.Add(field);
+                }
+                var parameterName = new TextField("新参数名");
+                var parameterValue = new FloatField("参数值");
+                area.Add(parameterName); area.Add(parameterValue);
+                AddButton(area, "设置参数", () => Panel.Run(() => draft.SetRecoveryDeviceParam(parameterName.value, parameterValue.value), "已更新恢复参数"));
+                AddButton(area, "编辑行为", BehaviorGraphWindow.OpenRecoveryDevice);
+                return;
+            }
+
             if (!draft.SelectedCell.HasValue) return;
             Cell cell = draft.SelectedCell.Value;
             TerrainCell terrain = draft.Room.TerrainAt(cell);

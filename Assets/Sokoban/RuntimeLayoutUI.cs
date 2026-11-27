@@ -41,7 +41,7 @@ namespace Sokoban
         string[] listedEntries;
         string[] roomIds;
         bool lastDialog;
-        string activeRoom;
+        string activeRoom, inspectedSelection;
         UiLayers layers;
         public bool CoversMap => Panel.Modal || Panel.Mode.BlocksMapInput;
         internal bool PointerOverUi(Vector3 position) => layers != null && layers.PointerOverUi(position);
@@ -640,6 +640,7 @@ namespace Sokoban
                 var deviceLine = Instantiate(entryPrefab, container, false);
                 deviceLine.GetComponentInChildren<Text>().text = device == null ? "恢复装置：缺少" : "恢复装置：" + device.Kind + " · " + device.Duration.ToString("0.0") + " 秒";
                 deviceLine.interactable = false;
+                if (device != null && Panel.Draft.Selected == device.Id) AddDeviceInspector(container, device);
                 foreach (string themeId in AppearanceLibrary.Themes)
                 {
                     string chosen = themeId;
@@ -666,6 +667,62 @@ namespace Sokoban
                 }
             var scroll=container.GetComponentInParent<ScrollRect>();
             if(scroll)scroll.verticalNormalizedPosition=1;
+        }
+
+        void AddDeviceInspector(RectTransform container, Sokoban.Core.RecoveryDevice device)
+        {
+            InputField Field(string label, string value, System.Action<string> save = null)
+            {
+                var caption = Instantiate(entryPrefab, container, false);
+                caption.GetComponentInChildren<Text>().text = label;
+                caption.interactable = false;
+                var input = Instantiate(roomName, container, false);
+                input.name = label;
+                input.onEndEdit = new InputField.EndEditEvent();
+                input.onValueChanged = new InputField.OnChangeEvent();
+                input.onValidateInput = null;
+                input.contentType = InputField.ContentType.Standard;
+                input.lineType = InputField.LineType.SingleLine;
+                input.characterLimit = 0;
+                input.SetTextWithoutNotify(value);
+                if (save != null) input.onEndEdit.AddListener(text => { if (text != value) save(text); });
+                return input;
+            }
+            void Details(float duration, string name, string description, string hint) =>
+                Panel.Run(() => Panel.Draft.SetRecoveryDeviceDetails(duration, name, description, hint), "已更新恢复装置");
+            Field("恢复时长（秒）", device.Duration.ToString(System.Globalization.CultureInfo.InvariantCulture), text =>
+                Panel.Run(() =>
+                {
+                    if (!float.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float value))
+                        throw new System.InvalidOperationException("请输入有效的恢复时长");
+                    var current = Panel.Draft.Model.RecoveryDevice;
+                    Panel.Draft.SetRecoveryDeviceDetails(value, current.ItemName, current.ItemDescription, current.ItemAcquiredHint);
+                }, "已更新恢复装置"));
+            Field("道具名称", device.ItemName, text => { var d = Panel.Draft.Model.RecoveryDevice; Details(d.Duration, text, d.ItemDescription, d.ItemAcquiredHint); });
+            Field("道具描述", device.ItemDescription, text => { var d = Panel.Draft.Model.RecoveryDevice; Details(d.Duration, d.ItemName, text, d.ItemAcquiredHint); });
+            Field("获取提示", device.ItemAcquiredHint, text => { var d = Panel.Draft.Model.RecoveryDevice; Details(d.Duration, d.ItemName, d.ItemDescription, text); });
+            foreach (var parameter in device.Params.OrderBy(pair => pair.Key))
+            {
+                string key = parameter.Key;
+                Field("参数 · " + key, parameter.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), text =>
+                    Panel.Run(() =>
+                    {
+                        if (!float.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float value))
+                            throw new System.InvalidOperationException("请输入有效的参数数值");
+                        Panel.Draft.SetRecoveryDeviceParam(key, value);
+                    }, "已更新恢复参数"));
+            }
+            var parameterName = Field("新参数名", "");
+            var parameterValue = Field("参数值", "0");
+            var addParameter = Instantiate(entryPrefab, container, false);
+            addParameter.GetComponentInChildren<Text>().text = "设置参数";
+            addParameter.onClick = new Button.ButtonClickedEvent();
+            addParameter.onClick.AddListener(() => Panel.Run(() =>
+            {
+                if (!float.TryParse(parameterValue.text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float value))
+                    throw new System.InvalidOperationException("请输入有效的参数数值");
+                Panel.Draft.SetRecoveryDeviceParam(parameterName.text, value);
+            }, "已更新恢复参数"));
         }
         static readonly string[] MenuItems = { "新建空白房间", "打开", "导入", "导出", "导出单房", "发布世界", "导入素材包", "导入模型", "导入动作", "导入贴图", "导入界面图", "世界与属性", "检查结构" };
         static readonly string[] MenuActs = { "新建", "打开", "导入", "导出", "导出单房", "发布", "导入素材包", "导入模型", "导入动作", "导入贴图", "导入界面图", "工作区", "检查" };
@@ -1048,10 +1105,10 @@ namespace Sokoban
             {
                 var d=Panel.Draft;
                 var ids=d.Catalog.Keys.ToArray();
-                if(listedRevision != d.Revision || roomIds==null || !roomIds.SequenceEqual(ids) || activeRoom!=d.ActiveId)
+                if(listedRevision != d.Revision || roomIds==null || !roomIds.SequenceEqual(ids) || activeRoom!=d.ActiveId || inspectedSelection!=d.Selected)
                 {
                     RefreshEntries(rooms,ids,false);
-                    listedRevision=d.Revision;roomIds=ids;activeRoom=d.ActiveId;
+                    listedRevision=d.Revision;roomIds=ids;activeRoom=d.ActiveId;inspectedSelection=d.Selected;
                     roomName.SetTextWithoutNotify(d.Model.Meta.Name);
                 }
                 workspaceInfo.text=d.Model.Meta.Name+" · "+(d.World==null?"独立房间":d.Placement==null?"尚未放置":"原点 "+d.Origin)+"\n"+Panel.Status;
