@@ -8,7 +8,7 @@
  * Extras：string 到 string 的透传字段包，Core 不解释，默认为空。
  * ReplaceDoor(index, door)：原位更新门记录，保留门表顺序。
  * RecoveryDevice：当前恢复装置，空值表示尚未放置。
- * ReplaceRecoveryDevice(device)：替换装置并维护房内 ID，登记冲突时保留旧装置。
+ * ReplaceRecoveryDevice(device)：同步更新装置、ID 和墙外实体占地，冲突时保留旧装置。
  * Register(id, kind)：内部使用，ID 非空且尚未登记时登记到 ID 空间，已存在时静默跳过，供复制与平移草稿时在带错误的草稿上也不抛异常。
  */
 using System;
@@ -47,12 +47,15 @@ namespace Sokoban.Core
 
         internal void ReplaceRecoveryDevice(RecoveryDevice device)
         {
+            if (device != null && RecoveryDeviceRules.HasAnchorCollision(this, device.Anchor))
+                throw new InvalidOperationException("恢复装置锚点与现有内容重叠：" + device.Anchor);
             if (device?.Id != RecoveryDevice?.Id)
             {
                 if (device != null) Room.Ids.Add(device.Id, "recoveryDevice");
                 if (RecoveryDevice != null) Room.Ids.Remove(RecoveryDevice.Id);
             }
             RecoveryDevice = device;
+            Room.RecoveryDeviceFloor = device?.Anchor;
         }
 
 

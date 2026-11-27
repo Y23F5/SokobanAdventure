@@ -197,7 +197,11 @@ namespace Sokoban.Editor
         {
             var draft = FixtureDraft();
             string before = RoomCodec.Encode(draft.Model);
-            string issue = draft.Brush(new[] { new Cell(-1, 2), new Cell(1, -1) }, RoomTool.Floor);
+            var floor = draft.Room.RecoveryDeviceFloor.Value;
+            string blocked = draft.Brush(new[] { floor, new Cell(1, -1) }, RoomTool.Floor);
+            Require(blocked != null && blocked.Contains("恢复装置地板") && RoomCodec.Encode(draft.Model) == before,
+                "落在装置地板的整笔必须拒绝且不改草稿");
+            string issue = draft.Brush(new[] { new Cell(-1, 1), new Cell(1, -1) }, RoomTool.Floor);
             Require(issue == null && draft.Origin == new Cell(-1, -1), "西南复合笔失败 " + issue);
             string after = RoomCodec.Encode(draft.Model);
             draft.Undo();

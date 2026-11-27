@@ -12,6 +12,7 @@ namespace Sokoban.Core
 
         public static Cell? Outward(Room room, Cell cell)
         {
+            if (room.IsRecoveryDeviceFloor(cell)) return null;
             foreach (var outward in Order)
             {
                 var outside = new Cell(cell.X + outward.X, cell.Y + outward.Y);

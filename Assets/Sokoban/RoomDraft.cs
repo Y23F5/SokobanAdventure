@@ -260,6 +260,7 @@ namespace Sokoban
 
         string DoorMarkerError(Cell cell, int turns)
         {
+            if (Room.IsRecoveryDeviceFloor(cell)) return "恢复装置地板不可放置";
             if (Room.TerrainAt(cell).CategoryId != TerrainCategories.Floor) return "请在地板格上放置门";
             if (MarkerOccupied(cell)) return "格子已占用";
             var outward = MarkerOutward(cell, turns);
@@ -297,6 +298,7 @@ namespace Sokoban
         {
             var old = FindDecoration(id);
             if (old.Cell == cell) return;
+            if (RecoveryFloorBlocksDecoration(cell)) throw new InvalidOperationException("恢复装置地板不可放置装饰");
             Commit(new MoveDecorationCommand(Model, id, cell), id);
         }
 
@@ -379,6 +381,7 @@ namespace Sokoban
 
             public void Apply()
             {
+                if (draft.Room.IsRecoveryDeviceFloor(cell)) throw new InvalidOperationException("恢复装置地板不可放置装饰");
                 int index = draft.Decorations.FindIndex(d => d.Id == id);
                 if (index < 0) throw new InvalidOperationException("找不到装饰：" + id);
                 before = draft.Decorations[index];

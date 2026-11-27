@@ -33,7 +33,40 @@ namespace Sokoban.Core
 
     public static class WorldValidator
     {
-        public static string Placement(WorldDocument world, IReadOnlyDictionary<string, Cell> sizes, string id, Cell origin, bool moving, Cell size)
+        static bool FloorOverlaps(Cell floor, Cell origin, Cell otherOrigin, Cell otherSize, Cell? otherFloor,
+            IReadOnlyList<Cell> otherDecorations, out long x, out long y)
+        {
+            x = (long)origin.X + floor.X;
+            y = (long)origin.Y + floor.Y;
+            if (x >= otherOrigin.X && x < (long)otherOrigin.X + otherSize.X &&
+                y >= otherOrigin.Y && y < (long)otherOrigin.Y + otherSize.Y) return true;
+            if (otherFloor.HasValue && x == (long)otherOrigin.X + otherFloor.Value.X &&
+                y == (long)otherOrigin.Y + otherFloor.Value.Y) return true;
+            if (otherDecorations == null) return false;
+            foreach (var cell in otherDecorations)
+                if (x == (long)otherOrigin.X + cell.X && y == (long)otherOrigin.Y + cell.Y) return true;
+            return false;
+        }
+
+        public static string RecoveryDeviceFloorPlacement(WorldDocument world, IReadOnlyDictionary<string, Cell> sizes,
+            IReadOnlyDictionary<string, Cell?> recoveryDeviceFloors, string id, Cell origin, Cell floor,
+            IReadOnlyDictionary<string, IReadOnlyList<Cell>> decorations = null)
+        {
+            foreach (var other in world.Rooms)
+            {
+                if (other.LevelId == id) continue;
+                recoveryDeviceFloors.TryGetValue(other.LevelId, out var otherFloor);
+                IReadOnlyList<Cell> otherDecorations = null;
+                decorations?.TryGetValue(other.LevelId, out otherDecorations);
+                if (FloorOverlaps(floor, origin, other.Origin, sizes[other.LevelId], otherFloor, otherDecorations, out var floorX, out var floorY))
+                    return id + " 与 " + other.LevelId + " 占地重叠 (" + floorX + ", " + floorY + ")";
+            }
+            return null;
+        }
+
+        public static string Placement(WorldDocument world, IReadOnlyDictionary<string, Cell> sizes, string id, Cell origin, bool moving, Cell size,
+            IReadOnlyDictionary<string, Cell?> recoveryDeviceFloors = null,
+            IReadOnlyDictionary<string, IReadOnlyList<Cell>> decorations = null)
         {
             long right = (long)origin.X + size.X, top = (long)origin.Y + size.Y;
             if (origin.X < world.Min.X || origin.Y < world.Min.Y || right - 1 > world.Max.X || top - 1 > world.Max.Y)
@@ -58,6 +91,15 @@ namespace Sokoban.Core
                 var extent = sizes[other.LevelId];
                 if (origin.X < (long)pos.X + extent.X && right > pos.X && origin.Y < (long)pos.Y + extent.Y && top > pos.Y)
                     return id + " 与 " + other.LevelId + " 占地重叠 (" + Math.Max(origin.X, pos.X) + ", " + Math.Max(origin.Y, pos.Y) + ")";
+                Cell? ownFloor = recoveryDeviceFloors != null && recoveryDeviceFloors.TryGetValue(id, out var own) ? own : null;
+                Cell? otherFloor = recoveryDeviceFloors != null && recoveryDeviceFloors.TryGetValue(other.LevelId, out var theirs) ? theirs : null;
+                IReadOnlyList<Cell> ownDecorations = null, otherDecorations = null;
+                decorations?.TryGetValue(id, out ownDecorations);
+                decorations?.TryGetValue(other.LevelId, out otherDecorations);
+                if (ownFloor.HasValue && FloorOverlaps(ownFloor.Value, origin, pos, extent, otherFloor, otherDecorations, out var ownX, out var ownY))
+                    return id + " 与 " + other.LevelId + " 占地重叠 (" + ownX + ", " + ownY + ")";
+                if (otherFloor.HasValue && FloorOverlaps(otherFloor.Value, pos, origin, size, null, ownDecorations, out var otherX, out var otherY))
+                    return id + " 与 " + other.LevelId + " 占地重叠 (" + otherX + ", " + otherY + ")";
             }
             return null;
         }

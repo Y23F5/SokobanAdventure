@@ -77,6 +77,8 @@ namespace Sokoban.Core
             int minX = 0, minY = 0, maxX = room.Width - 1, maxY = room.Height - 1;
             foreach (var point in points)
             {
+                if (room.IsRecoveryDeviceFloor(point))
+                    return Rejected(points, tool, maxSide, "恢复装置地板不可改写 " + point, 0, 0, 0, 0);
                 if (tool == BrushTool.Erase && !room.Inside(point))
                     return Rejected(points, tool, maxSide, "格子 " + point + " 超出房间，擦除不能扩建", 0, 0, 0, 0);
                 minX = Math.Min(minX, point.X);

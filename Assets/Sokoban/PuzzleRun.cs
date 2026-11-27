@@ -84,6 +84,14 @@ namespace Sokoban
 
         static PuzzleRun Assemble(WorldDocument world, Dictionary<string, RoomDraftModel> models, string active)
         {
+            if (world != null)
+            {
+                foreach (var room in world.Rooms)
+                {
+                    var error = WorldLayout.PlacementIssue(world, models, room.LevelId, room.Origin, true);
+                    if (error != null) throw new InvalidOperationException(error);
+                }
+            }
             var rooms = new Dictionary<string, ValidatedRoom>();
             foreach (var pair in models)
             {

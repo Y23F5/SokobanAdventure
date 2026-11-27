@@ -318,10 +318,16 @@ namespace Sokoban.Core
                     extras[pair.Key] = pair.Value as string ?? throw new FormatException("extras 字段 " + pair.Key + " 不是字符串");
             }
             var draft = new RoomDraftModel(room, doors, primary, extras);
-            if (root.TryGetValue("recoveryDevice", out var device)) draft.ReplaceRecoveryDevice(DeviceIn(room, device));
             draft.Meta = new RoomMeta(OptStr(root, "name") ?? "", OptStr(root, "themeId"),
                 OptStr(root, "description"), OptStr(root, "entryHint"), OptStr(root, "playHint"));
             ReadRest(root, draft);
+            if (root.TryGetValue("recoveryDevice", out var device))
+            {
+                var recovery = DeviceIn(room, device);
+                if (room.Ids.Contains(recovery.Id) || RecoveryDeviceRules.HasAnchorCollision(draft, recovery.Anchor))
+                    throw new FormatException("恢复装置 ID 重复或锚点与现有内容重叠：" + recovery.Id);
+                draft.ReplaceRecoveryDevice(recovery);
+            }
             return draft;
         }
 

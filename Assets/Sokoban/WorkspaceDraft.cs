@@ -181,7 +181,11 @@ namespace Sokoban
         {
             if (World == null) return ActiveId;
             foreach (var row in World.Rooms)
-                if (Catalog[row.LevelId].Room.Inside(point - row.Origin)) return row.LevelId;
+            {
+                var room = Catalog[row.LevelId].Room;
+                Cell local = point - row.Origin;
+                if (room.Inside(local) || room.IsRecoveryDeviceFloor(local)) return row.LevelId;
+            }
             return null;
         }
 

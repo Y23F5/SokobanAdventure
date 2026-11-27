@@ -24,6 +24,7 @@ namespace Sokoban.Core
         public static string Error(RoomDraftModel draft, string categoryId, Cell cell, string ignoreId)
         {
             var room = draft.Room;
+            if (room.IsRecoveryDeviceFloor(cell)) return "恢复装置地板不可放置";
             if (!room.Inside(cell)) return "超出房间边界";
             string terrain = room.TerrainAt(cell).CategoryId;
             if (terrain == TerrainCategories.Void) return "请先铺设地板";

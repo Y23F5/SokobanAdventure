@@ -57,6 +57,37 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
+        public void DeviceFloorOverlappingAdjacentRoomIsRejectedInEitherDirection()
+        {
+            var floors = new Dictionary<string, Cell?> { ["a"] = new Cell(5, 2), ["b"] = null };
+            var world = World(Ref("a", 3, 1), Ref("b", 8, 1));
+            Assert.Contains("(8, 3)", WorldValidator.Placement(world, Sizes, "a", new Cell(3, 1), true, new Cell(5, 5), floors));
+            Assert.Contains("(8, 3)", WorldValidator.Placement(world, Sizes, "b", new Cell(8, 1), true, new Cell(5, 5), floors));
+            Assert.Null(WorldValidator.Placement(world, Sizes, "b", new Cell(9, 1), true, new Cell(5, 5), floors));
+        }
+
+        [Fact]
+        public void DeviceFloorsFromDifferentRoomsCannotShareAWorldCell()
+        {
+            var floors = new Dictionary<string, Cell?> { ["a"] = new Cell(5, 2), ["b"] = new Cell(-1, 1) };
+            var world = World(Ref("a", 2, 2), Ref("b", 8, 3));
+            Assert.Contains("(7, 4)", WorldValidator.Placement(world, Sizes, "b", new Cell(8, 3), true, new Cell(5, 5), floors));
+            Assert.Null(WorldValidator.Placement(world, Sizes, "b", new Cell(8, 4), true, new Cell(5, 5), floors));
+        }
+
+        [Fact]
+        public void DeviceFloorCannotOverlapAdjacentRoomDecoration()
+        {
+            var floors = new Dictionary<string, Cell?> { ["a"] = new Cell(5, 2), ["b"] = null };
+            var decorations = new Dictionary<string, IReadOnlyList<Cell>> { ["b"] = new[] { new Cell(-1, 1) } };
+            var world = World(Ref("a", 2, 2), Ref("b", 8, 3));
+            Assert.Contains("(7, 4)", WorldValidator.RecoveryDeviceFloorPlacement(world, Sizes, floors,
+                "a", new Cell(2, 2), new Cell(5, 2), decorations));
+            Assert.Contains("(7, 4)", WorldValidator.Placement(world, Sizes, "b", new Cell(8, 3), true, new Cell(5, 5), floors, decorations));
+            Assert.Null(WorldValidator.Placement(world, Sizes, "b", new Cell(8, 4), true, new Cell(5, 5), floors, decorations));
+        }
+
+        [Fact]
         public void AlreadyPlacedIsReportedUnlessMoving()
         {
             var world = World(Ref("a", 0, 0));

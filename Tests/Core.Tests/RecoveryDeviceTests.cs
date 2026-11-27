@@ -28,24 +28,33 @@ namespace Sokoban.Core.Tests
         {
             var initial = Device("lift", new Cell(-1, 2));
             history.Execute(RecoveryDeviceCommands.Place(draft, initial));
+            Assert.Equal(initial.Anchor, draft.Draft.Room.RecoveryDeviceFloor);
             history.Execute(RecoveryDeviceCommands.Move(draft, new Cell(8, 2)));
+            Assert.False(draft.Draft.Room.IsRecoveryDeviceFloor(initial.Anchor));
+            Assert.True(draft.Draft.Room.IsRecoveryDeviceFloor(new Cell(8, 2)));
             history.Execute(RecoveryDeviceCommands.Rotate(draft, -2));
             Assert.Equal(Cell.Left, draft.Draft.RecoveryDevice.EntryDirection);
+            Assert.Equal(new Cell(8, 2), draft.Draft.Room.RecoveryDeviceFloor);
             history.Execute(RecoveryDeviceCommands.Delete(draft));
             Assert.Null(draft.Draft.RecoveryDevice);
+            Assert.Null(draft.Draft.Room.RecoveryDeviceFloor);
             Assert.False(draft.Draft.Room.Ids.Contains(initial.Id));
 
             Assert.True(history.Undo());
             Assert.True(draft.Draft.Room.Ids.Contains(initial.Id));
             Assert.Equal(new Cell(8, 2), draft.Draft.RecoveryDevice.Anchor);
+            Assert.Equal(new Cell(8, 2), draft.Draft.Room.RecoveryDeviceFloor);
             Assert.True(history.Undo());
             Assert.Equal(1, draft.Draft.RecoveryDevice.Rotation);
             Assert.True(history.Undo());
             Assert.Same(initial, draft.Draft.RecoveryDevice);
+            Assert.Equal(initial.Anchor, draft.Draft.Room.RecoveryDeviceFloor);
             Assert.True(history.Undo());
             Assert.Null(draft.Draft.RecoveryDevice);
+            Assert.Null(draft.Draft.Room.RecoveryDeviceFloor);
             for (int step = 0; step < 4; step++) Assert.True(history.Redo());
             Assert.Null(draft.Draft.RecoveryDevice);
+            Assert.Null(draft.Draft.Room.RecoveryDeviceFloor);
         }
 
         [Theory]
@@ -101,6 +110,9 @@ namespace Sokoban.Core.Tests
             Assert.Equal(initial.Id, actual.Id);
             Assert.Equal(initial.Kind, actual.Kind);
             Assert.Equal(initial.Anchor, actual.Anchor);
+            Assert.Equal(initial.Anchor, model.Room.RecoveryDeviceFloor);
+            Assert.False(model.Room.Inside(initial.Anchor));
+            Assert.Equal(TerrainCategories.Void, model.Room.TerrainAt(initial.Anchor).CategoryId);
             Assert.Equal(initial.Rotation, actual.Rotation);
             Assert.Equal(initial.ScriptRef, actual.ScriptRef);
             Assert.Equal(initial.Duration, actual.Duration);
@@ -110,6 +122,21 @@ namespace Sokoban.Core.Tests
             Assert.Equal(initial.ItemAcquiredHint, actual.ItemAcquiredHint);
             Assert.True(model.Room.Ids.Contains(actual.Id));
             Assert.Throws<FormatException>(() => RoomCodec.Decode(text.Replace("\"x\":8", "\"x\":7")));
+        }
+
+        [Fact]
+        public void DecorationBlocksDeviceMoveAndInvalidSerializedAnchor()
+        {
+            var initial = Device("lift", new Cell(-1, 2));
+            var blocked = new Cell(-1, 3);
+            history.Execute(RecoveryDeviceCommands.Place(draft, initial));
+            draft.Draft.Decorations.Add(new Decoration("decor", blocked, new AppearanceRef("TreeStump")));
+            Assert.Throws<InvalidOperationException>(() => history.Execute(RecoveryDeviceCommands.Move(draft, blocked)));
+            Assert.Equal(initial.Anchor, draft.Draft.Room.RecoveryDeviceFloor);
+            Assert.Equal(1, history.Revision);
+
+            string text = RoomCodec.Encode(draft.Draft);
+            Assert.Throws<FormatException>(() => RoomCodec.Decode(text.Replace("\"x\":-1,\"y\":2", "\"x\":-1,\"y\":3")));
         }
 
         [Fact]
@@ -159,7 +186,7 @@ namespace Sokoban.Core.Tests
         {
             var initial = Device("lift", new Cell(8, 2));
             history.Execute(RecoveryDeviceCommands.Place(draft, initial));
-            var plan = BrushPlanner.Preflight(draft.Draft, new[] { new Cell(8, 2) }, BrushTool.Wall, 16);
+            var plan = BrushPlanner.Preflight(draft.Draft, new[] { new Cell(8, 3) }, BrushTool.Wall, 16);
             history.Execute(plan.CreateCommand(draft));
             Assert.Equal(new Cell(9, 2), draft.Draft.RecoveryDevice.Anchor);
             Assert.True(history.Undo());

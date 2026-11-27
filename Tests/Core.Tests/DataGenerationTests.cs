@@ -113,9 +113,9 @@ namespace Sokoban.Core.Tests
             var room = draft.Room;
             var (kind, anchor, rotation, script, description) = id switch
             {
-                "warehouse" => (RecoveryDeviceKind.Forklift, new Cell(room.Width, room.Height / 2), 3, "warehouse-lift", "启动叉车，将箱子运回原位。"),
-                "factory" => (RecoveryDeviceKind.Arm, new Cell(-1, room.Height / 2), 1, "factory-belt", "启动机械臂与输送带，将箱子送回原位。"),
-                "forest" => (RecoveryDeviceKind.Tree, new Cell(room.Width / 2, -1), 0, "forest-decay", "让箱子再生于原位，并暂时打开藤门。"),
+                "warehouse" => (RecoveryDeviceKind.Forklift, new Cell(room.Width / 2, -1), 0, "warehouse-lift", "启动叉车，将箱子运回原位。"),
+                "factory" => (RecoveryDeviceKind.Arm, new Cell(room.Width / 2, -1), 0, "factory-belt", "启动机械臂与输送带，将箱子送回原位。"),
+                "forest" => (RecoveryDeviceKind.Tree, new Cell(room.Width / 2, room.Height), 2, "forest-decay", "让箱子再生于原位，并暂时打开藤门。"),
                 _ => throw new ArgumentOutOfRangeException(nameof(id)),
             };
             draft.ReplaceRecoveryDevice(new RecoveryDevice("recovery-device", kind, anchor, rotation,

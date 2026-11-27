@@ -73,6 +73,8 @@ namespace Sokoban.Core
         public int Height { get; }
         public IdSpace Ids { get; }
         public IReadOnlyList<PlacedObject> Objects => objects;
+        public Cell? RecoveryDeviceFloor { get; internal set; }
+        public bool IsRecoveryDeviceFloor(Cell cell) => RecoveryDeviceFloor.HasValue && RecoveryDeviceFloor.Value == cell;
 
         public Room(string id, int width, int height)
         {

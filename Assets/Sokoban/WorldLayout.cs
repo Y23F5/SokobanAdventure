@@ -40,6 +40,9 @@ namespace Sokoban
         public static Dictionary<string, Cell> Sizes(IReadOnlyDictionary<string, RoomDraftModel> catalog) =>
             catalog.ToDictionary(pair => pair.Key, pair => new Cell(pair.Value.Room.Width, pair.Value.Room.Height));
 
+        static Dictionary<string, IReadOnlyList<Cell>> DecorationCells(IReadOnlyDictionary<string, RoomDraftModel> catalog) =>
+            catalog.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<Cell>)pair.Value.Decorations.Select(decoration => decoration.Cell).ToArray());
+
         public static Dictionary<string, WorldRoomInfo> ToCoreRooms(IReadOnlyDictionary<string, RoomDraftModel> catalog) =>
             catalog.ToDictionary(pair => pair.Key, pair => new WorldRoomInfo(pair.Key,
                 pair.Value.Room.ObjectsOf(ObjectCategories.Spawn).FirstOrDefault()?.Id, pair.Value.Doors));
@@ -51,7 +54,16 @@ namespace Sokoban
         }
 
         public static string PlacementIssue(WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog, string id, Cell origin, bool moving, Cell size) =>
-            WorldValidator.Placement(world, Sizes(catalog), id, origin, moving, size);
+            WorldValidator.Placement(world, Sizes(catalog), id, origin, moving, size,
+                catalog.ToDictionary(pair => pair.Key, pair => pair.Value.Room.RecoveryDeviceFloor), DecorationCells(catalog));
+
+        public static string RecoveryDeviceFloorIssue(WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog, string id, Cell floor)
+        {
+            var placement = world?.Rooms.FirstOrDefault(room => room.LevelId == id);
+            if (placement == null) return null;
+            return WorldValidator.RecoveryDeviceFloorPlacement(world, Sizes(catalog),
+                catalog.ToDictionary(pair => pair.Key, pair => pair.Value.Room.RecoveryDeviceFloor), id, placement.Origin, floor, DecorationCells(catalog));
+        }
 
         public static IEnumerable<string> ConnectionIssues(WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog, string movingRoom = null, Cell candidate = default) =>
             WorldValidator.Connections(world, ToCoreRooms(catalog), movingRoom, candidate).ToList();

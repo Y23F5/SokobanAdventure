@@ -133,6 +133,7 @@ namespace Sokoban
             if (BrushCategory == null || BrushAppearance == null && BrushTemplate == null) throw new InvalidOperationException("请先选择素材");
             if (BrushCategory == AppearanceLibrary.Decoration)
             {
+                if (RecoveryFloorBlocksDecoration(cell)) throw new InvalidOperationException("恢复装置地板不可放置装饰");
                 if (room.Inside(cell)) throw new InvalidOperationException("装饰只能放在房间外");
                 string decorId = "decor-" + Guid.NewGuid().ToString("N");
                 var decoration = new Decoration(decorId, cell, BrushAppearance, BrushRotation);

@@ -3,6 +3,7 @@
  * @brief 房间恢复装置及其墙外放置规则。
  * RecoveryDevice(id, kind, anchor, rotation, scriptRef, duration, parameters, itemName, itemDescription, itemAcquiredHint)：构造不可变装置并快照参数。
  * WithPlacement(anchor, rotation)：保留 ID 和配置，返回更新位置和朝向后的装置。
+ * HasAnchorCollision(draft, anchor)：检查锚点是否已被地形、门、物件或装饰占用。
  * WallInward(room, anchor)：由相邻的房间边界返回墙面向内法线。
  * IsValidAnchor(room, anchor)：仅允许矩形四边外紧邻的一格，不含角格。
  * Validate(draft, stage)：检查装置是否存在及锚点是否合法，缺失严重级别与出生点一致。
@@ -10,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 
 namespace Sokoban.Core
 {
@@ -75,6 +77,12 @@ namespace Sokoban.Core
 
     public static class RecoveryDeviceRules
     {
+        public static bool HasAnchorCollision(RoomDraftModel draft, Cell anchor) =>
+            draft.Room.TerrainAt(anchor).CategoryId != TerrainCategories.Void ||
+            draft.Room.ObjectAt(anchor) != null ||
+            draft.Doors.Any(door => door.Cell == anchor) ||
+            draft.Decorations.Any(decoration => decoration.Cell == anchor);
+
         public static bool IsValidAnchor(Room room, Cell anchor) =>
             ((anchor.X == -1 || anchor.X == room.Width) && anchor.Y >= 0 && anchor.Y < room.Height) ||
             ((anchor.Y == -1 || anchor.Y == room.Height) && anchor.X >= 0 && anchor.X < room.Width);
@@ -93,8 +101,10 @@ namespace Sokoban.Core
             if (device == null)
                 return new Issue("recoveryDevice.missing", stage == ValidationStage.Publish ? Severity.Error : Severity.Hint,
                     draft.Room.Id, "缺少恢复装置");
-            return IsValidAnchor(draft.Room, device.Anchor) ? null :
-                new Issue("recoveryDevice.anchor", Severity.Error, device.Id, "恢复装置必须紧邻房间边缘的墙外格");
+            if (!IsValidAnchor(draft.Room, device.Anchor))
+                return new Issue("recoveryDevice.anchor", Severity.Error, device.Id, "恢复装置必须紧邻房间边缘的墙外格");
+            return HasAnchorCollision(draft, device.Anchor)
+                ? new Issue("recoveryDevice.anchorCollision", Severity.Error, device.Id, "恢复装置锚点与现有内容重叠") : null;
         }
     }
 }

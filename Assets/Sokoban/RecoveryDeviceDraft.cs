@@ -10,6 +10,8 @@
  * DeleteRecoveryDevice()：提交删除并清除选中。
  */
 using Sokoban.Core;
+using System;
+using System.Linq;
 
 namespace Sokoban
 {
@@ -18,11 +20,34 @@ namespace Sokoban
         public RecoveryDevice FindRecoveryDevice(string id) =>
             Model.RecoveryDevice?.Id == id ? Model.RecoveryDevice : null;
 
-        public void PlaceRecoveryDevice(RecoveryDevice device, bool replaceExisting = false) =>
+        public void PlaceRecoveryDevice(RecoveryDevice device, bool replaceExisting = false)
+        {
+            if (device == null) throw new ArgumentNullException(nameof(device));
+            CheckRecoveryFloorPlacement(device.Anchor);
             Commit(RecoveryDeviceCommands.Place(holders[ActiveId], device, replaceExisting), device.Id);
+        }
 
-        public void MoveRecoveryDevice(Cell anchor) =>
+        public void MoveRecoveryDevice(Cell anchor)
+        {
+            CheckRecoveryFloorPlacement(anchor);
             Commit(RecoveryDeviceCommands.Move(holders[ActiveId], anchor), Model.RecoveryDevice?.Id);
+        }
+
+        void CheckRecoveryFloorPlacement(Cell anchor)
+        {
+            string error = WorldLayout.RecoveryDeviceFloorIssue(World, Catalog, ActiveId, anchor);
+            if (error != null) throw new InvalidOperationException(error);
+        }
+
+        bool RecoveryFloorBlocksDecoration(Cell cell)
+        {
+            if (Room.IsRecoveryDeviceFloor(cell)) return true;
+            if (Placement == null) return false;
+            Cell target = Origin + cell;
+            return World.Rooms.Any(room => room.LevelId != ActiveId &&
+                Catalog.TryGetValue(room.LevelId, out var model) &&
+                model.Room.RecoveryDeviceFloor is Cell floor && room.Origin + floor == target);
+        }
 
         public void RotateRecoveryDevice(int quarterTurns) =>
             Commit(RecoveryDeviceCommands.Rotate(holders[ActiveId], quarterTurns), Model.RecoveryDevice?.Id);
