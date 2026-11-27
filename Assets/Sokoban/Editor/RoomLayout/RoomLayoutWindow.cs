@@ -222,22 +222,52 @@ namespace Sokoban.Editor
         void BuildToolbars()
         {
             var files = view.Q("files");
+            void Separator()
+            {
+                var line = new VisualElement();
+                line.AddToClassList("sl-sep");
+                files.Add(line);
+            }
+
             AddButton(files, "新建空白", () => Panel.NewRoom(true));
             AddButton(files, "默认布局", () => Panel.NewDefaultRoom());
             foreach (string operation in new[] { "打开", "保存", "导入", "导出" })
-                AddButton(files, operation, () => Panel.ChooseFile(operation));
-            AddButton(files, "导出单房及素材", () => Panel.ChooseFile("导出单房")).name = "export-room";
-            AddButton(files, "发布世界", () => Panel.ChooseFile("发布")).name = "publish";
+            {
+                var button = AddButton(files, operation, () => Panel.ChooseFile(operation));
+                if (operation == "保存") button.AddToClassList("sl-primary");
+            }
+            Separator();
+            var exportRoom = AddButton(files, "导出单房及素材", () => Panel.ChooseFile("导出单房"));
+            exportRoom.name = "export-room";
+            exportRoom.tooltip = "需要先把本房加入世界。";
+            var publish = AddButton(files, "发布世界", () => Panel.ChooseFile("发布"));
+            publish.name = "publish";
+            publish.tooltip = "需要先加入世界。";
+            Separator();
             AddButton(files, "撤销", () => History(false));
             AddButton(files, "重做", () => History(true));
             AddButton(files, "检查", () => { DrawIssues(); view.Q<ScrollView>("issues").Focus(); });
-            AddButton(files, "试玩", StartTrial);
+            Separator();
+            AddButton(files, "试玩", StartTrial).AddToClassList("sl-primary");
+            Separator();
             AddButton(files, "隐藏网格", () => WorldSceneSession.GridVisible = !WorldSceneSession.GridVisible).name = "grid";
+            AddButton(files, "定位房间", WorldSceneSession.FocusRoom);
+            var solo = AddButton(files, "单独查看", () =>
+            {
+                if (WorldSceneSession.IsSolo) WorldSceneSession.ReturnToWorld();
+                else WorldSceneSession.Solo();
+            });
+            solo.name = "solo";
+            solo.tooltip = "需要先把本房放进世界。";
+            AddButton(files, "显示整图", WorldSceneSession.FrameWorld);
+            var spacer = new VisualElement();
+            spacer.AddToClassList("sl-spacer");
+            files.Add(spacer);
             AddButton(files, "退出房间布局", () => Panel.Exit(() =>
             {
                 WorldSceneSession.Release();
                 Close();
-            }));
+            })).AddToClassList("sl-exit");
 
             var tools = view.Q("tools");
             foreach (RoomTool tool in new[] { RoomTool.Select, RoomTool.Floor, RoomTool.Wall, RoomTool.Erase,
@@ -248,13 +278,6 @@ namespace Sokoban.Editor
                 if (tool == RoomTool.Spawn)
                     button.tooltip = "须先设置主入口。出生点固定在主入口内侧地板格。";
             }
-            AddButton(tools, "定位房间", WorldSceneSession.FocusRoom);
-            AddButton(tools, "单独查看", () =>
-            {
-                if (WorldSceneSession.IsSolo) WorldSceneSession.ReturnToWorld();
-                else WorldSceneSession.Solo();
-            }).name = "solo";
-            AddButton(tools, "显示整图", WorldSceneSession.FrameWorld);
             foreach (string page in PaletteTabs.All)
                 AddButton(view.Q("tabs"), PaletteTabs.Name(page), () => { tab = page; DrawPalette(Panel.Draft); }).name = "tab-" + page;
         }
@@ -327,7 +350,8 @@ namespace Sokoban.Editor
             var area = view.Q<ScrollView>("inspector");
             area.Clear();
             Heading(area, "房间");
-            Line(area, draft.ActiveId + " · " + draft.Room.Width + "×" + draft.Room.Height);
+            var size = Line(area, draft.Room.Width + "×" + draft.Room.Height);
+            size.tooltip = draft.ActiveId;
             var name = new TextField("名称") { isDelayed = true, value = draft.Model.Meta.Name };
             name.RegisterValueChangedCallback(evt =>
             {
@@ -344,7 +368,15 @@ namespace Sokoban.Editor
                     () => draft.SetRoomText(description.value, entryHint.value, playHint.value), "已更新房间文本"));
                 area.Add(field);
             }
-            AddButton(area, Panel.ThemeLabel, Panel.CycleTheme);
+            Heading(area, "背景主题");
+            var themes = Row(area);
+            foreach (string themeId in AppearanceLibrary.Themes)
+            {
+                string chosen = themeId;
+                var themeButton = AddButton(themes, AppearanceLibrary.ThemeName(chosen), () => Panel.Run(() => draft.SetTheme(chosen), "已切换主题"));
+                themeButton.EnableInClassList("sl-active", draft.Theme == chosen);
+                themeButton.EnableInClassList("sl-primary", draft.Theme == chosen);
+            }
             AddButton(area, Panel.RecoveryLabel + (draft.Model.RecoveryItems.Count == 0 ? " · 添加预设" : ""), Panel.CycleRecovery);
 
             if (!draft.SelectedCell.HasValue) return;
@@ -409,8 +441,8 @@ namespace Sokoban.Editor
             if (terrain.CategoryId != TerrainCategories.Void)
             {
                 var rotations = Row(area);
-                AddButton(rotations, "⟲ 90°", () => Rotate(-1));
-                AddButton(rotations, "⟳ 90°", () => Rotate(1));
+                AddButton(rotations, "左转 90°", () => Rotate(-1)).tooltip = "快捷键 [";
+                AddButton(rotations, "右转 90°", () => Rotate(1)).tooltip = "快捷键 ]";
                 AddButton(area, "编辑行为", BehaviorGraphWindow.Open);
             }
             if (!multiple)
@@ -514,9 +546,9 @@ namespace Sokoban.Editor
                 var card = AddCard(area, draft, item.Name, preview, item.AssetId == null, choose,
                     item.TemplateId != null ? draft.BrushTemplate == item.TemplateId : draft.BrushAppearance?.Id == item.Id);
                 if (item.TemplateId == null && item.AssetId == null && draft.CanReplaceAppearance(item.Id))
-                    AddButton(card, "替换", () => Panel.Run(() => draft.ReplaceAppearance(item.Id), "已替换所选外观"));
+                    AddButton(card, "替换", () => Panel.Run(() => draft.ReplaceAppearance(item.Id), "已替换所选外观")).AddToClassList("sl-small");
                 else if (item.TemplateId == null && item.AssetId != null && draft.CanBindAsset(item.AssetId, item.CategoryId))
-                    AddButton(card, "替换", () => BindImported(draft, item.AssetId, item.CategoryId));
+                    AddButton(card, "替换", () => BindImported(draft, item.AssetId, item.CategoryId)).AddToClassList("sl-small");
                 if (item.TemplateId == null && item.AssetId != null)
                     ModelSize(area, item.AssetId);
             }
@@ -538,7 +570,7 @@ namespace Sokoban.Editor
                 area.Add(dropdown);
                 AddButton(area, "按所选用途导入模型", () => Import("导入模型", ToolForCategory(modelCategory)));
 
-                foreach (var asset in draft.Model.Assets)
+                foreach (var asset in draft.Model.Assets.Where(entry => !draft.PackParts().Any(part => part.asset.Id == entry.Id)))
                 {
                     bool model = asset.Kind == AssetKinds.Model;
                     Action choose = model ? () => ChooseImported(draft, asset.Id, modelCategory) : (Action)null;
@@ -565,8 +597,10 @@ namespace Sokoban.Editor
 
         void ModelSize(VisualElement area, string id)
         {
+            var draft = Panel.Draft;
+            string issue = thumbnails.ModelIssue(draft.Model.Assets, id, !draft.PackParts().Any(part => part.asset.Id == id));
             string size = thumbnails.SizeReport(id);
-            if (!string.IsNullOrEmpty(size)) Line(area, size);
+            if (issue != null && issue != "正在检查模型尺寸" && !string.IsNullOrEmpty(size)) Line(area, size);
         }
 
         void Import(string operation, RoomTool? tool)
@@ -814,7 +848,7 @@ namespace Sokoban.Editor
             RoomTool.Hint => "放置提示物件",
             RoomTool.Entry => "放入口",
             RoomTool.Exit => "放出口",
-            RoomTool.Spawn => "设出生点（主入口内侧）",
+            RoomTool.Spawn => "设出生点",
             _ => tool.ToString()
         };
 

@@ -52,7 +52,7 @@ namespace Sokoban
             ObjectCategories.Box => "箱子", ObjectCategories.Target => "目标点", ObjectCategories.Spawn => "出生点", ObjectCategories.Custom => "自定义物件",
             TerrainCategories.Floor => "地板", TerrainCategories.Wall => "墙壁", TerrainCategories.Door => "门", TerrainCategories.Openable => "藤门",
             ObjectCategories.Hint => "提示物件",
-            Decoration => "装饰", Remnant => "残留物", _ => "其他"
+            Decoration => "装饰", Remnant => "残留物", AssetPackManifest.Entrance => "入口", AssetPackManifest.Exit => "出口", _ => "其他"
         };
 
         static readonly Entry[] Builtins = new[]
@@ -114,11 +114,11 @@ namespace Sokoban
 
         public static IReadOnlyList<string> CategoriesOf(string tab) => tab switch
         {
-            Terrain => new[] { TerrainCategories.Floor, TerrainCategories.Wall, TerrainCategories.Door, TerrainCategories.Openable, AssetPackManifest.Entrance, AssetPackManifest.Exit },
+            Terrain => new[] { TerrainCategories.Floor, TerrainCategories.Wall, TerrainCategories.Door, TerrainCategories.Openable },
             Object => new[] { ObjectCategories.Box, ObjectCategories.Target, ObjectCategories.Spawn },
             Decoration => new[] { AppearanceLibrary.Decoration },
             Custom => new[] { ObjectCategories.Custom },
-            Other => new[] { AssetPackManifest.Other },
+            Other => new[] { AssetPackManifest.Entrance, AssetPackManifest.Exit, AssetPackManifest.Other },
             _ => Array.Empty<string>()
         };
     }
@@ -281,11 +281,18 @@ namespace Sokoban
                 return items;
             }
             var pack = PackParts().ToArray();
+            var packNames = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var group in pack.GroupBy(entry => (entry.theme, entry.category)))
+            {
+                int number = 0;
+                foreach (var entry in group.OrderBy(entry => entry.asset.Name, StringComparer.Ordinal))
+                    packNames.TryAdd(entry.asset.Id, AppearanceLibrary.ThemeName(entry.theme) + " " + AppearanceLibrary.TypeName(entry.category) + " " + (++number));
+            }
             foreach (string category in PaletteTabs.CategoriesOf(tab))
             {
                 foreach (var item in pack.Where(item => item.category == category).OrderByDescending(item => item.theme == theme)
                     .ThenBy(item => item.asset.Name, StringComparer.Ordinal))
-                    items.Add(new PaletteItem(tab, category, item.asset.Id, item.asset.Name, null, item.asset.Id));
+                    items.Add(new PaletteItem(tab, category, item.asset.Id, packNames[item.asset.Id], null, item.asset.Id));
                 foreach (var entry in AppearanceLibrary.Entries(category, theme))
                     items.Add(new PaletteItem(tab, category, entry.Id, entry.Name, entry.Prefab()));
                 if (tab == PaletteTabs.Decoration)

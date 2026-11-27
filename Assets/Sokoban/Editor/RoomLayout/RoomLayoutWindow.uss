@@ -1,7 +1,17 @@
 .sl-root { flex-grow: 1; }
 .sl-root .sl-grow { flex-grow: 1; min-height: 0; min-width: 0; }
 .sl-root .sl-pane { min-width: 145px; min-height: 0; padding: 6px; }
+.sl-root #workspace { min-width: 220px; }
+.sl-root #palette-split > .unity-base-slider, .sl-root #inspector-split > .unity-base-slider { min-width: 4px; }
+.sl-root #palette-split > .sl-pane:first-child { max-width: 320px; }
+.sl-root #inspector-split > #inspector { max-width: 360px; }
 .sl-root .sl-toolbar { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 2px 4px; }
+.sl-root .sl-toolbar Button { min-width: 56px; padding: 2px 8px; margin: 1px 2px; }
+.sl-root .sl-toolbar .sl-active { background-color: rgba(201,145,52,0.35); }
+.sl-root .sl-sep { width: 1px; height: 18px; margin: 0 6px; background-color: rgba(128,128,128,0.6); }
+.sl-root .sl-spacer { flex-grow: 1; min-width: 8px; }
+.sl-root .sl-primary { background-color: rgba(60,120,200,0.55); -unity-font-style: bold; }
+.sl-root .sl-exit { background-color: rgba(170,60,50,0.45); }
 .sl-root .sl-heading { -unity-font-style: bold; margin: 4px 2px; }
 .sl-root .sl-section { padding: 4px 6px; }
 .sl-root .sl-problems { height: 132px; border-top-width: 1px; border-top-color: rgba(128,128,128,0.5); }
@@ -13,6 +23,7 @@
 .sl-root .sl-card-main { flex-grow: 1; min-width: 0; white-space: normal; }
 .sl-root .sl-thumb { width: 38px; height: 38px; margin-right: 4px; }
 .sl-root .sl-active { border-bottom-width: 2px; border-bottom-color: #c99134; }
+.sl-root .sl-small { font-size: 10px; min-width: 36px; padding: 1px 4px; margin: 0 0 0 4px; opacity: 0.85; }
 .sl-root .sl-entry { white-space: normal; -unity-text-align: middle-left; min-height: 24px; }
 .sl-root .sl-overlay { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.42); justify-content: center; align-items: center; display: none; }
 .sl-root .sl-dialog { width: 90%; height: 88%; max-width: 780px; padding: 12px; }
