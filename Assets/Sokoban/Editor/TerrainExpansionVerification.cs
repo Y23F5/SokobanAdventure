@@ -31,7 +31,9 @@ namespace Sokoban.Editor
         static RoomDraftModel Fixture()
         {
             var parsed = Blueprint.Parse("qa-expand", FixtureRows);
-            return new RoomDraftModel(parsed.Room, parsed.Doors, "entry", null, new[] { new RecoveryItem("recovery-1", "warehouse-lift", 3.7f) });
+            var model = new RoomDraftModel(parsed.Room, parsed.Doors, "entry", null, new[] { new RecoveryItem("recovery-1", "warehouse-lift", 3.7f) });
+            RecoveryDeviceCommands.Place(new DraftHolder(model), new RecoveryDevice("recovery-device", RecoveryDeviceKind.Forklift, new Cell(-1, 2), 1, "warehouse-lift", 3.7f)).Apply();
+            return model;
         }
 
         static RoomDraft FixtureDraft() => new RoomDraft(Fixture());
