@@ -46,6 +46,16 @@ namespace Sokoban
                     CampaignSlot.Save(request);
                     return;
                 }
+#if UNITY_EDITOR
+                string snapshot = UnityEditor.SessionState.GetString("Sokoban.GameTrial", "");
+                if (!string.IsNullOrEmpty(snapshot))
+                {
+                    var draft = new RoomDraft(Sokoban.Core.RoomCodec.Decode(Resources.Load<TextAsset>("DefaultRoom").text));
+                    draft.Recover(snapshot);
+                    Begin(PuzzleRun.FromDraft(draft), true, () => UnityEditor.EditorApplication.isPlaying = false);
+                    return;
+                }
+#endif
                 throw new InvalidOperationException("请从主菜单开始游戏，或从编辑器试玩房间");
             }
             catch (Exception error) { panels.ShowError(error.Message); }
