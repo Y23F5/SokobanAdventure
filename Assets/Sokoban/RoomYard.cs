@@ -36,15 +36,18 @@ namespace Sokoban
         static void Device(RoomDraftModel model, Transform group)
         {
             var device = model.RecoveryDevice;
-            if (device == null) return;
+            var floor = model.Room.RecoveryDeviceFloor;
+            if (device == null || !floor.HasValue) return;
+            var cell = floor.Value;
             string path = device.Kind switch { RecoveryDeviceKind.Forklift => "Diorama/Lift", RecoveryDeviceKind.Arm => "Diorama/Conveyor", _ => "Diorama/Tree" };
             var part = ObjectStateView.Create(model.Assets, group, path, null);
             part.name = device.Id;
-            part.transform.localPosition = new Vector3(device.Anchor.X, 0, device.Anchor.Y);
+            part.transform.localPosition = new Vector3(cell.X, 0, cell.Y);
             part.transform.localRotation = RoomPreview.CellRotation(device.Rotation);
-            var ground = ObjectStateView.Create(model.Assets, group, "LayoutModels/Floor", null);
+            var look = AppearanceLibrary.Default(TerrainCategories.Floor, model.Meta.ThemeId);
+            var ground = ObjectStateView.Create(model.Assets, group, AppearanceLibrary.Prefab(look) ?? "LayoutModels/Floor", null);
             ground.name = device.Id + "-ground";
-            ground.transform.localPosition = new Vector3(device.Anchor.X, 0, device.Anchor.Y);
+            ground.transform.localPosition = new Vector3(cell.X, 0, cell.Y);
         }
 
         static void Ground(RoomDraftModel model, Vector2Int origin, Transform group, WorldDocument world, IReadOnlyDictionary<string, RoomDraftModel> catalog)

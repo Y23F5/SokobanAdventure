@@ -77,6 +77,16 @@ namespace Sokoban.Editor
                 var frame = group.Find(door.Id);
                 return frame && frame.localPosition == new Vector3(door.Cell.X, 0, door.Cell.Y);
             }), room.Id + " 门框与门下地板分别存在");
+            if (room.RecoveryDeviceFloor is Cell floorCell)
+            {
+                var device = group.Find(model.RecoveryDevice.Id);
+                var floor = group.Find(model.RecoveryDevice.Id + "-ground");
+                var position = new Vector3(floorCell.X, 0, floorCell.Y);
+                Require(device && floor && device.localPosition == position && floor.localPosition == position,
+                    room.Id + " 装置和实体地板使用同一个 Core 格 " + floorCell);
+                var look = AppearanceLibrary.Default(TerrainCategories.Floor, model.Meta.ThemeId);
+                CheckModel(floor, AppearanceLibrary.Prefab(look) ?? "LayoutModels/Floor", Quaternion.identity);
+            }
             Require(group.Find("地基") && group.Find("外围地绘") && group.childCount == 2+tiles+model.Doors.Count+room.Objects.Count+(model.RecoveryDevice != null ? 2 : 0)+(group.Find("Selection")?1:0),
                 room.Id + " 各格和对象均唯一，模型数量 " + group.childCount);
         }
@@ -133,6 +143,19 @@ namespace Sokoban.Editor
             var draft = panel.Draft;
             Require(draft.World == null && draft.WorkPath == path && Root().childCount == 1, "布局打开独立工厂并按零原点生成单一预览");
             CheckFactoryModels(draft);
+            var originalFloor = draft.Room.RecoveryDeviceFloor;
+            string deviceId = draft.Model.RecoveryDevice.Id;
+            draft.MoveRecoveryDevice(new Cell(draft.Room.Width, draft.Room.Height / 2));
+            WorldSceneSession.Tick();
+            CheckRoom(draft.Model, draft.Origin);
+            draft.DeleteRecoveryDevice();
+            WorldSceneSession.Tick();
+            Require(!Root().Find(draft.ActiveId).Find(deviceId + "-ground"), "删除装置后移除实体地板");
+            draft.Undo();
+            draft.Undo();
+            WorldSceneSession.Tick();
+            Require(draft.Room.RecoveryDeviceFloor == originalFloor, "撤销删除和移动后恢复 Core 地板格");
+            CheckRoom(draft.Model, draft.Origin);
             var start = new Vector2Int(4, 2);
             var end = start + Vector2Int.left;
             var original = RoomCodec.Encode(draft.Model);
