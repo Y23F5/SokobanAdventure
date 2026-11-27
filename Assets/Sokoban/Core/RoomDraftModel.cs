@@ -7,6 +7,8 @@
  * Decorations、Assets、Graphs、Templates、Instances、ObjectStates、UiImageAssetId：墙外装饰、资源描述符、行为图、对象模板（键为模板 ID）、模板实例、对象状态表（键为对象 ID）与界面图资源 ID。
  * Extras：string 到 string 的透传字段包，Core 不解释，默认为空。
  * ReplaceDoor(index, door)：原位更新门记录，保留门表顺序。
+ * RecoveryDevice：当前恢复装置，空值表示尚未放置。
+ * ReplaceRecoveryDevice(device)：替换装置并维护房内 ID，登记冲突时保留旧装置。
  * Register(id, kind)：内部使用，ID 非空且尚未登记时登记到 ID 空间，已存在时静默跳过，供复制与平移草稿时在带错误的草稿上也不抛异常。
  */
 using System;
@@ -23,6 +25,7 @@ namespace Sokoban.Core
         public Room Room { get; }
         public string PrimaryEntranceId { get; set; }
         public RoomMeta Meta { get => meta; set => meta = value ?? new RoomMeta("", null); }
+        public RecoveryDevice RecoveryDevice { get; private set; }
         public IReadOnlyList<RecoveryItem> RecoveryItems => items;
         public IReadOnlyList<DoorInfo> Doors => doors;
         public Dictionary<string, string> Extras { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -48,6 +51,16 @@ namespace Sokoban.Core
                     room.Ids.Add(item.Id, "recovery");
                     items.Add(item);
                 }
+        }
+
+        internal void ReplaceRecoveryDevice(RecoveryDevice device)
+        {
+            if (device?.Id != RecoveryDevice?.Id)
+            {
+                if (device != null) Room.Ids.Add(device.Id, "recoveryDevice");
+                if (RecoveryDevice != null) Room.Ids.Remove(RecoveryDevice.Id);
+            }
+            RecoveryDevice = device;
         }
 
         internal List<RecoveryItem> ItemList => items;

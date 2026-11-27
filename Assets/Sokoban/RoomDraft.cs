@@ -53,7 +53,7 @@ namespace Sokoban
             Selection.Clear();
             SyncCatalog();
             Selected = select;
-            SelectedCell = select == null ? (Cell?)null : (Find(select)?.Cell ?? FindDecoration(select)?.Cell);
+            SelectedCell = select == null ? (Cell?)null : (Find(select)?.Cell ?? FindDecoration(select)?.Cell ?? FindRecoveryDevice(select)?.Anchor);
             revision++;
         }
 
@@ -76,7 +76,8 @@ namespace Sokoban
 
         public Decoration FindDecoration(string id) => id == null ? null : Model.Decorations.FirstOrDefault(d => d.Id == id);
 
-        string IdAt(Cell cell) => Room.ObjectAt(cell)?.Id ?? Model.Decorations.FirstOrDefault(d => d.Cell == cell)?.Id;
+        string IdAt(Cell cell) => Room.ObjectAt(cell)?.Id ?? Model.Decorations.FirstOrDefault(d => d.Cell == cell)?.Id
+            ?? (Model.RecoveryDevice?.Anchor == cell ? Model.RecoveryDevice.Id : null);
 
         public void Select(Cell cell) => Select(cell, false);
 
@@ -89,7 +90,7 @@ namespace Sokoban
                 if (Selection.Count == 0) { Selected = null; SelectedCell = null; revision++; return; }
                 cell = Selection.OrderBy(p => p.Y).ThenBy(p => p.X).First();
             }
-            SelectedCell = Room.Inside(cell) ? cell : (Cell?)null;
+            SelectedCell = Room.Inside(cell) || Model.RecoveryDevice?.Anchor == cell ? cell : (Cell?)null;
             Selected = IdAt(cell);
             revision++;
         }
@@ -311,6 +312,7 @@ namespace Sokoban
             }
             var next = new RoomDraftModel(room, list, primary, src.Extras, src.RecoveryItems);
             next.Meta = src.Meta;
+            next.ReplaceRecoveryDevice(src.RecoveryDevice);
             next.Decorations.AddRange(src.Decorations);
             next.Assets.AddRange(src.Assets);
             next.Graphs.AddRange(src.Graphs);

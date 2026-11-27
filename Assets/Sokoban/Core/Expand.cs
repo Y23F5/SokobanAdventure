@@ -4,6 +4,7 @@
  * Room.Resized(shiftX, shiftY, newWidth, newHeight)：返回平移后的新房间，地形、地形实体、每格外观、对象格坐标与对象外观整体平移，越界内容丢弃前须由调用方预检。
  * RoomResize.Resized(draft, shiftX, shiftY, newWidth, newHeight)：草稿重载，在房间平移之外让每扇门、装饰与行为图节点的格坐标同步平移，门地形与门 ID 对应的地形实体保持一致，
  * 恢复道具参数中的格引用 gateX、gateZ 按偏移平移（无需平移时沿用原对象），资源、模板、实例、对象状态、界面图、显示名与透传字段原样带到新草稿，各 ID 重新登记进新房间的 ID 空间；
+ * ResizeDevice(device, source, destination, shiftX, shiftY)：保留装置所在侧，沿边平移锚点并对齐新边界。
  * 返回全新的草稿，不改动原草稿；任一扇门平移后落到新房间之外时抛 InvalidOperationException。
  * ExpandCommand(holder, left, bottom, right, top)：只改房间的复合命令，Apply 按四向扩建量生成新房间，Revert 换回旧房间。
  * ExpandDraftCommand(holder, left, bottom, right, top, maxSide)：作用于整份草稿的扩建命令，Apply 记录旧尺寸并按偏移平移，Revert 按负偏移平移并裁回旧尺寸，严格后进先出。
@@ -47,6 +48,22 @@ namespace Sokoban.Core
             return next;
         }
 
+        static RecoveryDevice ResizeDevice(RecoveryDevice device, Room source, Room destination, int shiftX, int shiftY)
+        {
+            if (device == null) return null;
+            var anchor = device.Anchor;
+            int x = anchor.X + shiftX;
+            int y = anchor.Y + shiftY;
+            if (anchor.X == -1) x = -1;
+            else if (anchor.X == source.Width) x = destination.Width;
+            else if (anchor.Y == -1) y = -1;
+            else if (anchor.Y == source.Height) y = destination.Height;
+            var next = new Cell(x, y);
+            if (!RecoveryDeviceRules.IsValidAnchor(destination, next))
+                throw new InvalidOperationException("调整房间尺寸后恢复装置超出边缘：" + next);
+            return next == anchor ? device : device.WithPlacement(next, device.Rotation);
+        }
+
         static RecoveryItem Shifted(RecoveryItem item, int shiftX, int shiftY)
         {
             if ((shiftX == 0 && shiftY == 0) || !(item.Params.ContainsKey("gateX") || item.Params.ContainsKey("gateZ"))) return item;
@@ -79,6 +96,7 @@ namespace Sokoban.Core
             }
             var next = new RoomDraftModel(room, doors, source.PrimaryEntranceId, source.Extras);
             next.Meta = source.Meta;
+            next.ReplaceRecoveryDevice(ResizeDevice(source.RecoveryDevice, source.Room, room, shiftX, shiftY));
             next.UiImageAssetId = source.UiImageAssetId;
             foreach (var item in source.RecoveryItems)
             {
