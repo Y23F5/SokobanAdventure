@@ -41,7 +41,7 @@ namespace Sokoban.Core
                 case "spawn.missing": return new LocateTarget(LocateKind.Room, issue.Location, default(Cell), LocateTool.PlaceSpawn);
                 case "target.none": return new LocateTarget(LocateKind.Room, issue.Location, default(Cell), LocateTool.PlaceTarget);
                 case "entry.missing": return new LocateTarget(LocateKind.Room, issue.Location, default(Cell), LocateTool.SetDoor);
-                case "recovery.none": return new LocateTarget(LocateKind.Room, issue.Location, default(Cell), LocateTool.AddRecoveryItem);
+                case "recoveryDevice.missing": return new LocateTarget(LocateKind.Room, issue.Location, default(Cell), LocateTool.None);
                 case "door.geometry": return new LocateTarget(LocateKind.Door, issue.Location, default(Cell), LocateTool.SetDoor);
                 case "boundary.open":
                     return TryCell(issue.Location, out var cell)

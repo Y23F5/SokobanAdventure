@@ -8,7 +8,7 @@
  * DraftRule：针对整份草稿的规则，声明规则 ID、两档严重级别以及判定函数。
  * RoomValidator.Validate(room, stage, entry)：运行全部 Rule 并按档位映射严重级别，返回结果列表；object.notOnFloor 与 object.sharedCell 同样覆盖自定义物件；entry 为主入口内侧的入口缓冲格，缺主入口时传 null。
  * RoomValidator.HasErrors(issues)：判断结果中是否存在错误，发布级存在错误时阻止试玩、保存与导出。
- * RoomValidator.ValidateDraft(draft, stage)：在 Validate 之上运行 DraftRules：recovery.none、door.geometry、boundary.open，
+ * RoomValidator.ValidateDraft(draft, stage)：在 Validate 之上校验恢复装置，并运行 DraftRules：door.geometry、boundary.open，
  * 以及 recovery.duration（时长不大于 0）、id.duplicate（各类 ID 重复）、ref.dangling（模板、行为图所有者与连线节点、对象状态键、界面图资源、主入口的悬空引用）、
  * recovery.scriptUnknown（脚本引用既不是随项目发布的默认脚本也不是房间内 script 类资源）、behavior.nodeUnknown（行为节点类型不在注册表，含模板内的图）、
  * openable.disconnected（存在可开合地形时，以封闭状态从出生点出发走不到某扇门，两档均为警告）。
@@ -118,8 +118,6 @@ namespace Sokoban.Core
 
         public static readonly IReadOnlyList<DraftRule> DraftRules = new List<DraftRule>
         {
-            new DraftRule("recovery.none", Severity.Hint, Severity.Error, d =>
-                d.RecoveryItems.Count == 0 ? new[] { (d.Room.Id, "本房没有恢复道具") } : Enumerable.Empty<(string, string)>()),
 
             new DraftRule("recovery.duration", Severity.Error, Severity.Error, d =>
                 d.RecoveryItems.Where(i => !(i.Duration > 0)).Select(i => (i.Id, "恢复道具时长必须大于 0"))),
@@ -156,6 +154,8 @@ namespace Sokoban.Core
             var door = draft.Doors.FirstOrDefault(d => d.Id == draft.PrimaryEntranceId && d.Role == "entry");
             Cell? entry = door == null ? (Cell?)null : door.Cell - door.Outward;
             var issues = Validate(draft.Room, stage, entry);
+            var recoveryIssue = RecoveryDeviceRules.Validate(draft, stage);
+            if (recoveryIssue != null) issues.Add(recoveryIssue);
             foreach (var rule in DraftRules)
             {
                 var severity = stage == ValidationStage.Draft ? rule.Draft : rule.Publish;

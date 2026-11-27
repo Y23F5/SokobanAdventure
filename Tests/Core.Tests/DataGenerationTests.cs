@@ -150,6 +150,17 @@ namespace Sokoban.Core.Tests
             string primary = doors.First(d => d.Role == "entry").Id;
             var bare = new RoomDraftModel(parsed.Room, doors, primary);
             var draft = new RoomDraftModel(parsed.Room, doors, primary, null, Items(id, bare));
+            var room = draft.Room;
+            var item = draft.RecoveryItems[0];
+            var (kind, anchor, rotation) = id switch
+            {
+                "warehouse" => (RecoveryDeviceKind.Forklift, new Cell(room.Width, room.Height / 2), 3),
+                "factory" => (RecoveryDeviceKind.Arm, new Cell(-1, room.Height / 2), 1),
+                "forest" => (RecoveryDeviceKind.Tree, new Cell(room.Width / 2, -1), 0),
+                _ => throw new ArgumentOutOfRangeException(nameof(id)),
+            };
+            draft.ReplaceRecoveryDevice(new RecoveryDevice("recovery-device", kind, anchor, rotation,
+                item.ScriptRef, item.Duration, item.Params, name + "恢复道具", itemAcquiredHint: "按 R 启动本房恢复装置。"));
             draft.Meta = new RoomMeta(name, id);
             return draft;
         }
@@ -164,6 +175,7 @@ namespace Sokoban.Core.Tests
             parsed.Room.AddObject("target-a", ObjectCategories.Target, new Cell(4, 2));
             var items = new List<RecoveryItem> { new RecoveryItem("recovery-1", "warehouse-lift", RecoveryItem.DefaultDuration) };
             var draft = new RoomDraftModel(parsed.Room, parsed.Doors, "entry", null, items);
+            PlaceDefaultForklift(draft);
             draft.Meta = new RoomMeta("双端交换测试房", "warehouse");
             return draft;
         }
@@ -173,8 +185,17 @@ namespace Sokoban.Core.Tests
             var rows = new[] { "#######", "#.....#", "#.....#", "<.....>", "#.P...#", "#.....#", "#######" };
             var parsed = Blueprint.Parse("blank", rows);
             var draft = new RoomDraftModel(parsed.Room, parsed.Doors, "entry");
+            PlaceDefaultForklift(draft);
             draft.Meta = new RoomMeta("新房间", "warehouse");
             return draft;
+        }
+
+        static void PlaceDefaultForklift(RoomDraftModel draft)
+        {
+            draft.ReplaceRecoveryDevice(new RecoveryDevice("recovery-device", RecoveryDeviceKind.Forklift,
+                new Cell(-1, draft.Room.Height / 2), 1, "warehouse-lift", RecoveryItem.DefaultDuration,
+                itemName: "仓库恢复道具", itemDescription: "启动本房叉车，让箱子回到预设位置。",
+                itemAcquiredHint: "按 R 启动本房恢复装置。"));
         }
 
         static WorldDocument World(string file1, string file2, string file3, Cell origin2, Cell origin3, string mode, bool shortcut)
@@ -252,7 +273,9 @@ namespace Sokoban.Core.Tests
             }
             foreach (var name in new[] { "warehouse.room.json", "factory.room.json", "forest.room.json", "main.world.json" })
                 Assert.Equal(File.ReadAllText(Path.Combine(worldDir, name)), File.ReadAllText(Path.Combine(docsDir, name)));
-            RoomCodec.Decode(File.ReadAllText(Path.Combine(root, "Assets", "Sokoban", "Resources", "DefaultRoom.json")));
+            var defaultRoom = RoomCodec.Decode(File.ReadAllText(Path.Combine(root, "Assets", "Sokoban", "Resources", "DefaultRoom.json")));
+            Assert.Equal(RecoveryDeviceKind.Forklift, defaultRoom.RecoveryDevice.Kind);
+            Assert.Equal(new Cell(-1, defaultRoom.Room.Height / 2), defaultRoom.RecoveryDevice.Anchor);
         }
     }
 }

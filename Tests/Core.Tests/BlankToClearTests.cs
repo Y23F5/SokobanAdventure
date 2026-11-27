@@ -30,6 +30,8 @@ namespace Sokoban.Core.Tests
             history.Execute(new PlaceObjectCommand(draft, "box-1", ObjectCategories.Box, new Cell(3, 2)));
             history.Execute(new PlaceObjectCommand(draft, "target-1", ObjectCategories.Target, new Cell(5, 2)));
             history.Execute(new AddRecoveryItemCommand(draft, new RecoveryItem("recovery-1", "warehouse-lift", 3.7f)));
+            var device = new RecoveryDevice("device", RecoveryDeviceKind.Forklift, new Cell(-1, 2), 1, "warehouse-lift", 3.7f);
+            history.Execute(RecoveryDeviceCommands.Place(new DraftHolder(draft), device));
             return draft;
         }
 
@@ -47,7 +49,7 @@ namespace Sokoban.Core.Tests
             var issues = RoomValidator.ValidateDraft(BlankRoom(), ValidationStage.Draft);
             Assert.DoesNotContain(issues, i => i.Severity == Severity.Error);
             Assert.Contains(issues, i => i.RuleId == "spawn.missing");
-            Assert.Contains(issues, i => i.RuleId == "recovery.none");
+            Assert.Contains(issues, i => i.RuleId == "recoveryDevice.missing");
         }
 
         [Fact]
@@ -119,7 +121,7 @@ namespace Sokoban.Core.Tests
             while (history.Undo()) { }
             Assert.Empty(draft.Room.Objects);
             Assert.Empty(draft.RecoveryItems);
-            Assert.Contains(RoomValidator.ValidateDraft(draft, ValidationStage.Publish), i => i.RuleId == "recovery.none");
+            Assert.Contains(RoomValidator.ValidateDraft(draft, ValidationStage.Publish), i => i.RuleId == "recoveryDevice.missing");
         }
     }
 }

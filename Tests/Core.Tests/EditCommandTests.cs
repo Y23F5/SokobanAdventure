@@ -25,22 +25,27 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void MissingRecoveryItemIsHintInDraftAndErrorOnPublish()
+        public void MissingRecoveryDeviceIsHintInDraftAndErrorOnPublish()
         {
             var draft = Blank();
             var d = RoomValidator.ValidateDraft(draft, ValidationStage.Draft);
             var p = RoomValidator.ValidateDraft(draft, ValidationStage.Publish);
-            Assert.Equal(Severity.Hint, d.Single(i => i.RuleId == "recovery.none").Severity);
-            Assert.Equal(Severity.Error, p.Single(i => i.RuleId == "recovery.none").Severity);
+            Assert.Equal(Severity.Hint, d.Single(i => i.RuleId == "recoveryDevice.missing").Severity);
+            Assert.Equal(Severity.Error, p.Single(i => i.RuleId == "recoveryDevice.missing").Severity);
         }
 
         [Fact]
-        public void AddingRecoveryItemClearsTheIssue()
+        public void OnlyPlacingRecoveryDeviceClearsTheMissingDeviceIssue()
         {
             var draft = Blank();
             var history = new CommandHistory();
             history.Execute(new AddRecoveryItemCommand(draft, new RecoveryItem("recovery-1", "warehouse-lift", 3.7f)));
-            Assert.DoesNotContain(RoomValidator.ValidateDraft(draft, ValidationStage.Publish), i => i.RuleId == "recovery.none");
+            var missing = Assert.Single(RoomValidator.ValidateDraft(draft, ValidationStage.Publish),
+                i => i.RuleId == "recoveryDevice.missing");
+            Assert.Equal("缺少恢复装置", missing.Message);
+            var device = new RecoveryDevice("device", RecoveryDeviceKind.Forklift, new Cell(-1, 2), 1, "warehouse-lift", 3.7f);
+            history.Execute(RecoveryDeviceCommands.Place(new DraftHolder(draft), device));
+            Assert.DoesNotContain(RoomValidator.ValidateDraft(draft, ValidationStage.Publish), i => i.RuleId == "recoveryDevice.missing");
             Assert.True(draft.Room.Ids.Contains("recovery-1"));
         }
 

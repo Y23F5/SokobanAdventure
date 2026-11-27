@@ -168,7 +168,10 @@ namespace Sokoban.Core.Tests
         [Fact]
         public void ValidatedRoomIsBuiltFromAGoodDraft()
         {
-            var v = ValidatedRoom.From(Good(), new RoomMeta("名", "t"));
+            var draft = Good();
+            draft.ReplaceRecoveryDevice(new RecoveryDevice("device", RecoveryDeviceKind.Forklift,
+                new Cell(-1, 2), 1, "warehouse-lift", RecoveryItem.DefaultDuration));
+            var v = ValidatedRoom.From(draft, new RoomMeta("名", "t"));
             Assert.Equal("名", v.Meta.Name);
             Assert.Equal(ObjectCategories.Spawn, v.Spawn.CategoryId);
             Assert.Equal("entry", v.PrimaryEntrance.Id);

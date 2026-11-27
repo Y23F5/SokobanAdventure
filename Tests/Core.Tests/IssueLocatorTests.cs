@@ -44,10 +44,12 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void MissingRecoveryOffersAddRecoveryItem()
+        public void MissingRecoveryDeviceLocatesTheRoom()
         {
-            var target = IssueLocator.Locate(Make("recovery.none", "r"));
-            Assert.Equal(LocateTool.AddRecoveryItem, target.Tool);
+            var target = IssueLocator.Locate(Make("recoveryDevice.missing", "r"));
+            Assert.Equal(LocateKind.Room, target.Kind);
+            Assert.Equal("r", target.Id);
+            Assert.Equal(LocateTool.None, target.Tool);
         }
 
         [Fact]

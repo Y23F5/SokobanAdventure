@@ -57,6 +57,8 @@ namespace Sokoban.Editor
             foreach (var placed in source.Objects)
                 if (placed.Appearance != null) room.SetObjectAppearance(placed.Id, placed.Appearance);
             var next = new RoomDraftModel(room, doors, src.PrimaryEntranceId, src.Extras, src.RecoveryItems);
+            if (src.RecoveryDevice != null)
+                RecoveryDeviceCommands.Place(new DraftHolder(next), src.RecoveryDevice).Apply();
             next.Meta = src.Meta;
             next.Decorations.AddRange(src.Decorations);
             next.Assets.AddRange(src.Assets);
@@ -167,6 +169,11 @@ namespace Sokoban.Editor
                 var draft = new RoomDraft(RoomCodec.Decode(source));
                 string path = Path.Combine(evidence, "sample.room.json");
                 draft.Save(path, false);
+                draft.DeleteRecoveryDevice();
+                Require(Rule(draft, "recoveryDevice.missing") == 1, "删除装置后发布级结构检查报缺少恢复装置");
+                Reject(draft, path, "缺少恢复装置");
+                draft.Undo();
+                Require(Rule(draft, "recoveryDevice.missing") == 0, "撤销删除后恢复装置校验通过");
                 var gaps = new[] { new Cell(0, 0), new Cell(2, 6) };
                 Require(draft.Brush(gaps, RoomTool.Floor) == null, "两格墙改地板的整笔笔划合法并提交");
                 Require(Rule(draft, "boundary.open") == 2, "boundary.open 定位角墙与边墙两个缺口，每格一条");

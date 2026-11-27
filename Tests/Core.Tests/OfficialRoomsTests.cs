@@ -83,7 +83,7 @@ namespace Sokoban.Core.Tests
                 var doc = RoundTrip(id, rows);
                 var entry = doc.Doors.First(d => d.Role == "entry");
                 var issues = RoomValidator.Validate(doc.Room, ValidationStage.Publish, entry.Cell - entry.Outward);
-                Assert.DoesNotContain(issues, i => i.Severity == Severity.Error && i.RuleId != "recovery.none");
+                Assert.DoesNotContain(issues, i => i.Severity == Severity.Error);
             }
         }
     }
