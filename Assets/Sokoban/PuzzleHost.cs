@@ -155,7 +155,11 @@ namespace Sokoban
         void Update()
         {
             if (Run == null || leaving) return;
-            if (panels.Modal) { if (Run.PendingItem != null) TickAtmosphere(Time.deltaTime); return; }
+            if (panels.Modal)
+            {
+                if (Run.PendingItem != null || themeFade < 1) TickAtmosphere(Time.deltaTime);
+                return;
+            }
             if (Input.GetKeyDown(KeyCode.Escape)) { panels.Pause(); return; }
             TickAtmosphere(Time.deltaTime);
             if (Run.Recovering) TickRecovery(Time.deltaTime);
@@ -192,17 +196,10 @@ namespace Sokoban
             var world = screen;
             for (int i = 0; i < Run.Heading; i++) world = new Vector2Int(world.y, -world.x);
             string oldRoom = Run.ActiveId;
-            var previousCell = Run.Player;
             if (!Run.Step(world, out string pushed)) return false;
             if (oldRoom != Run.ActiveId)
             {
                 BindRoom();
-                if (Run.Player != previousCell + world)
-                {
-                    focus = targetFocus;
-                    lens.orthographicSize = targetSize;
-                    SetCamera();
-                }
                 RefreshFeedback();
                 ShowInventory();
                 ShowEntryHint();

@@ -1,7 +1,7 @@
 /**
  * @file PuzzleAtmosphere.cs
  * @brief InitAtmosphere 创建每房云层并缓存原材质。EnterAtmosphere 按已访问集合显示模型并从入口揭雾。
- * TickAtmosphere 插值镜头、背景与光色。UpdateOcclusion 按镜头水平朝向同步各房的墙格分组。
+ * TickAtmosphere 插值镜头、背景与光色。房间云层向房间外扩展并羽化，天空雾色随主题同步过渡。UpdateOcclusion 按镜头水平朝向同步各房的墙格分组。
  * ShowInventory、AcceptDiscovery 显示和确认道具，道具名取自道具所属房间的显示名。
  * TickRecovery 推进规则会话的恢复时钟；演出完全由 RecoveryPresenter 按恢复道具的脚本取姿态，宿主不按主题名分支；完成时清理零件池并把箱子与玩家同步到规则结果。
  */
@@ -24,7 +24,10 @@ namespace Sokoban
         bool framed;
         MeshRenderer clearing;
         DioramaLighting lighting;
-        Color theme;
+        const float MistMargin = 2.5f;
+        const float ThemeFadeSeconds = .85f;
+        Color previousTheme, theme;
+        float themeFade;
         void InitAtmosphere()
         {
             surface = new MaterialPropertyBlock();
@@ -39,9 +42,10 @@ namespace Sokoban
                 cloud.transform.SetParent(transform, false);
                 cloud.transform.position = pair.Value.position + new Vector3((room.Width - 1) * .5f, .7f, (room.Height - 1) * .5f);
                 cloud.transform.rotation = Quaternion.Euler(90, 0, 0);
-                cloud.transform.localScale = new Vector3(room.Width + 1, room.Height + 1, 1);
+                cloud.transform.localScale = new Vector3(room.Width + 2 * MistMargin, room.Height + 2 * MistMargin, 1);
                 var rCloud = cloud.GetComponent<MeshRenderer>();
                 rCloud.sharedMaterial = new Material(Resources.Load<Shader>("RoomMist"));
+                rCloud.sharedMaterial.SetVector("_MistSize", new Vector4(cloud.transform.localScale.x, cloud.transform.localScale.y, MistMargin, 0));
                 rCloud.shadowCastingMode = ShadowCastingMode.Off;
                 clouds.Add(pair.Key, rCloud);
                 if (Run.Visited(pair.Key)) shown.Add(pair.Key);
@@ -85,16 +89,37 @@ namespace Sokoban
                 clearing.sharedMaterial.SetVector("_Entry", new Vector4(.5f + p.x / clearing.transform.localScale.x, .5f + p.z / clearing.transform.localScale.y, 0, 0));
                 clearing.sharedMaterial.SetFloat("_Reveal", 0);
             }
-            theme = DioramaLighting.Theme(Run.Room.Meta.ThemeId);
-            if (!hasSkyColor) { lighting.Apply(theme, 1); hasSkyColor = true; }
+            var nextTheme = DioramaLighting.Theme(Run.Room.Meta.ThemeId);
+            if (!hasSkyColor)
+            {
+                previousTheme = theme = nextTheme;
+                themeFade = 1;
+                ApplyTheme(theme);
+                hasSkyColor = true;
+            }
+            else if (nextTheme != theme)
+            {
+                previousTheme = Color.Lerp(previousTheme, theme, Mathf.SmoothStep(0, 1, themeFade));
+                theme = nextTheme;
+                themeFade = 0;
+            }
         }
         bool hasSkyColor;
+        void ApplyTheme(Color color)
+        {
+            lighting.Apply(color, 1);
+            foreach (var cloud in clouds.Values) cloud.sharedMaterial.SetColor("_Tint", color);
+        }
         void TickAtmosphere(float seconds)
         {
             float t = 1 - Mathf.Exp(-4 * seconds);
             focus = Vector3.Lerp(focus, targetFocus, t);
             lens.orthographicSize = Mathf.Lerp(lens.orthographicSize, targetSize, t);
-            lighting.Apply(theme, t);
+            if (themeFade < 1)
+            {
+                themeFade = Mathf.Clamp01(themeFade + seconds / ThemeFadeSeconds);
+                ApplyTheme(Color.Lerp(previousTheme, theme, Mathf.SmoothStep(0, 1, themeFade)));
+            }
             SetCamera();
             if (!clearing) return;
             reveal = Mathf.Min(1, reveal + seconds / .95f);
