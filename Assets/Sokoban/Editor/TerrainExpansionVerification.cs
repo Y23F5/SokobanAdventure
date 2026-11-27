@@ -2,7 +2,7 @@
  * @file TerrainExpansionVerification.cs
  * @brief 地形笔刷与扩建的编辑器回归：用 Core 的 BrushPlanner、BrushCommand、CommandHistory 与 RoomDraft 的命令语义核对整笔预检、扩建平移与撤销、擦除不删对象、门格受保护、世界视图越界整笔拒绝、单独编辑扩建后世界不自动补偿、空白房间与保存重开。
  * Run：菜单与批处理入口，逐例执行并汇总失败。
- * Fixture、FixtureDraft：由图纸构造带门、出生点、箱、目标与恢复道具的 9×5 房间。
+ * Fixture、FixtureDraft：由图纸构造带门、出生点、箱、目标与恢复装置的 9×5 房间。
  * Expansion：四个方向的扩建，核对尺寸、旧格地形、对象与门的平移，以及一步撤销重做。
  * WholeStroke、DoorsProtected、EraseKeepsObjects：整笔拒绝不留历史、门格对三种工具受保护、擦除只改地形。
  * WorldViewRejected、WorldPreview、StandaloneOverlap：世界视图越界整笔拒绝与预检文案，单独编辑扩建后返回世界报重叠且可撤销。
@@ -31,7 +31,7 @@ namespace Sokoban.Editor
         static RoomDraftModel Fixture()
         {
             var parsed = Blueprint.Parse("qa-expand", FixtureRows);
-            var model = new RoomDraftModel(parsed.Room, parsed.Doors, "entry", null, new[] { new RecoveryItem("recovery-1", "warehouse-lift", 3.7f) });
+            var model = new RoomDraftModel(parsed.Room, parsed.Doors, "entry");
             RecoveryDeviceCommands.Place(new DraftHolder(model), new RecoveryDevice("recovery-device", RecoveryDeviceKind.Forklift, new Cell(-1, 2), 1, "warehouse-lift", 3.7f)).Apply();
             return model;
         }
@@ -86,7 +86,11 @@ namespace Sokoban.Editor
                 var terrain = after.Room.TerrainAt(moved.Cell);
                 Require(moved.Cell == door.Cell + shift && moved.Outward == door.Outward && terrain.CategoryId == TerrainCategories.Door && terrain.EntityId == door.Id, door.Id + " 门未随平移");
             }
-            Require(after.PrimaryEntranceId == before.PrimaryEntranceId && after.RecoveryItems.Count == 1, "主入口或恢复道具改变");
+            var device = after.RecoveryDevice;
+            Require(after.PrimaryEntranceId == before.PrimaryEntranceId && device != null && device.Id == before.RecoveryDevice.Id &&
+                device.Kind == before.RecoveryDevice.Kind && device.Anchor == new Cell(-1, before.RecoveryDevice.Anchor.Y + shift.Y) &&
+                device.Rotation == before.RecoveryDevice.Rotation && device.ScriptRef == before.RecoveryDevice.ScriptRef &&
+                device.Duration == before.RecoveryDevice.Duration, "主入口或恢复装置改变");
             Require(history.Undo() && ReferenceEquals(holder.Draft, before) && RoomCodec.Encode(holder.Draft) == text, "撤销未还原扩建");
             Require(history.Redo() && holder.Draft.Room.Width == after.Room.Width && holder.Draft.Room.Height == after.Room.Height, "重做未恢复扩建");
         }
@@ -231,7 +235,9 @@ namespace Sokoban.Editor
             for (int x = 0; x < draft.Room.Width; x++)
                 for (int y = 0; y < draft.Room.Height; y++) allVoid &= Terrain(draft, new Cell(x, y)) == TerrainCategories.Void;
             Require(draft.Room.Width == 15 && draft.Room.Height == 15 && allVoid, "新房尺寸或空格错误");
-            Require(draft.Room.Objects.Count == 0 && draft.Model.RecoveryItems.Count == 0 && draft.Model.Doors.Count == 0 && draft.Model.PrimaryEntranceId == null, "空房残留对象、恢复道具、门或主入口");
+            Require(draft.Room.Objects.Count == 0 && draft.Model.Doors.Count == 0 && draft.Model.PrimaryEntranceId == null &&
+                draft.Model.RecoveryDevice != null && draft.Model.RecoveryDevice.Kind == RecoveryDeviceKind.Forklift &&
+                draft.Model.RecoveryDevice.Anchor == new Cell(-1, 7), "空房对象、门、主入口或默认恢复装置错误");
             Require(draft.World == null && draft.WorkPath == null && draft.Dirty && draft.Catalog.Count == 1 && draft.ActiveId != "qa-expand", "新建未重置旧工作区");
         }
 
@@ -319,7 +325,7 @@ namespace Sokoban.Editor
             draft.Place(true, corridor[2]); Snap();
             draft.Place(false, corridor[3]); Snap();
             draft.SetRoomMarker(corridor[4], "exit"); Snap();
-            draft.Commit(new AddRecoveryItemCommand(draft.Model, new RecoveryItem("recovery-qa", "warehouse-lift", 3.7f))); Snap();
+            draft.PlaceRecoveryDevice(new RecoveryDevice("recovery-qa", RecoveryDeviceKind.Forklift, new Cell(-1, 7), 1, "warehouse-lift", 3.7f), replaceExisting: true); Snap();
             var entry = draft.Model.Doors.Single(d => d.Role == "entry");
             var exit = draft.Model.Doors.Single(d => d.Role == "exit");
             Require(draft.Room.ObjectsOf(ObjectCategories.Spawn).Single().Cell == corridor[1] && entry.Cell == corridor[0] && exit.Cell == corridor[4], "标记坐标错误");
