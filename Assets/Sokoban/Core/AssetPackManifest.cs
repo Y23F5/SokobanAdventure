@@ -1,6 +1,7 @@
 /**
  * @file AssetPackManifest.cs
- * @brief Parse 读取导出工具清单中的 GLB 路径、尺寸、两种占格及来源格，按文件身份归类并映射主题。
+ * @brief Parse 读取 GLB 路径、尺寸、占格、分类和主题；显式分类优先，缺少分类的原型清单使用原有规则。
+ * ReadLabel(record, key, allowed, file)：读取可选类别或主题并校验其值。
  * SizeIssue 按类别评估实测水平包围盒；墙地和门要求 1±0.15 格，箱子和目标仅检查上限。
  * VariantIndex 把房间 ID 和房间格坐标混入固定散列，保证不同进程中同一格选中同一索引。
  */
@@ -46,6 +47,14 @@ namespace Sokoban.Core
             { "depot", "warehouse" }, { "foundry", "factory" }, { "island-forest", "forest" }
         };
 
+        static readonly HashSet<string> Categories = new HashSet<string>(StringComparer.Ordinal)
+        {
+            ObjectCategories.Box, ObjectCategories.Target, TerrainCategories.Wall, TerrainCategories.Floor,
+            Entrance, Exit, Decoration, Other
+        };
+
+        static readonly HashSet<string> ThemeIds = new HashSet<string>(Themes.Values, StringComparer.Ordinal);
+
         static readonly Dictionary<string, string> BoxThemes = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             { "wooden-crate-and-pallet", "warehouse" }, { "mechanical-crate", "factory" },
@@ -73,9 +82,14 @@ namespace Sokoban.Core
                 string room = record.TryGetValue("room", out var roomValue) ? roomValue as string : null;
                 bool roomPart = components.Length > 2 && components[0] == "rooms";
                 if (room == null && roomPart) room = components[1];
-                string theme = room != null && Themes.TryGetValue(room, out var mapped) ? mapped : null;
-                string category = Category(stem, roomPart);
-                if (category == ObjectCategories.Box && theme == null) theme = BoxThemes[stem];
+                string theme = ReadLabel(record, "theme", ThemeIds, file);
+                if (theme == null && room != null && Themes.TryGetValue(room, out var mapped)) theme = mapped;
+                string category = ReadLabel(record, "category", Categories, file);
+                if (category == null)
+                {
+                    category = Category(stem, roomPart);
+                    if (category == ObjectCategories.Box && theme == null) theme = BoxThemes[stem];
+                }
                 double[] bounds = Vector(record, "bounds_size_xyz", 3, file);
                 if (bounds.Any(axis => axis < 0)) throw new FormatException(file + " 包围盒尺寸不能为负数");
                 Cell grid = CellField(record, "grid_footprint_xz", file, false, true).Value;
@@ -84,6 +98,13 @@ namespace Sokoban.Core
                 parts.Add(new AssetPackPart(file, category, theme, bounds, grid, logical, source));
             }
             return parts.AsReadOnly();
+        }
+
+        static string ReadLabel(Dictionary<string, object> record, string key, HashSet<string> allowed, string file)
+        {
+            if (!record.TryGetValue(key, out var value)) return null;
+            if (value is string label && allowed.Contains(label)) return label;
+            throw new FormatException(file + " 的 " + key + " 无效");
         }
 
         static string Category(string stem, bool roomPart)

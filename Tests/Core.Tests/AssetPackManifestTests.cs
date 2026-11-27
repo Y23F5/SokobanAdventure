@@ -36,6 +36,23 @@ public sealed class AssetPackManifestTests
     }
 
     [Fact]
+    public void ManifestCategoryDeterminesBoxIdentityWithoutFilename()
+    {
+        const string json = @"{""assets"": [
+            {""file"":""model-001.glb"",""category"":""box"",""theme"":""factory"",
+             ""bounds_size_xyz"":[0.8,0.75,0.8],""grid_footprint_xz"":[1,1]},
+            {""file"":""log-bundle.glb"",""category"":""decoration"",
+             ""bounds_size_xyz"":[0.8,0.75,0.8],""grid_footprint_xz"":[1,1]}
+        ]}";
+        var parts = AssetPackManifest.Parse(json);
+        Assert.Equal(ObjectCategories.Box, parts[0].Category);
+        Assert.Equal("factory", parts[0].Theme);
+        Assert.Equal(AssetPackManifest.Decoration, parts[1].Category);
+        Assert.Null(parts[1].Theme);
+        Assert.Throws<FormatException>(() => AssetPackManifest.Parse(json.Replace(@"""category"":""box""", @"""category"":""unknown""")));
+    }
+
+    [Fact]
     public void DimensionsHaveCategorySpecificLimitsAndRoomParserStillRequiresIntegers()
     {
         Assert.Null(AssetPackManifest.SizeIssue(TerrainCategories.Wall, "wall.glb", 0.85, 1.15));
