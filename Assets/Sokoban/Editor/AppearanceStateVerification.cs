@@ -44,7 +44,7 @@ namespace Sokoban.Editor
         {
             draft.Place(true, new Cell(3, 2), "box-qa");
             draft.Place(false, new Cell(4, 2), "target-qa");
-            draft.Commit(new AddRecoveryItemCommand(draft.Model, new RecoveryItem("recovery-qa", "warehouse-lift", RecoveryItem.DefaultDuration)));
+            VerificationFixtures.EnsureRecovery(draft);
         }
 
         static string StateOf(PuzzleRun run, string roomId, string objectId)
@@ -94,7 +94,7 @@ namespace Sokoban.Editor
         {
             draft.NewDefaultRoom();
             string theme = draft.Theme;
-            draft.Commit(new AddRecoveryItemCommand(draft.Model, new RecoveryItem("recovery-mixed", "warehouse-lift", RecoveryItem.DefaultDuration)));
+            VerificationFixtures.EnsureRecovery(draft);
             Restyle(draft, new Cell(1, 6), "FactoryWall");
             Restyle(draft, new Cell(2, 6), "ForestWall");
             Restyle(draft, new Cell(2, 4), "forestFloor", 1);
@@ -209,7 +209,8 @@ namespace Sokoban.Editor
             var boxCell = new Cell(3, 2);
             draft.Place(true, boxCell, "box-tree");
             draft.Place(false, new Cell(4, 2), "target-qa");
-            draft.Commit(new AddRecoveryItemCommand(draft.Model, new RecoveryItem("recovery-qa", "forest-decay", RecoveryItem.DefaultDuration)));
+            draft.PlaceRecoveryDevice(new RecoveryDevice("recovery-qa", RecoveryDeviceKind.Tree,
+                new Cell(-1, draft.Room.Height / 2), 1, "forest-decay", RecoveryItem.DefaultDuration), replaceExisting: true);
             draft.Select(boxCell);
             draft.SetStateTable(ObjectStateProfile.ForestTable());
             var run = PuzzleRun.FromDraft(draft);
