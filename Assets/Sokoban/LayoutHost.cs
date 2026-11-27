@@ -246,6 +246,15 @@ namespace Sokoban
                 yaw += Input.GetKeyDown(KeyCode.Q) ? -90 : 90;
                 UpdateCamera();
             }
+            int turns = Input.GetKeyDown(KeyCode.LeftBracket) ? -1 : Input.GetKeyDown(KeyCode.RightBracket) ? 1 : 0;
+            if (turns != 0 && !(UnityEngine.EventSystems.EventSystem.current && UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject && UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject.GetComponent<UnityEngine.UI.InputField>()))
+            {
+                var draft = Panel.Draft;
+                if (draft.Tool == RoomTool.Select && !draft.SelectedCell.HasValue && draft.Model.RecoveryDevice != null)
+                    Panel.Run(() => draft.RotateRecoveryDevice(turns), "已旋转恢复装置");
+                else if (draft.Tool == RoomTool.Select) Panel.Run(() => draft.RotateSelection(turns), "已旋转所选内容");
+                else if (draft.Tool != RoomTool.Move && draft.Tool != RoomTool.Erase) draft.RotateBrush(turns);
+            }
             if (Input.GetKeyDown(KeyCode.Escape)) { rectangleStart=null; Panel.CancelTool(); gesture = -1; }
             if (hovering && Input.mouseScrollDelta.y != 0)
             {
