@@ -1,6 +1,9 @@
 /**
  * @file AssetPackVerification.cs
- * @brief Run 导入原型素材包并逐项实测，写出分类与拒绝报告，验证笔划、旋转、高度、撤销与文件重开。
+ * @brief 导入原型素材包并逐项实测，验证素材登记、共享笔刷与背景贴图。
+ * Run()：导入素材包并验证笔划、旋转、高度、撤销与文件重开。
+ * VerifyBackdrops()：从指定清单导入全部素材，实例化三套背景并检查渲染材质有有效贴图。
+ * Check(condition, message)：把断言记录到 Unity 日志，失败时抛出异常。
  */
 using System;
 using System.IO;
@@ -49,6 +52,41 @@ namespace Sokoban.Editor
                 draft.Open(path, false);
                 Check(expected.Equals(draft.Room.AppearanceAt(cell)) && draft.Room.TerrainAt(cell).Rotation == 1
                     && draft.AssetDefinition(expected.Id).HeightOffset == 0.125f && draft.PackParts().Count() == registered, "重开保留分类、变体、旋转和高度");
+                EditorApplication.Exit(0);
+            }
+            catch (Exception error)
+            {
+                Debug.LogException(error);
+                EditorApplication.Exit(1);
+            }
+        }
+
+        public static async void VerifyBackdrops()
+        {
+            try
+            {
+                string source = Environment.GetEnvironmentVariable("SOKOBAN_ASSET_PACK_MANIFEST") ??
+                    "PlayTest3/assets/glb/ground-centered/manifest.json";
+                var parts = AssetPackManifest.Parse(File.ReadAllText(source));
+                var result = await AssetPackImporter.Import(source);
+                Check(result.Accepted.Count == parts.Count && result.Rejected.Count == 0,
+                    result.Summary + (result.Rejected.Count == 0 ? "" : " · " + string.Join(" · ", result.Rejected)));
+                foreach (string room in new[] { "depot", "foundry", "island-forest" })
+                {
+                    var backdrop = result.Accepted.Single(item => item.part.File.Replace('\\', '/') == "rooms/" + room + "/backdrop.glb");
+                    var stage = new GameObject("Backdrop check " + room) { hideFlags = HideFlags.HideAndDontSave };
+                    try
+                    {
+                        var appearance = stage.AddComponent<ImportedAppearance>();
+                        appearance.Apply(new[] { backdrop.asset }, backdrop.asset.Id);
+                        await appearance.Ready;
+                        Check(appearance.Error == null, room + " 背景模型可实例化");
+                        var materials = stage.GetComponentsInChildren<Renderer>(true).SelectMany(renderer => renderer.sharedMaterials);
+                        Check(materials.Any(material => material && material.mainTexture &&
+                            material.mainTexture.width > 1 && material.mainTexture.height > 1), room + " 背景材质有贴图");
+                    }
+                    finally { UnityEngine.Object.DestroyImmediate(stage); }
+                }
                 EditorApplication.Exit(0);
             }
             catch (Exception error)
