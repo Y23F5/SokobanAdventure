@@ -284,6 +284,10 @@ namespace Sokoban.Editor
             yield return null;
             labels = ui.assetEntries.GetComponentsInChildren<Text>().Select(text => text.text).ToArray();
             Check(labels.Contains("仓库木墙") && labels.Contains("工厂金属墙") && labels.Contains("森林青苔石墙"), "运行端墙壁分类展示三种独立模型");
+            var wallCard = ui.assetEntries.GetComponentsInChildren<Button>().First(button => button.GetComponentInChildren<Text>().text == "仓库木墙");
+            wallCard.onClick.Invoke();
+            yield return null;
+            Check(editor.Panel.Draft.Tool == RoomTool.Wall && editor.Panel.Draft.BrushAppearance != null, "点素材卡后工具切到画墙且画刷非空，不回到选择工具");
             ui.Act("选物件");
             yield return null;
             var other = ui.objectCards.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<Text>().text == "其他");
