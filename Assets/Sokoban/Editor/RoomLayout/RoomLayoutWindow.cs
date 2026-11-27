@@ -377,7 +377,7 @@ namespace Sokoban.Editor
                 themeButton.EnableInClassList("sl-active", draft.Theme == chosen);
                 themeButton.EnableInClassList("sl-primary", draft.Theme == chosen);
             }
-            AddButton(area, Panel.RecoveryLabel + (draft.Model.RecoveryItems.Count == 0 ? " · 添加预设" : ""), Panel.CycleRecovery);
+            Line(area, draft.Model.RecoveryDevice == null ? "恢复装置：缺少，请在素材库「其他」页放置" : "恢复装置：" + DeviceKinds.First(kindEntry => kindEntry.kind == draft.Model.RecoveryDevice.Kind).name + " · " + draft.Model.RecoveryDevice.Duration.ToString("0.0") + " 秒");
 
             if (!draft.SelectedCell.HasValue) return;
             Cell cell = draft.SelectedCell.Value;
@@ -514,7 +514,7 @@ namespace Sokoban.Editor
                 AddButton(area, "放置出口", () => UseTool(RoomTool.Exit));
                 var spawn = AddButton(area, ToolLabel(RoomTool.Spawn), () => UseTool(RoomTool.Spawn));
                 spawn.SetEnabled(PrimaryEntrance(draft) != null);
-                AddButton(area, Panel.RecoveryLabel + (draft.Model.RecoveryItems.Count == 0 ? " · 添加预设" : ""), Panel.CycleRecovery);
+                DrawRecoveryDevice(area, draft);
             }
 
             foreach (var item in draft.PaletteItems(tab))
@@ -593,6 +593,84 @@ namespace Sokoban.Editor
                     AddButton(area, "导入" + AppearanceLibrary.TypeName(category) + "模型",
                         () => Import("导入模型", ToolForCategory(category)));
             }
+        }
+
+        static readonly (RecoveryDeviceKind kind, string name, string script, string theme)[] DeviceKinds =
+        {
+            (RecoveryDeviceKind.Forklift, "叉车", "warehouse-lift", "warehouse"),
+            (RecoveryDeviceKind.Arm, "机械臂", "factory-belt", "factory"),
+            (RecoveryDeviceKind.Tree, "树木", "forest-decay", "forest")
+        };
+
+        static readonly (string name, int rotation)[] DeviceSides = { ("北侧", 2), ("东侧", 3), ("南侧", 0), ("西侧", 1) };
+
+        RecoveryDeviceKind deviceKind = RecoveryDeviceKind.Forklift;
+
+        void DrawRecoveryDevice(VisualElement area, RoomDraft draft)
+        {
+            Heading(area, "恢复装置");
+            var device = draft.Model.RecoveryDevice;
+            if (device != null) deviceKind = device.Kind;
+            Line(area, device == null ? "本房还没有恢复装置。先选类型，再选放在哪一侧。"
+                : DeviceKinds.First(entry => entry.kind == device.Kind).name + " · 墙外 " + device.Anchor + " · " + EntryName(device.Rotation));
+            var kinds = Row(area);
+            foreach (var entry in DeviceKinds)
+            {
+                var chosen = entry;
+                var button = AddButton(kinds, entry.name, () =>
+                {
+                    deviceKind = chosen.kind;
+                    if (device != null && device.Kind != chosen.kind) PlaceDevice(draft, device.Rotation);
+                    else DrawPalette(draft);
+                });
+                button.EnableInClassList("sl-active", deviceKind == entry.kind);
+                button.EnableInClassList("sl-primary", deviceKind == entry.kind);
+            }
+            var sides = Row(area);
+            foreach (var entry in DeviceSides)
+            {
+                int rotation = entry.rotation;
+                AddButton(sides, entry.name, () => PlaceDevice(draft, rotation)).tooltip = "把装置放在房间" + entry.name + "墙外正中，朝房内";
+            }
+            if (device == null) return;
+            var actions = Row(area);
+            AddButton(actions, "左转 90°", () => Panel.Run(() => draft.RotateRecoveryDevice(-1), "已旋转恢复装置")).tooltip = "快捷键 [";
+            AddButton(actions, "右转 90°", () => Panel.Run(() => draft.RotateRecoveryDevice(1), "已旋转恢复装置")).tooltip = "快捷键 ]";
+            AddButton(actions, "删除", () => Panel.Run(draft.DeleteRecoveryDevice, "已删除恢复装置")).AddToClassList("sl-exit");
+        }
+
+        static string EntryName(int rotation) => rotation switch { 0 => "向北进房", 1 => "向东进房", 2 => "向南进房", _ => "向西进房" };
+
+        void PlaceDevice(RoomDraft draft, int rotation)
+        {
+            var room = draft.Room;
+            var anchor = rotation switch
+            {
+                0 => new Cell(room.Width / 2, -1),
+                1 => new Cell(-1, room.Height / 2),
+                2 => new Cell(room.Width / 2, room.Height),
+                _ => new Cell(room.Width, room.Height / 2)
+            };
+            var existing = draft.Model.RecoveryDevice;
+            var kind = DeviceKinds.First(entry => entry.kind == deviceKind);
+            if (existing != null && existing.Kind == deviceKind)
+            {
+                Panel.Run(() =>
+                {
+                    draft.MoveRecoveryDevice(anchor);
+                    if (existing.Rotation != rotation) draft.RotateRecoveryDevice(rotation - existing.Rotation);
+                }, "已移动恢复装置");
+                return;
+            }
+            if (existing != null && !EditorUtility.DisplayDialog("替换恢复装置", "每个房间只能有一个恢复装置。用" + kind.name + "替换现有装置吗？", "替换", "取消"))
+                return;
+            var device = new RecoveryDevice(existing?.Id ?? "device-" + Guid.NewGuid().ToString("N").Substring(0, 8), kind.kind, anchor, rotation,
+                kind.script, existing?.Duration ?? 3.7f, existing?.Params, existing?.ItemName, existing?.ItemDescription, existing?.ItemAcquiredHint);
+            Panel.Run(() =>
+            {
+                draft.PlaceRecoveryDevice(device, existing != null);
+                if (draft.Theme != kind.theme) draft.SetTheme(kind.theme);
+            }, "已放置" + kind.name);
         }
 
         void ModelSize(VisualElement area, string id)
