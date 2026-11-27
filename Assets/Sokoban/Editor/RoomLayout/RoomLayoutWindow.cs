@@ -415,6 +415,7 @@ namespace Sokoban.Editor
                             (link.From.LevelId == draft.ActiveId && link.From.DoorId == door.Id) ||
                             (link.To.LevelId == draft.ActiveId && link.To.DoorId == door.Id)))
                             AddButton(area, Panel.ConnectionAction(link), () => Panel.ToggleConnection(link));
+                    DrawDoorLook(area, draft, door);
                 }
                 else if (item != null || decoration != null)
                 {
@@ -692,6 +693,49 @@ namespace Sokoban.Editor
                 draft.PlaceRecoveryDevice(device, existing != null);
                 if (draft.Theme != kind.theme) draft.SetTheme(kind.theme);
             }, "已放置" + kind.name);
+        }
+
+        void DrawDoorLook(VisualElement area, RoomDraft draft, DoorInfo door)
+        {
+            Heading(area, "门外观");
+            var look = draft.DoorLookOf(door.Id);
+            Line(area, "当前：" + look.Describe());
+            var modes = Row(area);
+            foreach (var entry in new[] { (mode: DoorMode.Clips, name: "动画"), (mode: DoorMode.TwoModels, name: "开关两个模型"), (mode: DoorMode.Visibility, name: "整门显隐") })
+            {
+                var chosen = entry.mode;
+                var button = AddButton(modes, entry.name, () => Panel.Run(() => draft.SetDoorLook(door.Id,
+                    new DoorLook(chosen, look.OpenClip, look.CloseClip, look.OpenModel, look.CloseModel)), "已更新门外观"));
+                button.EnableInClassList("sl-active", look.Mode == chosen);
+            }
+            if (look.Mode == DoorMode.Clips)
+            {
+                var open = new TextField("开门剪辑名") { value = look.OpenClip, isDelayed = true };
+                var close = new TextField("关门剪辑名") { value = look.CloseClip, isDelayed = true };
+                foreach (var field in new[] { open, close })
+                {
+                    field.RegisterValueChangedCallback(_ => Panel.Run(() => draft.SetDoorLook(door.Id,
+                        new DoorLook(DoorMode.Clips, open.value, close.value, look.OpenModel, look.CloseModel)), "已更新门动画"));
+                    area.Add(field);
+                }
+                Line(area, "导入的门模型需带这两段动画；没有时请改用「开关两个模型」或「整门显隐」。");
+            }
+            else if (look.Mode == DoorMode.TwoModels)
+            {
+                var ids = new List<string> { "" };
+                ids.AddRange(draft.Model.Assets.Where(asset => asset.Kind == AssetKinds.Model).Select(asset => asset.Id));
+                Func<string, string> label = id => string.IsNullOrEmpty(id) ? "（未选）" : (draft.AssetDefinition(id)?.Name ?? id);
+                var openPick = new PopupField<string>("开启姿态模型", ids, Math.Max(0, ids.IndexOf(look.OpenModel ?? "")), label, label);
+                var closePick = new PopupField<string>("关闭姿态模型", ids, Math.Max(0, ids.IndexOf(look.CloseModel ?? "")), label, label);
+                foreach (var pick in new[] { openPick, closePick })
+                {
+                    pick.RegisterValueChangedCallback(_ => Panel.Run(() => draft.SetDoorLook(door.Id,
+                        new DoorLook(DoorMode.TwoModels, look.OpenClip, look.CloseClip,
+                            string.IsNullOrEmpty(openPick.value) ? null : openPick.value,
+                            string.IsNullOrEmpty(closePick.value) ? null : closePick.value)), "已更新门模型"));
+                    area.Add(pick);
+                }
+            }
         }
 
         void ModelSize(VisualElement area, string id)
