@@ -2,9 +2,7 @@
  * @file DataGenerationTests.cs
  * @brief 数据生成测试：用关卡图纸转换器重新生成正式房间、世界文件与默认房间，只有环境变量 SOKOBAN_GENERATE=1 时才真正写文件，否则直接通过。
  * GenerateData：转换仓库、工厂及正式森林的 13×8 图纸并设置名称、主题和恢复道具；对三房执行发布级结构校验，写出房间、世界及默认房间，同步文档样例和传送测试样例，最后逐个读回核对。
- * Build：图纸转房间草稿，按格子重命名门 ID，主入口取第一个 entry 门，恢复道具由 Items 给出。
- * Items：先用 RecoveryMapping.FromPresentation 取恢复道具；森林房内有可开合地形时，藤门参数以该格坐标与通道朝向替换。
- * FindOpenable、GateParams：定位第一个可开合地形格，藤门 gateX、gateZ 取该格坐标，yaw 取通道一侧朝向的角度，通道轴向由左右或上下两侧是否为地板判定。
+ * Build：图纸转房间草稿，按格子重命名门 ID，主入口取第一个 entry 门，配置主题对应的恢复装置。
  * Root、Put：定位仓库根目录，以无 BOM 的 UTF-8 写文件。
  */
 using System;
@@ -99,43 +97,6 @@ namespace Sokoban.Core.Tests
             File.WriteAllText(path, text, new UTF8Encoding(false));
         }
 
-        static Cell? FindOpenable(Room room)
-        {
-            for (int y = 0; y < room.Height; y++)
-                for (int x = 0; x < room.Width; x++)
-                    if (room.TerrainAt(new Cell(x, y)).CategoryId == TerrainCategories.Openable) return new Cell(x, y);
-            return null;
-        }
-
-        static Dictionary<string, float> GateParams(Room room, Cell gate)
-        {
-            bool Open(Cell c) => room.TerrainAt(c).CategoryId == TerrainCategories.Floor;
-            Cell inward;
-            if (Open(gate + Cell.Left) && Open(gate + Cell.Right)) inward = Cell.Left;
-            else if (Open(gate + Cell.Up) && Open(gate + Cell.Down)) inward = Cell.Down;
-            else throw new InvalidOperationException("可开合地形格 " + gate + " 两侧都不是地板");
-            return new Dictionary<string, float>(StringComparer.Ordinal)
-            {
-                ["gateX"] = gate.X,
-                ["gateZ"] = gate.Y,
-                ["yaw"] = (float)(Math.Atan2(inward.X, inward.Y) * 180.0 / Math.PI),
-            };
-        }
-
-        static List<RecoveryItem> Items(string preset, RoomDraftModel bare)
-        {
-            var items = RecoveryMapping.FromPresentation(preset, bare).ToList();
-            var gate = FindOpenable(bare.Room);
-            if (preset == "forest" && gate.HasValue)
-            {
-                int index = items.FindIndex(x => x.ScriptRef == "forest-vine");
-                string id = index >= 0 ? items[index].Id : "recovery-" + (items.Count + 1);
-                var vine = new RecoveryItem(id, "forest-vine", RecoveryItem.DefaultDuration, GateParams(bare.Room, gate.Value));
-                if (index >= 0) items[index] = vine; else items.Add(vine);
-            }
-            return items;
-        }
-
         static RoomDraftModel Build(string id, string name, string[] rows, Dictionary<Cell, string> doorIds = null)
         {
             var parsed = Blueprint.Parse(id, rows);
@@ -148,19 +109,17 @@ namespace Sokoban.Core.Tests
                 doors.Add(new DoorInfo(doorId, d.Cell, d.Outward, d.Role));
             }
             string primary = doors.First(d => d.Role == "entry").Id;
-            var bare = new RoomDraftModel(parsed.Room, doors, primary);
-            var draft = new RoomDraftModel(parsed.Room, doors, primary, null, Items(id, bare));
+            var draft = new RoomDraftModel(parsed.Room, doors, primary);
             var room = draft.Room;
-            var item = draft.RecoveryItems[0];
-            var (kind, anchor, rotation) = id switch
+            var (kind, anchor, rotation, script, description) = id switch
             {
-                "warehouse" => (RecoveryDeviceKind.Forklift, new Cell(room.Width, room.Height / 2), 3),
-                "factory" => (RecoveryDeviceKind.Arm, new Cell(-1, room.Height / 2), 1),
-                "forest" => (RecoveryDeviceKind.Tree, new Cell(room.Width / 2, -1), 0),
+                "warehouse" => (RecoveryDeviceKind.Forklift, new Cell(room.Width, room.Height / 2), 3, "warehouse-lift", "启动叉车，将箱子运回原位。"),
+                "factory" => (RecoveryDeviceKind.Arm, new Cell(-1, room.Height / 2), 1, "factory-belt", "启动机械臂与输送带，将箱子送回原位。"),
+                "forest" => (RecoveryDeviceKind.Tree, new Cell(room.Width / 2, -1), 0, "forest-decay", "让箱子再生于原位，并暂时打开藤门。"),
                 _ => throw new ArgumentOutOfRangeException(nameof(id)),
             };
             draft.ReplaceRecoveryDevice(new RecoveryDevice("recovery-device", kind, anchor, rotation,
-                item.ScriptRef, item.Duration, item.Params, name + "恢复道具", itemAcquiredHint: "按 R 启动本房恢复装置。"));
+                script, RecoveryItem.DefaultDuration, itemName: name + "恢复道具", itemDescription: description, itemAcquiredHint: "按 R 启动本房恢复装置。"));
             draft.Meta = new RoomMeta(name, id);
             return draft;
         }

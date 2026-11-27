@@ -4,7 +4,6 @@
  * RoomProgress(room, origin)：按房间初始布局建立恢复会话，箱位以房内坐标按箱 ID 保存。
  * Boxes：会话里的当前箱位，推动与恢复都直接改它。Solved：经 PushRules.Solved 判定当前箱位是否解开。
  * RecordSolved()：当前已解开时记入 EverSolved，恢复不清除该记录。
- * Item：房间的第一个恢复道具，没有时为空。
  * Rebuild(player)：以当前箱位与给定玩家格重建恢复会话，供开始恢复与读档重建使用。
  */
 using System.Collections.Generic;
@@ -33,7 +32,6 @@ namespace Sokoban
 
         internal Dictionary<string, Cell> Boxes => Session.Boxes;
         internal bool Solved => PushRules.Solved(Validated.Room, Session.Boxes);
-        internal RecoveryItem Item => Validated.RecoveryItems.FirstOrDefault();
         internal void RecordSolved() { if (Solved) EverSolved = true; }
         internal RecoverySession Rebuild(Cell player)
         {

@@ -2,9 +2,9 @@
  * @file PuzzleTravel.cs
  * @brief 探索、道具背包、跨房与恢复的会话接口，规则全部委托 Core。
  * Enter()：首次入房记入探索集合并发放该房的恢复道具，探索集合与道具背包是两份数据。
- * CycleItem、AcceptItem、ItemRoomName：滚轮切换（恢复期间忽略）、确认全屏通知、按道具 ID 查所属房间的显示名。
+ * CycleItem、AcceptItem、ItemName：滚轮切换（恢复期间忽略）、确认全屏通知、按房间 ID 查装置配置的道具名称。
  * Route、Allowed、CanApproach、CrossDoor：按门身份寻找正反方向连接，检查放行条件，全部通过后才提交跨房。
- * BeginRecovery()：选中项必须是本房恢复道具且未处于恢复中，时长取该道具的 Duration，由 RecoverySession.Start 计算占用区并移位玩家。
+ * BeginRecovery()：启动当前房间的恢复装置，时长取装置的 Duration，由 RecoverySession.Start 计算占用区并移位玩家。
  * AdvanceRecovery(seconds)：由 RecoverySession.Advance 推进，完成时箱子一次性归位，玩家已按完成时刻的禁入集移位，返回本次是否完成。
  * RecoveryMoves、RecoveryGates：给表现层的恢复任务描述，需要归位的箱子与默认外观的可开合地形格。
  * Fire(roomId, trigger, only)：执行对象状态转换，再将非交互事件交给已接入的行为图执行方。
@@ -43,23 +43,25 @@ namespace Sokoban
         public float RecoveryRemaining => Current.Session.Remaining;
         public float RecoveryDuration => Current.Session.Duration;
         public float RecoveryFraction => Recovering ? 1 - Current.Session.Remaining / Current.Session.Duration : 0;
-        public RecoveryItem ActiveItem => Current.Validated.RecoveryItems.FirstOrDefault(i => i.Id == bag.Selected);
-        internal RecoveryItem RunningRecoveryItem { get; private set; }
+        internal RecoveryDevice RunningRecoveryDevice => Recovering ? Current.Validated.RecoveryDevice : null;
         public bool Visited(string roomId) => exploration.Contains(roomId);
         public void AcceptItem() => bag.Accept();
         public void CycleItem(int delta) { if (!Recovering) bag.Cycle(delta); }
 
-        public string ItemRoomName(string itemId)
+        public RecoveryDevice InventoryDevice(string roomId) =>
+            roomId != null && states.TryGetValue(roomId, out var state) ? state.Validated.RecoveryDevice : null;
+
+        public string ItemName(string roomId)
         {
-            var room = states.Values.Select(s => s.Validated).FirstOrDefault(r => r.RecoveryItems.Any(i => i.Id == itemId));
-            return room?.Meta.Name ?? itemId;
+            if (roomId == null || !states.TryGetValue(roomId, out var state)) return "";
+            var device = state.Validated.RecoveryDevice;
+            return string.IsNullOrWhiteSpace(device.ItemName) ? state.Validated.Meta.Name + "恢复装置" : device.ItemName;
         }
 
         void Enter()
         {
             if (!exploration.Visit(ActiveId)) return;
-            var item = Current.Item;
-            if (item != null) bag.Grant(item.Id);
+            bag.Grant(ActiveId);
         }
 
         DoorLink Route(DoorInfo door)
@@ -134,22 +136,9 @@ namespace Sokoban
 
         public bool BeginRecovery()
         {
-            return BeginRecovery(ActiveItem);
-        }
-
-        internal bool BeginScriptedRecovery(string id)
-        {
-            var items = Current.Validated.RecoveryItems;
-            var item = string.IsNullOrWhiteSpace(id) ? items.FirstOrDefault() : items.FirstOrDefault(i => i.Id == id);
-            return BeginRecovery(item);
-        }
-
-        bool BeginRecovery(RecoveryItem item)
-        {
-            if (item == null || Recovering || Motion != null) return false;
+            if (Recovering || Motion != null) return false;
             var session = Current.Rebuild(local);
-            session.Start(item.Duration);
-            RunningRecoveryItem = item;
+            session.Start(Current.Validated.RecoveryDevice.Duration);
             local = session.Player;
             Fire(ActiveId, TriggerIds.RecoveryStart);
             return true;
@@ -161,7 +150,6 @@ namespace Sokoban
             if (!session.Recovering) return false;
             session.Place(local);
             if (!session.Advance(seconds)) return false;
-            RunningRecoveryItem = null;
             session.RetryGateClosures(true);
             local = session.Player;
             Current.RecordSolved();

@@ -34,11 +34,13 @@ namespace Sokoban.Core.Tests
         }
 
         [Fact]
-        public void HashCoversRecoveryItemAndGraphs()
+        public void HashCoversRecoveryDeviceAndGraphs()
         {
             var a = Good();
+            var device = new RecoveryDevice("device", RecoveryDeviceKind.Forklift, new Cell(-1, 2), 1, "warehouse-lift", 3.7f);
+            a.ReplaceRecoveryDevice(device);
             var before = ContentHash.Of(a);
-            new SetRecoveryDurationCommand(a, "recovery-1", 5f).Apply();
+            RecoveryDeviceCommands.SetDetails(new DraftHolder(a), 5f, null, null, null).Apply();
             var afterDuration = ContentHash.Of(a);
             Assert.NotEqual(before, afterDuration);
             a.Graphs.Add(new BehaviorGraph("g", null, new[] { new BehaviorNode("n", BehaviorNodeKinds.RoomSolved, new Cell(1, 1)) }, null));
@@ -60,7 +62,7 @@ namespace Sokoban.Core.Tests
             data.ObjectStates["r"] = new Dictionary<string, string> { ["box-1"] = "decayed" };
             data.Presentation = new PresentationSegment
             {
-                RecoveryT = 0.25f, RecoveryDuration = 3.7f, Heading = 90f, MotionKind = "push",
+                RecoveryT = 0.25f, RecoveryDuration = 3.7f, RecoveryDeviceId = "device", Heading = 90f, MotionKind = "push",
                 MotionFraction = 0.5f, MotionDelta = Cell.Right, MotionPushed = true
             };
             var load = SaveCodec.Decode(SaveCodec.Encode(data), "w", data.Hashes);
@@ -74,6 +76,7 @@ namespace Sokoban.Core.Tests
             Assert.Equal("decayed", back.ObjectStates["r"]["box-1"]);
             Assert.Equal(0.25f, back.Presentation.RecoveryT, 3);
             Assert.Equal(3.7f, back.Presentation.RecoveryDuration, 3);
+            Assert.Equal("device", back.Presentation.RecoveryDeviceId);
             Assert.Equal(90f, back.Presentation.Heading, 3);
             Assert.Equal("push", back.Presentation.MotionKind);
             Assert.Equal(0.5f, back.Presentation.MotionFraction, 3);
@@ -176,7 +179,7 @@ namespace Sokoban.Core.Tests
             Assert.Equal(ObjectCategories.Spawn, v.Spawn.CategoryId);
             Assert.Equal("entry", v.PrimaryEntrance.Id);
             Assert.Equal(new Cell(1, 3), v.EntryBuffer);
-            Assert.Single(v.RecoveryItems);
+            Assert.Same(draft.RecoveryDevice, v.RecoveryDevice);
         }
 
         [Fact]

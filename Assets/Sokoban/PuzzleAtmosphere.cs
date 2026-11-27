@@ -132,11 +132,13 @@ namespace Sokoban
             foreach (var group in groups)
                 CameraRig.ClipWalls(group.Value, Run.Rooms[group.Key].Room, viewMask);
         }
-        string ItemName => Run.SelectedItem == null ? "" : Run.ItemRoomName(Run.SelectedItem) + "恢复装置";
         void ShowInventory()
         {
-            panels.itemLabel.text = ItemName + (Run.Recovering ? "　归位中" : "　滚轮切换 · R 使用");
-            if (Run.PendingItem != null) panels.ShowDiscovery("获得「" + ItemName + "」\n\n在本房按 R，使箱子回到预设位置。\n滚轮切换已获得的装置，已完成的探索会保留。");
+            panels.itemLabel.text = Run.ItemName(Run.SelectedItem) + (Run.Recovering ? "　归位中" : "　滚轮切换 · R 启动本房装置");
+            if (Run.PendingItem == null) return;
+            var device = Run.InventoryDevice(Run.PendingItem);
+            var details = string.Join("\n", new[] { device.ItemDescription, device.ItemAcquiredHint }.Where(text => !string.IsNullOrWhiteSpace(text)));
+            panels.ShowDiscovery("获得「" + Run.ItemName(Run.PendingItem) + "」\n\n" + details);
         }
         public void AcceptDiscovery() { Run.AcceptItem(); Persist(); ShowEntryHint(); }
         void TickRecovery(float seconds)

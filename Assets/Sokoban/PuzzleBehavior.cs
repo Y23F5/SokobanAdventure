@@ -110,7 +110,7 @@ namespace Sokoban
                                 message = ObjectBehavior.Parameter(node, "text");
                                 break;
                             case BehaviorNodeKinds.StartRecovery:
-                                Run.BeginScriptedRecovery(ObjectBehavior.Parameter(node, "recovery"));
+                                if (pending.roomId == Run.ActiveId) Run.BeginRecovery();
                                 break;
                             case BehaviorNodeKinds.SetVisible:
                                 if (target != null)

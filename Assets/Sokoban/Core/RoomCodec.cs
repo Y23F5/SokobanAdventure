@@ -182,7 +182,6 @@ namespace Sokoban.Core
                 ["objects"] = objects,
                 ["doors"] = doors,
                 ["primaryEntranceId"] = draft.PrimaryEntranceId,
-                ["recovery"] = items,
                 ["decorations"] = decorations,
                 ["assets"] = assets,
                 ["graphs"] = graphs,
@@ -191,6 +190,7 @@ namespace Sokoban.Core
                 ["objectStates"] = objectStates,
                 ["uiImage"] = draft.UiImageAssetId,
             };
+            if (items.Count > 0) root["recovery"] = items;
             if (draft.RecoveryDevice != null) root["recoveryDevice"] = DeviceOut(draft.RecoveryDevice);
             if (draft.Meta.Description.Length > 0) root["description"] = draft.Meta.Description;
             if (draft.Meta.EntryHint.Length > 0) root["entryHint"] = draft.Meta.EntryHint;
@@ -339,7 +339,7 @@ namespace Sokoban.Core
             }
 
             var recovery = new List<RecoveryItem>();
-            foreach (var item in Arr(root, "recovery"))
+            foreach (var item in root.ContainsKey("recovery") ? Arr(root, "recovery") : new List<object>())
             {
                 var rec = Obj(item, "恢复道具记录");
                 string id = Str(rec, "id");

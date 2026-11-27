@@ -1,8 +1,8 @@
 /**
  * @file WS06BehaviorVerification.cs
  * @brief Run 用 Core.BehaviorGraph 构造两面内墙的夹具，绑定、保存并重开，断言身份、图的所有者、连线与实际触发结果；Tick 逐帧推进 Play 模式检查。
- * Fixture：放两列内墙，使图的主体和对照墙在默认镜头中可见，再放入箱子、目标及恢复道具。
- * RecoverySelection：用相同时长的两个道具验证脚本启动、存档读回与旧档选项，用短时道具验证临近结束的恢复能续播。
+ * Fixture：放两列内墙，使图的主体和对照墙在默认镜头中可见，再放入箱子和目标。
+ * RecoverySelection：验证当前房间装置启动、存档读回和临近结束的恢复续播。
  * Edges：把图内局部 ID 解析为 节点类型.端口 的语义连线。
  * NonInteractGraphs(draft, subject)：给真实试玩夹具绑定首次推动、解题、恢复开始和结束的可视及 Lua 动作。
  * StepsTo(run, goal)：按地板与当前箱位搜索一个无需推箱的测试路线。
@@ -45,7 +45,6 @@ namespace Sokoban.Editor
                 "constructed two interior wall fronts with solid cells behind them");
             draft.Place(true, new Cell(3, 2), "box-a");
             draft.Place(false, new Cell(4, 2), "target-a");
-            draft.Commit(new AddRecoveryItemCommand(draft.Model, new RecoveryItem("recovery-1", "warehouse-lift", RecoveryItem.DefaultDuration)));
         }
 
         static void RecoverySelection()
@@ -53,37 +52,27 @@ namespace Sokoban.Editor
             var draft = new LayoutPanel().Draft;
             var cell = new Cell(3, 3);
             Fixture(draft, cell, new Cell(4, 3));
-            draft.Commit(new AddRecoveryItemCommand(draft.Model, new RecoveryItem("recovery-2", "factory-belt", RecoveryItem.DefaultDuration)));
-            draft.Commit(new AddRecoveryItemCommand(draft.Model, new RecoveryItem("recovery-short", "warehouse-lift", .4f)));
+            var device = draft.Model.RecoveryDevice;
+            RecoveryDeviceCommands.SetDetails(new DraftHolder(draft.Model), .4f, device.ItemName,
+                device.ItemDescription, device.ItemAcquiredHint).Apply();
             var run = PuzzleRun.FromDraft(draft);
             var initial = run.Snapshot();
-            initial.Items.Clear();
-            initial.Items.Add("recovery-1");
-            initial.SelectedItem = "recovery-1";
-            initial.PendingItem = null;
-            run.Restore(initial);
-            var begin = typeof(PuzzleRun).GetMethod("BeginScriptedRecovery", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            Check((bool)begin.Invoke(run, new object[] { "recovery-2" }), "script starts the second recovery item");
-            run.AdvanceRecovery(1f);
-            var active = run.Snapshot();
-            var saved = SaveCodec.Decode(SaveCodec.Encode(active), active.WorldId, active.Hashes);
-            Check(saved.Status == SaveStatus.Ok && saved.Data.Presentation.RecoveryItemId == "recovery-2", "save records the scripted item with the same duration as the bag selection");
-            var restored = PuzzleRun.FromDraft(draft);
-            restored.Restore(saved.Data);
-            Check(restored.Recovering && restored.ActiveItem.Id == "recovery-1" && restored.Snapshot().Presentation.RecoveryItemId == "recovery-2", "restore keeps the scripted item distinct from the bag selection");
-            saved.Data.Presentation.RecoveryItemId = null;
-            restored.Restore(saved.Data);
-            Check(restored.Snapshot().Presentation.RecoveryItemId == "recovery-1", "legacy save uses the bag selection when durations match");
-            Check(restored.AdvanceRecovery(10f) && restored.Snapshot().Presentation.RecoveryItemId == null, "completion clears the saved recovery item");
-            Check((bool)begin.Invoke(restored, new object[] { "recovery-short" }) && !restored.AdvanceRecovery(.39996f),
+            Check(initial.Items.SequenceEqual(new[] { run.ActiveId }) && initial.SelectedItem == run.ActiveId,
+                "inventory identifies the visited room");
+            Check(run.BeginRecovery() && !run.BeginRecovery(), "current room device starts once");
+            Check(!run.AdvanceRecovery(.39996f),
                 "a short recovery remains active just before its end");
-            var almostDone = restored.Snapshot();
+            var almostDone = run.Snapshot();
             var replay = SaveCodec.Decode(SaveCodec.Encode(almostDone), almostDone.WorldId, almostDone.Hashes);
-            Check(replay.Status == SaveStatus.Ok && replay.Data.Presentation.RecoveryT == .999f,
+            Check(replay.Status == SaveStatus.Ok && replay.Data.Presentation.RecoveryDeviceId == device.Id
+                && replay.Data.Presentation.RecoveryT == .999f,
                 "unfinished short recovery saves without rounding to completion");
+            var restored = PuzzleRun.FromDraft(draft);
             restored.Restore(replay.Data);
-            Check(restored.Recovering && restored.Snapshot().Presentation.RecoveryItemId == "recovery-short"
+            Check(restored.Recovering && restored.Snapshot().Presentation.RecoveryDeviceId == device.Id
                 && restored.AdvanceRecovery(.01f), "read back the short recovery and complete it once");
+            Check(restored.Snapshot().Presentation.RecoveryDeviceId == null && !restored.AdvanceRecovery(1f),
+                "completion clears the saved device and cannot complete twice");
         }
 
         static void NonInteractGraphs(RoomDraft draft, Cell subject)
@@ -265,7 +254,7 @@ namespace Sokoban.Editor
             editor.Panel.Draft.Open(path, false);
             var trigger = ObjectBehavior.Node(TriggerIds.RoomSolved, null, "solved");
             var recoveryStart = ObjectBehavior.Node(TriggerIds.RecoveryStart, null, "started");
-            var recovery = ObjectBehavior.Node(BehaviorNodeKinds.StartRecovery, new Dictionary<string, string> { ["recovery"] = "recovery-1" }, "recover");
+            var recovery = ObjectBehavior.Node(BehaviorNodeKinds.StartRecovery, new Dictionary<string, string> { ["recovery"] = "ignored-legacy-item" }, "recover");
             editor.Panel.Draft.SetBehavior(new Cell(4, 3), new BehaviorGraph("solve-recovery", null,
                 new[] { trigger, recoveryStart, recovery }, new[] { new BehaviorEdge("solved", "out", "recover", "in"),
                     new BehaviorEdge("started", "out", "recover", "in") }));

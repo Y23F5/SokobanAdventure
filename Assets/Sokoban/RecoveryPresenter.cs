@@ -50,33 +50,27 @@ namespace Sokoban
 
         internal void Sample(PuzzleRun run, Transform group, Func<string, Transform> boxOf, float t)
         {
-            var item = run.RunningRecoveryItem;
-            if (item == null) return;
-            var method = Method(item.ScriptRef);
-            var model = run.Models[run.ActiveId];
-            var device = model.RecoveryDevice;
+            var device = run.RunningRecoveryDevice;
+            if (device == null) return;
+            var method = Method(device.ScriptRef);
             var moves = run.RecoveryMoves();
-            bool warehouse = item.ScriptRef == WarehouseScript;
-            bool factory = item.ScriptRef == FactoryScript;
+            bool warehouse = device.ScriptRef == WarehouseScript;
+            bool factory = device.ScriptRef == FactoryScript;
             if ((warehouse || factory) && moves.Count > 0)
             {
-                if (device != null) HideParked(group.Find(device.Id));
-                var origin = device ?? new RecoveryDevice(item.Id,
-                    warehouse ? RecoveryDeviceKind.Forklift : RecoveryDeviceKind.Arm,
-                    new Cell(warehouse ? model.Room.Width : -1, model.Room.Height / 2),
-                    warehouse ? 3 : 1, item.ScriptRef, item.Duration);
-                SampleDevice(run, group, boxOf, method, origin, moves, t);
+                HideParked(group.Find(device.Id));
+                SampleDevice(run, group, boxOf, method, device, moves, t);
             }
             else
             {
                 foreach (var move in moves)
                 {
                     var ctx = new RecoveryContext(run.ActiveId, move.BoxId, RecoveryRules.Route(move.From, move.Home),
-                        run.RecoveryDuration, item.Params, device);
+                        run.RecoveryDuration, device.Params, device);
                     Play(method, ctx, move.BoxId, boxOf(move.BoxId), group, t);
                 }
             }
-            if (item.ScriptRef == ForestScript && device?.Kind == RecoveryDeviceKind.Tree)
+            if (device.ScriptRef == ForestScript && device.Kind == RecoveryDeviceKind.Tree)
             {
                 HideParked(group.Find(device.Id));
                 var context = new RecoveryContext(run.ActiveId, device.Id, new[] { device.Anchor }, run.RecoveryDuration,
@@ -117,7 +111,7 @@ namespace Sokoban
             var current = moves[active];
             var inward = RecoveryDeviceRules.WallInward(run.Room.Room, device.Anchor);
             var context = new RecoveryContext(run.ActiveId, current.BoxId, RecoveryRules.Route(current.From, current.Home),
-                run.RecoveryDuration / moves.Count, run.RunningRecoveryItem.Params, device, inward);
+                run.RecoveryDuration / moves.Count, device.Params, device, inward);
             Play(method, context, device.Id, boxOf(current.BoxId), group, progress - active);
         }
 

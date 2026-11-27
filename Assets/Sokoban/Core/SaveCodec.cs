@@ -4,7 +4,7 @@
  * SaveData：格式号、世界 ID、当前房间 ID、玩家的房内格及可选朝向、各房箱位（房内坐标，按箱 ID）、各房内容哈希；
  * 另含探索集合 Explored、道具背包 Items、SelectedItem、PendingItem（与探索集合是两份独立数据）、各房已解开过记录 EverSolved、对象状态 ObjectStates（房间到对象 ID 到状态）与演出段 Presentation。
  * PushedSinceRecovery、ObjectVisibility：保存各房首次推动记录与行为图可见性覆盖。
- * PresentationSegment：演出段，存恢复进度 RecoveryT 与 RecoveryDuration、可选恢复项 RecoveryItemId、镜头朝向 Heading、进行中的移动种类 MotionKind、进度 MotionFraction、位移 MotionDelta 与是否推箱 MotionPushed，不进入规则层。
+ * PresentationSegment：演出段，存恢复进度 RecoveryT 与 RecoveryDuration、恢复装置 RecoveryDeviceId、镜头朝向 Heading、进行中的移动种类 MotionKind、进度 MotionFraction、位移 MotionDelta 与是否推箱 MotionPushed，不进入规则层。
  * ContentHash.Of(draft)：只覆盖玩法字段（地形类别网格、对象的 ID 类别与格子含目标、恢复道具的脚本引用时长与参数、行为图含对象模板内的图），不含外观、显示名与装饰，先规范化排序再取 SHA-256。
  * SaveStatus：Ok、NoSave、Corrupt、Incompatible 四种读档结果。
  * SaveLoad：读档结果状态与数据；Incompatible 与 Corrupt 带原因文字。
@@ -27,7 +27,7 @@ namespace Sokoban.Core
     {
         public float RecoveryT { get; set; }
         public float RecoveryDuration { get; set; }
-        public string RecoveryItemId { get; set; }
+        public string RecoveryDeviceId { get; set; }
         public float Heading { get; set; }
         public string MotionKind { get; set; } = "none";
         public float MotionFraction { get; set; }
@@ -90,9 +90,11 @@ namespace Sokoban.Core
             foreach (var o in room.Objects.OrderBy(o => o.Id, StringComparer.Ordinal))
                 sb.Append(o.Id).Append(':').Append(o.CategoryId).Append('@').Append(o.Cell.X).Append(',').Append(o.Cell.Y).Append(';');
             sb.Append('\n');
-            foreach (var item in draft.RecoveryItems.OrderBy(i => i.Id, StringComparer.Ordinal))
+            var item = draft.RecoveryDevice;
+            if (item != null)
             {
-                sb.Append(item.Id).Append('|').Append(item.ScriptRef).Append('|').Append(Milli(item.Duration));
+                sb.Append(item.Id).Append('|').Append(item.Kind).Append('|').Append(item.Anchor.X).Append(',')
+                    .Append(item.Anchor.Y).Append('|').Append(item.Rotation).Append('|').Append(item.ScriptRef).Append('|').Append(Milli(item.Duration));
                 foreach (var p in item.Params.OrderBy(p => p.Key, StringComparer.Ordinal)) sb.Append('|').Append(p.Key).Append('=').Append(Milli(p.Value));
                 sb.Append(';');
             }
@@ -170,7 +172,7 @@ namespace Sokoban.Core
                 ["motionPushed"] = p.MotionPushed,
             };
             if (p.MotionKind == "move" && p.MotionMessage != null) presentation["motionMessage"] = p.MotionMessage;
-            if (p.RecoveryItemId != null) presentation["recoveryItemId"] = p.RecoveryItemId;
+            if (p.RecoveryDeviceId != null) presentation["recoveryDeviceId"] = p.RecoveryDeviceId;
             var root = new Dictionary<string, object>
             {
                 ["formatVersion"] = (long)data.FormatVersion,
@@ -325,7 +327,7 @@ namespace Sokoban.Core
             {
                 RecoveryT = ReadProgress(p, "recoveryT"),
                 RecoveryDuration = Float(p, "recoveryDuration"),
-                RecoveryItemId = Str(p, "recoveryItemId"),
+                RecoveryDeviceId = Str(p, "recoveryDeviceId"),
                 Heading = Float(p, "heading"),
                 MotionKind = Str(p, "motionKind") ?? throw new FormatException("缺少 motionKind"),
                 MotionFraction = ReadProgress(p, "motionFraction"),
@@ -333,8 +335,8 @@ namespace Sokoban.Core
                 MotionPushed = Flag(p, "motionPushed"),
                 MotionMessage = p.ContainsKey("motionMessage") ? Str(p, "motionMessage") ?? throw new FormatException("动作文字无效") : null,
             };
-            if (p.ContainsKey("recoveryItemId") && (string.IsNullOrWhiteSpace(presentation.RecoveryItemId) || presentation.RecoveryDuration <= 0))
-                throw new FormatException("恢复项记录无效");
+            if (p.ContainsKey("recoveryDeviceId") && (string.IsNullOrWhiteSpace(presentation.RecoveryDeviceId) || presentation.RecoveryDuration <= 0))
+                throw new FormatException("恢复装置记录无效");
             if (presentation.RecoveryDuration < 0 || presentation.RecoveryDuration == 0 && presentation.RecoveryT != 0)
                 throw new FormatException("恢复进度无效");
             data.Presentation = presentation;

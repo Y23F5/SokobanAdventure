@@ -3,8 +3,8 @@
  * @brief 房间名称与主题、墙外装饰，以及通过发布级校验后生成的只读房间视图。
  * RoomMeta 保存显示名称、主题和房间说明及提示。WithIdentity 改名或改主题时保留说明和提示。
  * Decoration(id, cell, appearance, rotation)：带旋转档位的墙外装饰，坐标允许超出房间矩形，不占房内格，不参与任何规则。
- * ValidatedRoom：发布级校验通过后生成的不可变视图，出生点、主入口、入口缓冲格、恢复道具均为非空，规则层运行时只接收它。
- * ValidatedRoom.From(draft, meta)：先对草稿跑发布级校验，存在错误时抛 InvalidOperationException，消息逐条列出规则 ID 与定位；通过后取唯一出生点、主入口门、入口缓冲格（门格减外侧偏移）、门列表与恢复道具生成视图，meta 为空时取草稿自带的 Meta。
+ * ValidatedRoom：发布级校验通过后生成的不可变视图，出生点、主入口、入口缓冲格、恢复装置均为非空，规则层运行时只接收它。
+ * ValidatedRoom.From(draft, meta)：先对草稿跑发布级校验，存在错误时抛 InvalidOperationException，消息逐条列出规则 ID 与定位；通过后取唯一出生点、主入口门、入口缓冲格（门格减外侧偏移）、门列表与恢复装置生成视图，meta 为空时取草稿自带的 Meta。
  */
 using System;
 using System.Collections.Generic;
@@ -58,10 +58,10 @@ namespace Sokoban.Core
         public DoorInfo PrimaryEntrance { get; }
         public Cell EntryBuffer { get; }
         public IReadOnlyList<DoorInfo> Doors { get; }
-        public IReadOnlyList<RecoveryItem> RecoveryItems { get; }
+        public RecoveryDevice RecoveryDevice { get; }
 
         public ValidatedRoom(Room room, RoomMeta meta, PlacedObject spawn, DoorInfo primaryEntrance, Cell entryBuffer,
-            IReadOnlyList<DoorInfo> doors, IReadOnlyList<RecoveryItem> recoveryItems)
+            IReadOnlyList<DoorInfo> doors, RecoveryDevice recoveryDevice)
         {
             Room = room;
             Meta = meta;
@@ -69,7 +69,7 @@ namespace Sokoban.Core
             PrimaryEntrance = primaryEntrance;
             EntryBuffer = entryBuffer;
             Doors = doors;
-            RecoveryItems = recoveryItems;
+            RecoveryDevice = recoveryDevice;
         }
 
         public static ValidatedRoom From(RoomDraftModel draft, RoomMeta meta)
@@ -79,7 +79,7 @@ namespace Sokoban.Core
                 throw new InvalidOperationException("发布级校验未通过：" + string.Join("；", errors.Select(i => i.RuleId + " @ " + i.Location + "：" + i.Message)));
             var door = draft.Doors.First(d => d.Id == draft.PrimaryEntranceId && d.Role == "entry");
             var spawn = draft.Room.ObjectsOf(ObjectCategories.Spawn).Single();
-            return new ValidatedRoom(draft.Room, meta ?? draft.Meta, spawn, door, door.Cell - door.Outward, draft.Doors.ToList(), draft.RecoveryItems.ToList());
+            return new ValidatedRoom(draft.Room, meta ?? draft.Meta, spawn, door, door.Cell - door.Outward, draft.Doors.ToList(), draft.RecoveryDevice);
         }
     }
 }

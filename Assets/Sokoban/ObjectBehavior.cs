@@ -231,9 +231,6 @@ namespace Sokoban
                     if (target == null || !target.Room.Ids.Contains(id))
                         yield return $"{location} 找不到目标 {(local ? id : level + "/" + id)}";
                 }
-                if (includeLocal && node.Kind == BehaviorNodeKinds.StartRecovery &&
-                    !model.RecoveryItems.Any(item => item.Id == Parameter(node, "recovery")))
-                    yield return $"{location} 找不到指定的恢复项";
                 if (includeLocal && node.Kind == BehaviorNodeKinds.SetTerrainState)
                 {
                     string terrain = Parameter(node, "targetTerrain");
