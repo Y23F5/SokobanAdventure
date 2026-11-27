@@ -29,7 +29,7 @@ namespace Sokoban.Core.Tests
         {
             var vine = Method("forest-vine").Pose(0f, VineCtx()).Single();
             Assert.Equal("forest-vine", vine.PartId);
-            Assert.Equal("Diorama/ForestVine", vine.Resource);
+            Assert.Equal("Diorama/ForestRecoveryVine", vine.Resource);
             Assert.Equal(4f, vine.X, 3);
             Assert.Equal(2f, vine.Z, 3);
             Assert.Equal(90f, vine.Yaw, 3);
@@ -75,6 +75,29 @@ namespace Sokoban.Core.Tests
             Assert.Equal(7f, decay.X);
             Assert.Equal("ForestDecay", decay.Clip);
             Assert.False(parts.Single(p => p.PartId == "box-1").Visible);
+        }
+
+        [Fact]
+        public void ForestDeviceDecaysAndRegrowsAtItsAnchor()
+        {
+            var anchor = new Cell(3, -1);
+            var device = new RecoveryDevice("tree", RecoveryDeviceKind.Tree, anchor, 0, "forest-decay", 3.7f);
+            var parameters = new System.Collections.Generic.Dictionary<string, float> { ["devicePose"] = 1 };
+            var context = new RecoveryContext("forest", device.Id, new[] { anchor }, device.Duration, parameters, device);
+            var script = Method("forest-decay");
+            for (int step = 0; step <= 100; step++)
+            {
+                Assert.All(script.Pose(step / 100f, context), part =>
+                {
+                    Assert.Equal(anchor.X, part.X);
+                    Assert.Equal(anchor.Y, part.Z);
+                });
+            }
+            Assert.Equal(1f, script.Pose(0, context).First().Scale);
+            Assert.True(script.Pose(.4f, context).Single(part => part.PartId == "stationary-decay").Visible);
+            Assert.False(script.Pose(.4f, context).First().Visible);
+            Assert.True(script.Pose(.9f, context).First().Visible);
+            Assert.Equal(1f, script.Pose(1, context).First().Scale);
         }
 
         [Fact]

@@ -206,13 +206,13 @@ namespace Sokoban
         {
             var room = Current.Validated.Room;
             var list = new List<RecoveryGate>();
-            bool Passage(Cell cell) { string id = room.TerrainAt(cell).CategoryId; return id == TerrainCategories.Floor || id == TerrainCategories.Door; }
             for (int x = 0; x < room.Width; x++)
                 for (int y = 0; y < room.Height; y++)
                 {
                     var cell = new Cell(x, y);
-                    if (room.TerrainAt(cell).CategoryId != TerrainCategories.Openable || room.AppearanceAt(cell) != null) continue;
-                    list.Add(new RecoveryGate(cell, Passage(cell + Cell.Left) && Passage(cell + Cell.Right) ? 90 : 0));
+                    var terrain = room.TerrainAt(cell);
+                    if (terrain.CategoryId != TerrainCategories.Openable || room.AppearanceAt(cell) != null) continue;
+                    list.Add(new RecoveryGate(cell, terrain.Rotation * 90f));
                 }
             return list;
         }

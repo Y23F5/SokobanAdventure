@@ -4,6 +4,18 @@ function pose(t, ctx)
   local home = ctx.route[n]
   local growth = math.max(0, math.min(1, (t - 0.605) / (0.97 - 0.605)))
   local cracked = t >= 0.09
+  if ctx.device and ctx.params.devicePose then
+    local device = ctx.device
+    local living = math.max(0, math.min(1, (0.20 - t) / 0.11))
+    local tree = math.max(living, growth)
+    return {
+      { id = 'stationary-tree', resource = 'Diorama/ForestRecoveryTree',
+        x = device.start.x, z = device.start.z, yaw = device.yaw, scale = math.max(0.001, tree), visible = tree > 0 },
+      { id = 'stationary-decay', resource = 'Diorama/ForestDecay', clipName = 'ForestDecay',
+        clip = 0.4 + t * 4, x = device.start.x, z = device.start.z, yaw = device.yaw,
+        visible = cracked and t < 0.70 }
+    }
+  end
   return {
     { id = ctx.boxId, resource = 'Diorama/Logs', x = from.x, z = from.y, visible = not cracked },
     { id = ctx.boxId .. '-decay', resource = 'Diorama/ForestDecay', clipName = 'ForestDecay',

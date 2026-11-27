@@ -1,5 +1,8 @@
 /**
  * @file WS06VRecoverySessionVerification.cs
+ * ReachForestPushLane(host, cargo)：从恢复安全移位后的格走到原木西侧，避免将箱子推向墙。
+ * DisplaceCargo(host)：从各房出生点经正常动作推离一个箱子。森林先在藤门打开期间通过。
+ * VerifyForestVineClip(gate)：验证导入的藤门节点在枯萎和再生两个阶段实际产生变换。
  * VerifyPoses()：批处理验证三套 Lua 姿态、叉车导入模型层级和恢复会话。
  * @brief Run 先在编辑器内离线核对恢复脚本姿态与恢复会话规则，再在隔离档案里进入主菜单，Observe 检查静止箱子、重复恢复、三次菜单存读与试玩隔离；Tick 在真实 Play 帧里推进检查。
  * PoseChecks：经 LuaHost 与 LuaRecoveryMethod 调用四个随项目发布的恢复脚本，核对零件 ID、位姿范围、占用区、完成后归位与确定性。
@@ -136,6 +139,29 @@ namespace Sokoban.Editor
                 new Dictionary<string, float> { ["gateX"] = 4f, ["gateZ"] = 5f, ["yaw"] = -90f });
             var gate = Method("forest-vine").Pose(.5f, gateCtx).Single();
             Require(gate.PartId == "forest-vine" && gate.X == 4f && gate.Z == 5f && gate.Yaw == -90f && Math.Abs((gate.ClipTime ?? -1f) - .5f) < .0001f, "藤门脚本取格位与朝向参数，剪辑时刻等于进度");
+            VerifyForestVineClip(gate);
+        }
+
+        static void VerifyForestVineClip(RecoveryPart gate)
+        {
+            var model = Resources.Load<GameObject>(gate.Resource);
+            var clip = Resources.LoadAll<AnimationClip>(gate.Resource).SingleOrDefault(candidate => candidate.name == gate.Clip);
+            Require(model && clip && Math.Abs(clip.length - 1f) < .01f, "实际导入藤门及一秒归一化剪辑");
+            var instance = Object.Instantiate(model);
+            try
+            {
+                var branch = instance.GetComponentsInChildren<Transform>(true).Single(t => t.name == "Vine-01");
+                clip.SampleAnimation(instance, 0);
+                var rest = branch.localPosition;
+                clip.SampleAnimation(instance, .2f);
+                Require(Vector3.Distance(branch.localPosition, rest) > .02f, "导入的枯萎姿态移动了藤枝");
+                clip.SampleAnimation(instance, .55f);
+                Require(branch.localScale.magnitude < .001f, "藤枝在消散阶段隐藏");
+                clip.SampleAnimation(instance, 1f);
+                Require(Vector3.Distance(branch.localPosition, rest) < .001f && branch.localScale.magnitude > .001f,
+                    "藤枝再生后回到完整姿态");
+            }
+            finally { Object.DestroyImmediate(instance); }
         }
 
         static void SessionChecks()
@@ -190,6 +216,57 @@ namespace Sokoban.Editor
             string.Join(";", data.Boxes[room].OrderBy(b => b.Key, StringComparer.Ordinal).Select(b => b.Key + "@" + b.Value[0] + "," + b.Value[1])) + "|" + data.EverSolved[room] + "|" +
             string.Join(";", data.ObjectStates[room].OrderBy(s => s.Key, StringComparer.Ordinal).Select(s => s.Key + "=" + s.Value));
 
+        static IEnumerable<object> DisplaceCargo(PuzzleHost host)
+        {
+            string route = RoomId == "warehouse" ? "RR" : RoomId == "factory" ? "URR" : "UUR";
+            foreach (char step in route)
+            {
+                if (!host.Move(Moves["URDL".IndexOf(step)])) throw new Exception("push approach blocked");
+                while (host.Busy) yield return null;
+            }
+            if (RoomId != "forest") yield break;
+            if (!host.UseItem()) throw new Exception("cannot open the forest gate for the push route");
+            for (int step = 0; step < 2; step++)
+            {
+                if (!host.Move(Vector2Int.right)) throw new Exception("cannot pass the forest gate during recovery");
+                while (host.Busy) yield return null;
+            }
+            while (host.Run.Recovering) yield return null;
+            if (!host.Move(Vector2Int.right)) throw new Exception("cannot push the forest logs");
+            while (host.Busy) yield return null;
+        }
+
+        static IEnumerable<object> ReachForestPushLane(PuzzleHost host, string cargo)
+        {
+            var goal = host.Run.HomeOf(cargo) + Vector2Int.left;
+            var start = host.Run.Player;
+            var boxes = host.Run.Boxes.Values.ToHashSet();
+            var pending = new Queue<Vector2Int>();
+            var parent = new Dictionary<Vector2Int, Vector2Int> { [start] = start };
+            pending.Enqueue(start);
+            while (pending.Count > 0 && !parent.ContainsKey(goal))
+            {
+                var cell = pending.Dequeue();
+                foreach (var direction in Moves)
+                {
+                    var next = cell + direction;
+                    var local = next - host.Run.Origin;
+                    if (parent.ContainsKey(next) || boxes.Contains(next) ||
+                        host.Run.Room.Room.TerrainAt(new Cell(local.x, local.y)).CategoryId != TerrainCategories.Floor) continue;
+                    parent.Add(next, cell);
+                    pending.Enqueue(next);
+                }
+            }
+            if (!parent.ContainsKey(goal)) throw new Exception("no walkable route to the west side of the restored logs");
+            var route = new Stack<Vector2Int>();
+            for (var cell = goal; cell != start; cell = parent[cell]) route.Push(cell - parent[cell]);
+            foreach (var direction in route)
+            {
+                if (!host.Move(direction)) throw new Exception("cannot reach the restored logs");
+                while (host.Busy) yield return null;
+            }
+        }
+
         static IEnumerator Observe()
         {
             yield return null;
@@ -227,12 +304,7 @@ namespace Sokoban.Editor
                 }
                 Check(stationary && Homes(), "stationary cycle " + (cycle + 1) + " boxes=" + host.Run.Boxes.Count);
             }
-            string route = RoomId == "warehouse" ? "RR" : RoomId == "factory" ? "URR" : "DRRRRR";
-            foreach (char step in route)
-            {
-                if (!host.Move(Moves["URDL".IndexOf(step)])) throw new Exception("push route blocked");
-                while (host.Busy) yield return null;
-            }
+            foreach (var frame in DisplaceCargo(host)) yield return frame;
             string cargo = host.Run.Boxes.Single(b => b.Value != host.Run.HomeOf(b.Key)).Key;
             if (!host.UseItem()) throw new Exception("displaced recovery refused");
             Check(!host.UseItem(), "reentrant recovery rejected");
@@ -268,6 +340,8 @@ namespace Sokoban.Editor
             while (host.Run.Recovering) yield return null;
             yield return null;
             Check(Homes() && !group.Find(Rig(cargo)) && OtherRooms(), "post-load landing and other rooms isolated");
+            if (RoomId == "forest")
+                foreach (var frame in ReachForestPushLane(host, cargo)) yield return frame;
             var cell = host.Run.HomeOf(cargo);
             var direction = cell - host.Run.Player;
             bool pushed = host.Move(direction);
@@ -294,16 +368,16 @@ namespace Sokoban.Editor
                 editor.Panel.Draft.PlaceRecoveryDevice(new RecoveryDevice("qa-north-arm", RecoveryDeviceKind.Arm,
                     new Cell(4, editor.Panel.Draft.Room.Height), 2, "factory-belt", RecoveryItem.DefaultDuration),
                     replaceExisting: editor.Panel.Draft.Model.RecoveryDevice != null);
+            if (RoomId == "forest")
+                editor.Panel.Draft.PlaceRecoveryDevice(new RecoveryDevice("qa-fixed-tree", RecoveryDeviceKind.Tree,
+                    new Cell(3, -1), 0, "forest-decay", RecoveryItem.DefaultDuration),
+                    replaceExisting: editor.Panel.Draft.Model.RecoveryDevice != null);
             editor.StartTrial();
             yield return null; yield return null;
             host = Object.FindObjectOfType<PuzzleHost>();
             if (host.Run.PendingItem != null) host.panels.Back();
             yield return null; yield return null;
-            foreach (char step in route)
-            {
-                if (!host.Move(Moves["URDL".IndexOf(step)])) throw new Exception("trial route blocked");
-                while (host.Busy) yield return null;
-            }
+            foreach (var frame in DisplaceCargo(host)) yield return frame;
             Check(host.IsTrial && host.UseItem(), "trial recovery started");
             if (RoomId == "warehouse")
             {
@@ -336,6 +410,30 @@ namespace Sokoban.Editor
                 yield return null;
                 Check(parked.gameObject.activeSelf && !trialRoom.Find("belt") && !trialRoom.Find("grabber"),
                     "factory belt only exists during recovery");
+            }
+            if (RoomId == "forest")
+            {
+                var trialRoom = host.transform.Find(RoomId);
+                var parkedTree = trialRoom.Find("qa-fixed-tree");
+                var gate = host.Run.RecoveryGates().First();
+                var parkedGate = trialRoom.Find("Vine " + gate.Cell);
+                while (host.Run.RecoveryFraction < .37f) yield return null;
+                var decay = trialRoom.Find("stationary-decay");
+                var vine = trialRoom.Find("forest-vine");
+                Check(parkedTree && !parkedTree.gameObject.activeSelf && decay && decay.gameObject.activeSelf &&
+                    decay.localPosition == parkedTree.localPosition, "authored tree decays at its wall-side anchor " +
+                    $"parked={(parkedTree ? parkedTree.localPosition.ToString() : "missing")}, decay={(decay ? decay.localPosition.ToString() : "missing")}");
+                Check(parkedGate && !parkedGate.gameObject.activeSelf && vine &&
+                    vine.localPosition == parkedGate.localPosition && Quaternion.Angle(vine.localRotation, parkedGate.localRotation) < .01f,
+                    "animated vine replaces the stationary gate in the same cell and rotation");
+                while (host.Run.RecoveryFraction < .85f) yield return null;
+                var tree = trialRoom.Find("stationary-tree");
+                Check(tree && tree.gameObject.activeSelf && tree.localPosition == parkedTree.localPosition,
+                    "authored tree regrows at the same anchor");
+                while (host.Run.Recovering) yield return null;
+                yield return null;
+                Check(parkedTree.gameObject.activeSelf && !trialRoom.Find("stationary-tree") && !trialRoom.Find("forest-vine"),
+                    "stationary tree is restored; temporary forest animation is cleared");
             }
             yield return null; yield return null;
             host.Leave();

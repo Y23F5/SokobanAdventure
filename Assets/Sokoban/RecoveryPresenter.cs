@@ -4,7 +4,8 @@
  * Sample(run, group, boxOf, t)：对每个需要归位的箱子，用恢复道具的脚本在进度 t 取姿态；id 等于箱子 ID 的零件驱动真箱子，其余零件按 resource 加 child 从零件池取实例；默认外观的可开合地形格用默认外观脚本取姿态，格位与朝向作为 params（gateX、gateZ、yaw）传入。
  * Sample 将房间装置和墙面法线传给箱子与地形演出脚本。
  * SampleDevice(run, group, boxOf, method, device, moves, t)：多箱时依次复用同一装置，已处理箱子固定在原始格。
- * Clear(boxOf)：销毁零件池并恢复被隐藏的箱子渲染器，恢复完成或读档重建时调用。
+ * HideParked(part)：暂时隐藏被活动演出代替的树木、设备或藤门，清理时恢复原状态。
+ * Clear()：销毁零件池并恢复被隐藏的箱子渲染器，恢复完成或读档重建时调用。
  * Part(task, part, group)：按 resource 实例化预制件，child 非空时取该子节点作为零件；预制件或子节点找不到时 LogWarning 并跳过该零件，恢复照常提交。
  * Apply、ApplyBox：把位置、欧拉角、缩放与可见度写到变换上，动画剪辑按脚本给出的时刻（秒，不超过剪辑长度）采样。
  * 脚本出错只警告一次，不显示演出，规则层照常提交恢复。
@@ -22,7 +23,8 @@ namespace Sokoban
     {
         const string WarehouseScript = "warehouse-lift";
         const string FactoryScript = "factory-belt";
-        GameObject parkedDevice;
+        const string ForestScript = "forest-decay";
+        readonly HashSet<GameObject> parked = new HashSet<GameObject>();
         readonly LuaHost host = new LuaHost();
         readonly Dictionary<string, IRecoveryMethod> methods = new Dictionary<string, IRecoveryMethod>();
         readonly Dictionary<string, GameObject> pool = new Dictionary<string, GameObject>();
@@ -58,12 +60,7 @@ namespace Sokoban
             bool factory = item.ScriptRef == FactoryScript;
             if ((warehouse || factory) && moves.Count > 0)
             {
-                var yardDevice = device == null ? null : group.Find(device.Id);
-                if (yardDevice && yardDevice.gameObject.activeSelf)
-                {
-                    parkedDevice = yardDevice.gameObject;
-                    parkedDevice.SetActive(false);
-                }
+                if (device != null) HideParked(group.Find(device.Id));
                 var origin = device ?? new RecoveryDevice(item.Id,
                     warehouse ? RecoveryDeviceKind.Forklift : RecoveryDeviceKind.Arm,
                     new Cell(warehouse ? model.Room.Width : -1, model.Room.Height / 2),
@@ -79,16 +76,31 @@ namespace Sokoban
                     Play(method, ctx, move.BoxId, boxOf(move.BoxId), group, t);
                 }
             }
+            if (item.ScriptRef == ForestScript && device?.Kind == RecoveryDeviceKind.Tree)
+            {
+                HideParked(group.Find(device.Id));
+                var context = new RecoveryContext(run.ActiveId, device.Id, new[] { device.Anchor }, run.RecoveryDuration,
+                    new Dictionary<string, float> { ["devicePose"] = 1 }, device);
+                Play(method, context, device.Id, null, group, t);
+            }
             var gates = run.RecoveryGates();
             if (gates.Count == 0) return;
             var gateMethod = Method(PuzzleRun.DefaultGateScript);
             foreach (var gate in gates)
             {
+                HideParked(group.Find("Vine " + gate.Cell));
                 var parameters = new Dictionary<string, float> { ["gateX"] = gate.Cell.X, ["gateZ"] = gate.Cell.Y, ["yaw"] = gate.Yaw };
                 string task = "gate-" + gate.Cell.X + "-" + gate.Cell.Y;
                 var ctx = new RecoveryContext(run.ActiveId, task, new List<Cell> { gate.Cell }, run.RecoveryDuration, parameters, device);
                 Play(gateMethod, ctx, task, null, group, t);
             }
+        }
+
+        void HideParked(Transform part)
+        {
+            if (!part || !part.gameObject.activeSelf) return;
+            parked.Add(part.gameObject);
+            part.gameObject.SetActive(false);
         }
 
         void SampleDevice(PuzzleRun run, Transform group, Func<string, Transform> boxOf, IRecoveryMethod method,
@@ -195,7 +207,12 @@ namespace Sokoban
             go.SetActive(part.Visible);
             if (!part.Visible || part.Clip == null || !part.ClipTime.HasValue) return;
             var clip = Clip(part.Resource, part.Clip);
-            if (clip) clip.SampleAnimation(go, Mathf.Clamp(part.ClipTime.Value, 0, clip.length));
+            if (clip)
+            {
+                var anchor = target.localPosition;
+                clip.SampleAnimation(go, Mathf.Clamp(part.ClipTime.Value, 0, clip.length));
+                target.localPosition = anchor;
+            }
         }
 
         void ApplyBox(Transform box, RecoveryPart part)
@@ -209,8 +226,8 @@ namespace Sokoban
 
         internal void Clear()
         {
-            if (parkedDevice) parkedDevice.SetActive(true);
-            parkedDevice = null;
+            foreach (var part in parked) if (part) part.SetActive(true);
+            parked.Clear();
             foreach (var go in pool.Values) if (go) { go.SetActive(false); Object.Destroy(go); }
             pool.Clear();
             skipped.Clear();

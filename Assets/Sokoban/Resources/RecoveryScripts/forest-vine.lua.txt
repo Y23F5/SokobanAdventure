@@ -1,7 +1,7 @@
 function pose(t, ctx)
   local p = ctx.params
   return {
-    { id = 'forest-vine', resource = 'Diorama/ForestVine', clipName = 'VineRecovery', clip = t,
+    { id = 'forest-vine', resource = 'Diorama/ForestRecoveryVine', clipName = 'VineRecovery', clip = t,
       x = p.gateX or 0, z = p.gateZ or 0, yaw = p.yaw or 0 }
   }
 end
