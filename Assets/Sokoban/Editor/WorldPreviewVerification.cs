@@ -77,7 +77,7 @@ namespace Sokoban.Editor
                 var frame = group.Find(door.Id);
                 return frame && frame.localPosition == new Vector3(door.Cell.X, 0, door.Cell.Y);
             }), room.Id + " 门框与门下地板分别存在");
-            Require(group.Find("地基") && group.Find("外围地绘") && group.childCount == 2+tiles+model.Doors.Count+room.Objects.Count+(group.Find("Selection")?1:0),
+            Require(group.Find("地基") && group.Find("外围地绘") && group.childCount == 2+tiles+model.Doors.Count+room.Objects.Count+(model.RecoveryDevice != null ? 2 : 0)+(group.Find("Selection")?1:0),
                 room.Id + " 各格和对象均唯一，模型数量 " + group.childCount);
         }
 

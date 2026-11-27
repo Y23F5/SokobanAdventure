@@ -169,6 +169,7 @@ namespace Sokoban
         public void RotateSelection(int quarterTurns)
         {
             if (quarterTurns % 4 == 0) return;
+            if (FindRecoveryDevice(Selected) != null) { RotateRecoveryDevice(quarterTurns); return; }
             var holder = holders[ActiveId];
             var selectedId = Selected;
             var selectedCell = SelectedCell;
@@ -359,7 +360,7 @@ namespace Sokoban
                         foreach (var oldSpawn in after.Room.ObjectsOf(ObjectCategories.Spawn).ToList()) after.Room.RemoveObject(oldSpawn.Id);
                         after.Room.AddObject("spawn", ObjectCategories.Spawn, door.Cell - door.Outward, null, 0);
                     }
-                    if (appearance != null) after.Room.SetAppearance(door.Cell, appearance);
+                    after.Room.SetAppearance(door.Cell, appearance);
                 }
                 holder.Draft = after;
             }

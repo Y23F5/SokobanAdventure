@@ -227,7 +227,10 @@ namespace Sokoban
             foreach (var door in model.Doors)
             {
                 var inward = new Vector3(-door.Outward.X, 0, -door.Outward.Y);
-                var look = room.AppearanceAt(door.Cell) ?? AppearanceLibrary.Default(TerrainCategories.Door, theme);
+                var look = room.AppearanceAt(door.Cell);
+                var builtin = AppearanceLibrary.Find(look?.Id);
+                if (builtin != null && builtin.CategoryId != TerrainCategories.Door) look = null;
+                look = look ?? AppearanceLibrary.Default(TerrainCategories.Door, theme);
                 Place(look, door.Id, door.Cell, inward == Vector3.zero ? Quaternion.identity : Quaternion.LookRotation(inward));
             }
             foreach (var item in room.Objects)
