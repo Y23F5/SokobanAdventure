@@ -105,11 +105,11 @@ namespace Sokoban
             var origin = (RectTransform)terrainTab.transform;
             var bar = new GameObject("页签", typeof(RectTransform), typeof(HorizontalLayoutGroup)).GetComponent<RectTransform>();
             bar.SetParent(origin.parent, false);
-            bar.anchorMin = origin.anchorMin;
-            bar.anchorMax = origin.anchorMax;
-            bar.pivot = origin.pivot;
-            bar.anchoredPosition = origin.anchoredPosition;
-            bar.sizeDelta = new Vector2(276, 44);
+            bar.anchorMin = new Vector2(0, 1);
+            bar.anchorMax = new Vector2(1, 1);
+            bar.pivot = new Vector2(.5f, .5f);
+            bar.anchoredPosition = new Vector2(0, origin.anchoredPosition.y);
+            bar.sizeDelta = new Vector2(-20, 44);
             var row = bar.GetComponent<HorizontalLayoutGroup>();
             row.spacing = 6;
             row.childAlignment = TextAnchor.LowerLeft;
@@ -125,7 +125,10 @@ namespace Sokoban
                 int index = i;
                 var item = Instantiate(prefab, bar, false);
                 item.name = "Bookmark";
-                item.GetComponentInChildren<Text>().text = TabNames[i];
+                var label = item.GetComponentInChildren<Text>();
+                label.text = TabNames[i];
+                label.fontSize = 16;
+                label.horizontalOverflow = HorizontalWrapMode.Overflow;
                 item.gameObject.AddComponent<LayoutElement>().preferredHeight = 38;
                 item.onClick.AddListener(() => SelectTab(index));
                 tabs[i] = item;
@@ -169,6 +172,7 @@ namespace Sokoban
             must.anchoredPosition = new Vector2(12, -68);
             must.sizeDelta = new Vector2(210, 0);
             var image = go.GetComponent<Image>();
+            image.raycastTarget = false;
             if (Skin && Skin.panelSmallSprite) { image.sprite = Skin.panelSmallSprite; image.type = Image.Type.Sliced; image.color = Color.white; }
             else image.color = NormalTint;
             var stack = go.GetComponent<VerticalLayoutGroup>();
@@ -181,6 +185,7 @@ namespace Sokoban
             var title = new GameObject("标题", typeof(RectTransform), typeof(LayoutText), typeof(LayoutElement)).GetComponent<LayoutText>();
             title.rectTransform.SetParent(must, false);
             title.text = "房间必填项";
+            title.raycastTarget = false;
             title.fontSize = 15;
             title.fontStyle = FontStyle.Bold;
             title.color = Skin ? Skin.ink : Color.black;
@@ -274,7 +279,7 @@ namespace Sokoban
                     foreach (var entry in AppearanceLibrary.Entries(CategoryId(paletteCategory), theme))
                         AddPaletteCard(entry.Id, entry.Name, entry.Prefab(0), () =>
                         {
-                            Panel.CancelTool();
+                            Tool(paletteCategory);
                             pickedAsset = null;
                             pickedBuiltin = entry.Id;
                             Panel.Run(() => draft.ChooseAppearance(entry.Id, CategoryId(paletteCategory)), "已选 " + entry.Name + "，在地图放置");
@@ -293,7 +298,11 @@ namespace Sokoban
                             pickedAsset = pickedBuiltin = null;
                             string issue = thumbnails.ModelIssue(draft.Model.Assets, model);
                             if (issue != null) Panel.Status = issue;
-                            else Panel.Run(() => draft.SelectDefinition(id), "左键放置功能物件，短按右键取消");
+                            else Panel.Run(() =>
+                            {
+                                draft.Tool = RoomTool.Decoration;
+                                draft.SelectDefinition(id);
+                            }, "左键放置功能物件，短按右键取消");
                         });
                     }
                 foreach (string id in assets)
@@ -309,7 +318,11 @@ namespace Sokoban
                         if (kind != "model") return;
                         string issue = thumbnails.ModelIssue(draft.Model.Assets, id, !pack.Any(item => item.asset.Id == id));
                         if (issue != null) Panel.Status = issue;
-                        else Panel.Run(() => draft.ChooseAppearance(id, custom ? Sokoban.Core.ObjectCategories.Custom : CategoryId(paletteCategory)), "左键放置，短按右键取消");
+                        else Panel.Run(() =>
+                        {
+                            draft.Tool = custom ? RoomTool.Decoration : paletteCategory;
+                            draft.ChooseAppearance(id, custom ? Sokoban.Core.ObjectCategories.Custom : CategoryId(paletteCategory));
+                        }, "左键放置，短按右键取消");
                     });
                 }
             }
@@ -340,12 +353,26 @@ namespace Sokoban
                 label.color = new Color32(139, 106, 72, 255);
             }
             if (model == null) return;
-            label.rectTransform.offsetMin = new Vector2(60, label.rectTransform.offsetMin.y);
-            var frame = ThemeWidgets.Thumb(button.transform, 44f).transform as RectTransform;
-            frame.anchorMin = frame.anchorMax = new Vector2(0, .5f);
-            frame.pivot = new Vector2(0, .5f);
-            frame.anchoredPosition = new Vector2(12, 0);
-            frame.sizeDelta = new Vector2(44, 44);
+            bool editable = !builtin && id == model && Panel.Draft.Model.Assets.Any(a => a.Id == id && a.Kind == Sokoban.Core.AssetKinds.Model);
+            var content = new GameObject("卡片内容", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            var contentRect = (RectTransform)content.transform;
+            contentRect.SetParent(button.transform, false);
+            contentRect.anchorMin = Vector2.zero;
+            contentRect.anchorMax = Vector2.one;
+            contentRect.offsetMin = Vector2.zero;
+            contentRect.offsetMax = new Vector2(editable ? -116 : 0, 0);
+            var row = content.GetComponent<HorizontalLayoutGroup>();
+            var border = button.image.sprite ? button.image.sprite.border / button.image.pixelsPerUnit : Vector4.zero;
+            row.padding = new RectOffset(Mathf.CeilToInt(border.x) + 4, Mathf.CeilToInt(border.z) + 4, 0, 0);
+            row.spacing = 6;
+            row.childAlignment = TextAnchor.MiddleLeft;
+            row.childControlWidth = row.childControlHeight = true;
+            row.childForceExpandWidth = row.childForceExpandHeight = false;
+            var frame = ThemeWidgets.Thumb(contentRect, 44f);
+            label.rectTransform.SetParent(contentRect, false);
+            var labelSize = label.gameObject.AddComponent<LayoutElement>();
+            labelSize.minWidth = labelSize.preferredWidth = 0;
+            labelSize.flexibleWidth = 1;
             var thumb = new GameObject("缩略图", typeof(RectTransform), typeof(RawImage)).GetComponent<RawImage>();
             thumb.rectTransform.SetParent(frame, false);
             thumb.rectTransform.anchorMin = Vector2.zero;
@@ -355,9 +382,8 @@ namespace Sokoban
             thumb.raycastTarget = false;
             thumb.enabled = false;
             PreviewCard(button, Panel.Draft.Model.Assets, model, builtin);
-            if (!builtin && id == model && Panel.Draft.Model.Assets.Any(a => a.Id == id && a.Kind == Sokoban.Core.AssetKinds.Model))
+            if (editable)
             {
-                label.rectTransform.offsetMax = new Vector2(-124, label.rectTransform.offsetMax.y);
                 AssetAction(button.transform, "改名", -64, () => BeginRename(button, id));
                 AssetAction(button.transform, "删除", -8, () => Panel.Run(() => RemoveAsset(id), "已删除自建模型"));
             }
@@ -460,7 +486,7 @@ namespace Sokoban
             categoryOpen = true;
             paletteCategory = type;
             pickedAsset = pickedBuiltin = null;
-            Panel.CancelTool();
+            Tool(type);
         }
         public void Act(string action)
         {
@@ -626,7 +652,8 @@ namespace Sokoban
             cells.constraintCount = 2;
             cells.cellSize = new Vector2(150, 34);
             cells.spacing = new Vector2(6, 6);
-            grid.GetComponent<LayoutElement>().preferredHeight = 6 * 34 + 5 * 6;
+            int rows = (MenuItems.Length + 1) / 2;
+            grid.GetComponent<LayoutElement>().preferredHeight = rows * 34 + (rows - 1) * 6;
             for (int i = 0; i < MenuItems.Length; i++)
             {
                 string act = MenuActs[i];
@@ -968,7 +995,7 @@ namespace Sokoban
                 }
                 if(fileName.text!=Panel.Filename)fileName.SetTextWithoutNotify(Panel.Filename??"");
                 submitText.text=Panel.Overwrite?"确认覆盖":Panel.Operation;
-                message.text=Panel.Status;
+                message.text=string.IsNullOrEmpty(Panel.Status) ? "可输入完整文件路径" : Panel.Status;
             }
             lastDialog=dialog;
             if(Panel.Confirming)confirmMessage.text=Panel.Status;
@@ -984,7 +1011,7 @@ namespace Sokoban
                 }
                 workspaceInfo.text=d.Model.Meta.Name+" · "+(d.World==null?"独立房间":d.Placement==null?"尚未放置":"原点 "+d.Origin)+"\n"+Panel.Status;
             }
-            status.text = host.HoverFeedback ?? host.AppearanceIssue ?? Panel.Status;
+            status.text = host.HoverFeedback ?? host.AppearanceIssue ?? (string.IsNullOrEmpty(Panel.Status) ? LayoutPanel.DefaultStatus : Panel.Status);
             if (checkOverlay.activeSelf) RefreshIssues();
             RefreshMust();
             RefreshTools();

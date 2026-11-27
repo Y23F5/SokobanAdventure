@@ -19,7 +19,8 @@ namespace Sokoban
         public readonly Sokoban.Core.UiModeMachine Mode = new Sokoban.Core.UiModeMachine();
         public readonly RoomDraft Draft;
         public event Action DocumentOpened;
-        public string Status = "选择工具后点击格子";
+        internal const string DefaultStatus = "选择工具后点击格子";
+        public string Status = DefaultStatus;
         public void ReportIssue(string message) { Status = message; }
         public bool Modal => operation != null || pending != null;
         string operation, filename, directory;
@@ -68,7 +69,15 @@ namespace Sokoban
             catch (UnauthorizedAccessException) { Status="此位置没有读写权限，请选择其他目录。"; }
             catch (Exception ex) { Status=ex.Message; }
         }
-        public void CancelDialog() { fileDialogVersion++; pending=null; operation=null; afterSave=null; exitAction=null; }
+        public void CancelDialog()
+        {
+            fileDialogVersion++;
+            pending = null;
+            operation = null;
+            afterSave = null;
+            exitAction = null;
+            Status = DefaultStatus;
+        }
         public void ContinueAfterSave()
         {
             var next=pending;
@@ -140,7 +149,7 @@ namespace Sokoban
             fileDialogVersion++;
             operation=op; overwrite=false;
             filename=op=="导出单房" ? Draft.ActiveId+".room.json" : op=="保存" || op=="导出" || op=="发布" ? (Draft.World==null?"Room.json":"main.world.json") : "";
-            Run(()=>Browse(directory ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)),"可输入完整文件路径");
+            Run(()=>Browse(directory ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)),string.Empty);
         }
         void Browse(string path)
         {

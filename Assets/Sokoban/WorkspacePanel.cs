@@ -262,7 +262,7 @@ namespace Sokoban
             string next = themes[(Array.IndexOf(themes, Draft.Theme) + 1) % themes.Length];
             Run(() => Draft.SetTheme(next), "已切换房间主题，已放置素材保留原样");
         }
-        public void CancelTool() {PlacingRoom=false;placementId=null;Painting=false;stroke.Clear();Draft.Tool=RoomTool.Select;Status="已返回选择";}
+        public void CancelTool() {PlacingRoom=false;placementId=null;Painting=false;stroke.Clear();Draft.Tool=RoomTool.Select;Status=DefaultStatus;}
         public void StartStroke(Vector2Int point) {Painting=true;stroke.Clear();lastCell=point;stroke.Add(point);}
         public void ExtendStroke(Vector2Int point) {
             var delta=point-lastCell;int steps=Math.Max(Math.Abs(delta.x),Math.Abs(delta.y));
