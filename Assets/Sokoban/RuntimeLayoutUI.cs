@@ -277,6 +277,12 @@ namespace Sokoban
                     AddPaletteCard("back", "‹ 返回 · " + AppearanceLibrary.TypeName(CategoryId(paletteCategory)), null, () => { categoryOpen = false; pickedAsset = pickedBuiltin = null; Panel.CancelTool(); });
                     AddPaletteCard("import", "＋ 新增" + AppearanceLibrary.TypeName(CategoryId(paletteCategory)) + "模型", null,
                         () => { pickedAsset = pickedBuiltin = null; Tool(paletteCategory); Panel.ChooseFile("导入模型"); }, false, true);
+                    if (paletteCategory == RoomTool.Decoration)
+                        foreach (var kind in DeviceKinds)
+                        {
+                            var chosenKind = kind;
+                            AddPaletteCard("device-" + kind.kind, "恢复装置 · " + kind.name, null, () => PlaceDevice(chosenKind.kind, chosenKind.script, chosenKind.theme, chosenKind.name), false, true);
+                        }
                     foreach (var entry in AppearanceLibrary.Entries(CategoryId(paletteCategory), theme))
                         AddPaletteCard(entry.Id, entry.Name, entry.Prefab(0), () =>
                         {
@@ -546,6 +552,30 @@ namespace Sokoban
                 case "保留退出": if(Panel.Flush()) UnityEngine.SceneManagement.SceneManager.LoadSceneAsync("MainMenu");break;
             }
             fileMenu.SetActive(false);
+        }
+
+        static readonly (Sokoban.Core.RecoveryDeviceKind kind, string name, string script, string theme)[] DeviceKinds =
+        {
+            (Sokoban.Core.RecoveryDeviceKind.Forklift, "叉车", "warehouse-lift", "warehouse"),
+            (Sokoban.Core.RecoveryDeviceKind.Arm, "机械臂", "factory-belt", "factory"),
+            (Sokoban.Core.RecoveryDeviceKind.Tree, "树木", "forest-decay", "forest")
+        };
+
+        void PlaceDevice(Sokoban.Core.RecoveryDeviceKind kind, string script, string theme, string name)
+        {
+            var draft = Panel.Draft;
+            var existing = draft.Model.RecoveryDevice;
+            Panel.CancelTool();
+            if (existing != null && existing.Kind == kind) { Panel.Status = "本房已有" + name + "，选中空白处后按 [ ] 旋转"; return; }
+            var anchor = existing != null ? existing.Anchor : new Sokoban.Core.Cell(-1, draft.Room.Height / 2);
+            int rotation = existing != null ? existing.Rotation : 1;
+            var device = new Sokoban.Core.RecoveryDevice(existing?.Id ?? "device-" + System.Guid.NewGuid().ToString("N").Substring(0, 8), kind, anchor, rotation,
+                script, existing?.Duration ?? 3.7f, existing?.Params, existing?.ItemName, existing?.ItemDescription, existing?.ItemAcquiredHint);
+            Panel.Run(() =>
+            {
+                draft.PlaceRecoveryDevice(device, existing != null);
+                if (draft.Theme != theme) draft.SetTheme(theme);
+            }, existing != null ? "已把恢复装置替换为" + name : "已放置" + name + "（西侧墙外），[ ] 旋转");
         }
 
         void Tool(RoomTool tool)
